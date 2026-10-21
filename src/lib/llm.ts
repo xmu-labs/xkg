@@ -10,7 +10,7 @@ import type { ExtractedCapture, ContentType, RelatedCapture, RelevanceResult, Sy
 
 const MAX_TOKENS = 800;
 
-/** Default model per provider for mnemos' server-side extraction/briefing/plan work.
+/** Default model per provider for xkg's server-side extraction/briefing/plan work.
  *  Tuned for low cost — these are fast, cheap models. BYOK: the user's key, the user's bill. */
 const MODELS: Record<LlmProvider, string> = {
   anthropic: "claude-haiku-4-5",

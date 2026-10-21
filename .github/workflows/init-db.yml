@@ -4,8 +4,9 @@
 # → Run workflow.
 #
 # Requires two repository secrets:
-#   MNEMOS_APP_URL       e.g. https://mnemos-capture.vercel.app  (no trailing slash)
-#   MNEMOS_ADMIN_SECRET  the same value as the deployment's ADMIN_SECRET
+#   XKG_APP_URL          e.g. https://mnemos-capture.vercel.app  (no trailing slash)
+#   XKG_ADMIN_SECRET     the same value as the deployment's ADMIN_SECRET
+# The older MNEMOS_APP_URL / MNEMOS_ADMIN_SECRET names are still read as a fallback.
 name: Initialize database
 
 on:
@@ -29,16 +30,16 @@ jobs:
 
       - name: Verify secrets are configured
         env:
-          APP_URL: ${{ secrets.MNEMOS_APP_URL }}
-          ADMIN_SECRET: ${{ secrets.MNEMOS_ADMIN_SECRET }}
+          APP_URL: ${{ secrets.XKG_APP_URL || secrets.MNEMOS_APP_URL }}
+          ADMIN_SECRET: ${{ secrets.XKG_ADMIN_SECRET || secrets.MNEMOS_ADMIN_SECRET }}
         run: |
-          [ -n "$APP_URL" ] || { echo "::error::MNEMOS_APP_URL is not set"; exit 1; }
-          [ -n "$ADMIN_SECRET" ] || { echo "::error::MNEMOS_ADMIN_SECRET is not set"; exit 1; }
+          [ -n "$APP_URL" ] || { echo "::error::XKG_APP_URL is not set"; exit 1; }
+          [ -n "$ADMIN_SECRET" ] || { echo "::error::XKG_ADMIN_SECRET is not set"; exit 1; }
 
       - name: POST /api/init-db
         env:
-          APP_URL: ${{ secrets.MNEMOS_APP_URL }}
-          ADMIN_SECRET: ${{ secrets.MNEMOS_ADMIN_SECRET }}
+          APP_URL: ${{ secrets.XKG_APP_URL || secrets.MNEMOS_APP_URL }}
+          ADMIN_SECRET: ${{ secrets.XKG_ADMIN_SECRET || secrets.MNEMOS_ADMIN_SECRET }}
         run: |
           # Body and status captured separately so a failure reports both, and
           # the secret is never echoed.

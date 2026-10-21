@@ -34,7 +34,7 @@ test.describe("fetchSourceContent — live network", () => {
 
   test("returns null when the host cannot be resolved (DNS failure)", async () => {
     const text = await fetchSourceContent(
-      "https://this-domain-definitely-does-not-exist-mnemos-987654.example/article",
+      "https://this-domain-definitely-does-not-exist-xkg-987654.example/article",
     );
     expect(text).toBeNull();
   });

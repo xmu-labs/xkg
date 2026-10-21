@@ -1,8 +1,9 @@
-// Self-update enforcement: ensures users always run the latest mnemos-capture.
+// Self-update enforcement: ensures users always run the latest xkg CLI.
 //
 // Strategy: on serve-mcp startup, query npm for the latest published version.
 // If behind, respawn the process via `npx -y mnemos-capture@latest` and proxy
-// stdio. A MNEMOS_UPGRADED=1 env var prevents infinite recursion.
+// stdio. An XKG_UPGRADED=1 env var (MNEMOS_UPGRADED=1 from releases before
+// 1.4.1) prevents infinite recursion.
 
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
@@ -55,8 +56,9 @@ async function getLatestVersion(): Promise<string | null> {
  * continue with normal startup.
  */
 export async function maybeSelfUpgrade(): Promise<boolean> {
-  // Recursion guard: the child spawned below will inherit this env var.
-  if (process.env.MNEMOS_UPGRADED === "1") return false;
+  // Recursion guard: the child spawned below will inherit this env var. Older
+  // releases set MNEMOS_UPGRADED, and may be the parent that spawned this one.
+  if (process.env.XKG_UPGRADED === "1" || process.env.MNEMOS_UPGRADED === "1") return false;
 
   const current = getCurrentVersion();
   const latest = await getLatestVersion();
@@ -71,7 +73,7 @@ export async function maybeSelfUpgrade(): Promise<boolean> {
     ["-y", `mnemos-capture@${latest}`, ...process.argv.slice(2)],
     {
       stdio: "inherit",
-      env: { ...process.env, MNEMOS_UPGRADED: "1" },
+      env: { ...process.env, XKG_UPGRADED: "1" },
     },
   );
 

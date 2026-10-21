@@ -142,7 +142,7 @@ export default function SettingsDrawer({
     cleanup();
     setVisible(false);
     window.setTimeout(() => setOpen(false), 200);
-    if (openedFromPop.current && window.history.state?.mnemosDrawer) {
+    if (openedFromPop.current && window.history.state?.xkgDrawer) {
       openedFromPop.current = false;
       window.history.back();
     }
@@ -153,7 +153,7 @@ export default function SettingsDrawer({
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
     openedFromPop.current = true;
-    window.history.pushState({ mnemosDrawer: true }, "");
+    window.history.pushState({ xkgDrawer: true }, "");
   }, [me]);
 
   useEffect(() => {

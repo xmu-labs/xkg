@@ -43,7 +43,7 @@ describe("generatePlan", () => {
     const result = await generatePlan(
       "test-key",
       [{ filename: "inbox/2026-05-01-error-context-first.md", content: "## Core idea\nAdd context." }],
-      "Project: mnemos-capture, Branch: feature/errors",
+      "Project: xkg, Branch: feature/errors",
     );
     expect(result).toBe(MOCK_PLAN);
   });

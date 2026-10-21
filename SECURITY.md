@@ -6,7 +6,7 @@ an MCP key — so security reports are welcome and taken seriously.
 ## Reporting a vulnerability
 
 **Please do not open a public issue.** Report privately through
-[GitHub Security Advisories](https://github.com/Soph20/mnemos-capture/security/advisories/new),
+[GitHub Security Advisories](https://github.com/xmu-labs/xkg/security/advisories/new),
 which keeps the details unpublished until a fix ships.
 
 Useful things to include: what an attacker can do, the steps to reproduce it, and which

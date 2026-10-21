@@ -14,7 +14,8 @@
 #
 # Auth: npm trusted publishing (OIDC) — no long-lived token. One-time setup on
 # npmjs.com → mnemos-capture → Settings → Trusted publishing → GitHub Actions,
-# repository Soph20/mnemos-capture, workflow `release.yml`. Falls back to an
+# repository xmu-labs/xkg, workflow `release.yml`. Provenance also requires
+# package.json `repository.url` to name this repository. Falls back to an
 # NPM_TOKEN repository secret if trusted publishing is not configured.
 name: Release
 

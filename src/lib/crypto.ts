@@ -23,6 +23,8 @@ import { env } from "./env";
 
 const ENC_PREFIX = "enc:v1:";
 const HASH_PREFIX = "sha256:";
+// Keeps the pre-rename name on purpose: it is an input to key derivation, so
+// changing it makes every stored GitHub token and LLM key undecryptable.
 const KEY_INFO = "mnemos:credential-encryption:v1";
 const IV_BYTES = 12; // GCM standard nonce size
 const TAG_BYTES = 16;

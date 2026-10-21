@@ -126,7 +126,7 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     return redirectError(redirectUri, p.state, "invalid_request", "PKCE with code_challenge_method=S256 is required.");
   }
 
-  // Require a signed-in mnemos user. If absent, bounce through GitHub login and
+  // Require a signed-in xkg user. If absent, bounce through GitHub login and
   // resume this exact authorization request afterwards.
   const user = await getSession();
   if (!user) {

@@ -40,7 +40,7 @@ function readPath(): string {
   return xkgPath();
 }
 
-export interface MnemosConfig {
+export interface XkgConfig {
   /** Shell command that launches the user's AI assistant, e.g. "claude -p". */
   agent?: string;
   /** Optional stored MCP API key so kos can run without --key. */
@@ -50,17 +50,17 @@ export interface MnemosConfig {
 const ALLOWED_FIELDS = ["agent", "key"] as const;
 type ConfigField = (typeof ALLOWED_FIELDS)[number];
 
-export function readConfig(): MnemosConfig {
+export function readConfig(): XkgConfig {
   const path = readPath();
   if (!existsSync(path)) return {};
   try {
-    return JSON.parse(readFileSync(path, "utf-8")) as MnemosConfig;
+    return JSON.parse(readFileSync(path, "utf-8")) as XkgConfig;
   } catch {
     return {};
   }
 }
 
-export function writeConfig(cfg: MnemosConfig): void {
+export function writeConfig(cfg: XkgConfig): void {
   const dir = xkgDir();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(xkgPath(), JSON.stringify(cfg, null, 2) + "\n");

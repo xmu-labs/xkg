@@ -113,7 +113,7 @@ export function OPTIONS(): NextResponse {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
-// GET opens a server→client SSE stream. mnemos has no server-initiated messages,
+// GET opens a server→client SSE stream. xkg has no server-initiated messages,
 // so per the spec it MAY decline with 405 — the client just won't open a stream.
 export function GET(): NextResponse {
   return new NextResponse(null, { status: 405, headers: { ...CORS, Allow: "POST, DELETE, OPTIONS" } });
