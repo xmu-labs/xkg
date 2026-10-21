@@ -1,15 +1,15 @@
 /**
- * kos — mnemos' Knowledge Operations orchestrator.
+ * kos — xkg's Knowledge Operations orchestrator.
  *
  * Drives whatever AI assistant the user configured (`xkg config set agent ...`)
- * to implement a generated plan in an isolated git worktree. mnemos owns the
+ * to implement a generated plan in an isolated git worktree. xkg owns the
  * harness-independent parts: fetching the plan, the worktree, and reporting the
  * Verification Checklist. The assistant is a black box — model-agnostic by design.
  */
 
 import { tmpdir } from "os";
-import { join } from "path";
-import { writeFileSync, existsSync, appendFileSync, readFileSync } from "fs";
+import { dirname, join, resolve } from "path";
+import { writeFileSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { execSync } from "child_process";
 import { callMcp } from "./hooks.js";
 import { readConfig } from "./config.js";
@@ -43,16 +43,56 @@ export function parseChecklist(planText: string): string[] {
 /** Build a unique, sortable branch name for a kos run. */
 export function buildKosBranch(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[:.]/g, "-").replace("T", "-").slice(0, 19);
-  return `mnemos/kos-${stamp}`;
+  return `xkg/kos-${stamp}`;
 }
+
+/** Where kos drops the plan inside the worktree. Never committed — see excludePlanFiles. */
+export const PLAN_FILE = "XKG_PLAN.md";
+
+/** Plan filenames written by earlier releases; still excluded so an old worktree can't leak one. */
+const LEGACY_PLAN_FILES = ["MNEMOS_PLAN.md"] as const;
 
 /** The instruction handed to the assistant. The plan file is the real contract. */
 export const KOS_PROMPT =
-  "Implement the plan in MNEMOS_PLAN.md in this repository. " +
+  `Implement the plan in ${PLAN_FILE} in this repository. ` +
   "Follow the Codebase Mapping table exactly — change only the files it lists. " +
   "For each step apply the thinking effort named in its Effort column " +
   "(low = quick/mechanical, medium = careful, high = deep reasoning). " +
-  "When finished, make sure every item in the Verification Checklist is satisfied.";
+  "When finished, make sure every item in the Verification Checklist is satisfied. " +
+  `${PLAN_FILE} is private: never commit, push, or copy it into another file.`;
+
+/**
+ * Return the exclude-file contents with every plan filename present, or null if
+ * nothing needs adding. Pure so the matching can be tested without a repo.
+ */
+export function withPlanExcludes(current: string): string | null {
+  const lines = new Set(current.split(/\r?\n/).map((l) => l.trim()));
+  const missing = [PLAN_FILE, ...LEGACY_PLAN_FILES].filter((f) => !lines.has(f) && !lines.has(`/${f}`));
+  if (missing.length === 0) return null;
+  const sep = current === "" || current.endsWith("\n") ? "" : "\n";
+  return `${current}${sep}${missing.join("\n")}\n`;
+}
+
+/**
+ * Keep plan files out of git for this repository and all its worktrees.
+ *
+ * Asks git for the exclude path instead of assuming `<root>/.git/info/exclude`:
+ * in a linked worktree or a submodule `.git` is a file, so the assumed path does
+ * not exist and the plan would be silently committed by the agent's `git add`.
+ * Throws rather than continuing unprotected — a plan can carry private context.
+ */
+export function excludePlanFiles(worktreePath: string): void {
+  const excludePath = resolve(worktreePath, run("git rev-parse --git-path info/exclude", worktreePath));
+  mkdirSync(dirname(excludePath), { recursive: true });
+  const current = existsSync(excludePath) ? readFileSync(excludePath, "utf-8") : "";
+  const next = withPlanExcludes(current);
+  if (next !== null) writeFileSync(excludePath, next);
+  try {
+    run(`git check-ignore -q ${PLAN_FILE}`, worktreePath);
+  } catch {
+    throw new Error(`git would track ${PLAN_FILE} (exclude file: ${excludePath})`);
+  }
+}
 
 // ── Orchestrator ──
 
@@ -98,17 +138,17 @@ export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise
   console.log(`Creating isolated worktree on branch ${branch}...`);
   run(`git worktree add -b ${branch} "${worktreePath}"`, repoRoot);
 
-  // 4. Drop the plan in and keep git from tracking it (local exclude, not committed)
-  writeFileSync(join(worktreePath, "MNEMOS_PLAN.md"), planText);
+  // 4. Keep git from tracking the plan (local exclude, not committed), then drop it in.
+  //    Exclude first: if that fails, the plan is never written where git can see it.
   try {
-    const excludePath = join(repoRoot, ".git", "info", "exclude");
-    if (existsSync(excludePath)) {
-      const current = readFileSync(excludePath, "utf-8");
-      if (!current.includes("MNEMOS_PLAN.md")) appendFileSync(excludePath, "\nMNEMOS_PLAN.md\n");
-    }
-  } catch {
-    // best-effort
+    excludePlanFiles(worktreePath);
+  } catch (err) {
+    console.error(`Could not keep ${PLAN_FILE} out of git, so kos stopped before writing it.`);
+    console.error(err instanceof Error ? err.message : String(err));
+    console.error(`The empty worktree is at ${worktreePath}.`);
+    process.exit(1);
   }
+  writeFileSync(join(worktreePath, PLAN_FILE), planText);
 
   // 5. Hand off to the user's assistant, running inside the worktree
   console.log(`Launching: ${cfg.agent}\n`);

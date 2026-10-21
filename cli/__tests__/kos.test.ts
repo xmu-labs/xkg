@@ -1,9 +1,17 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { execSync } from "child_process";
 import {
   parsePlanFilenames,
   latestPlanFilename,
   parseChecklist,
   buildKosBranch,
+  withPlanExcludes,
+  excludePlanFiles,
+  PLAN_FILE,
+  KOS_PROMPT,
 } from "../kos.js";
 
 const LIST_PLANS = `3 plan(s):
@@ -72,10 +80,97 @@ Not part of the checklist.`;
 describe("buildKosBranch", () => {
   it("produces a deterministic, sortable branch name from a date", () => {
     const branch = buildKosBranch(new Date("2026-06-05T10:30:45.000Z"));
-    expect(branch).toBe("mnemos/kos-2026-06-05-10-30-45");
+    expect(branch).toBe("xkg/kos-2026-06-05-10-30-45");
   });
 
-  it("always starts with the mnemos/kos- prefix", () => {
-    expect(buildKosBranch()).toMatch(/^mnemos\/kos-/);
+  it("always starts with the xkg/kos- prefix", () => {
+    expect(buildKosBranch()).toMatch(/^xkg\/kos-/);
+  });
+});
+
+describe("withPlanExcludes", () => {
+  it("adds the plan file and the legacy name to an empty exclude file", () => {
+    expect(withPlanExcludes("")).toBe("XKG_PLAN.md\nMNEMOS_PLAN.md\n");
+  });
+
+  it("appends on a new line when the file lacks a trailing newline", () => {
+    expect(withPlanExcludes("*.swp")).toBe("*.swp\nXKG_PLAN.md\nMNEMOS_PLAN.md\n");
+  });
+
+  it("only adds what is missing", () => {
+    expect(withPlanExcludes("MNEMOS_PLAN.md\n")).toBe("MNEMOS_PLAN.md\nXKG_PLAN.md\n");
+  });
+
+  it("returns null when both names are already excluded, anchored or not", () => {
+    expect(withPlanExcludes("/XKG_PLAN.md\nMNEMOS_PLAN.md\n")).toBeNull();
+  });
+
+  it("does not treat a longer name containing the plan name as a match", () => {
+    expect(withPlanExcludes("OLD_XKG_PLAN.md\nMNEMOS_PLAN.md\n")).toBe(
+      "OLD_XKG_PLAN.md\nMNEMOS_PLAN.md\nXKG_PLAN.md\n",
+    );
+  });
+});
+
+describe("excludePlanFiles", () => {
+  let dir: string;
+  const git = (cmd: string, cwd = dir) =>
+    execSync(`git ${cmd}`, { cwd, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "xkg-kos-"));
+    git("init -q -b main repo");
+    const repo = join(dir, "repo");
+    git("-c user.name=t -c user.email=t@t commit -q --allow-empty -m init", repo);
+  });
+
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("keeps the plan untracked in a worktree of a normal repository", () => {
+    const repo = join(dir, "repo");
+    const wt = join(dir, "wt");
+    git(`worktree add -q -b xkg/kos-test "${wt}"`, repo);
+    excludePlanFiles(wt);
+    writeFileSync(join(wt, PLAN_FILE), "secret plan");
+    git("add -A", wt);
+    expect(git("status --porcelain", wt)).toBe("");
+  });
+
+  // The old code wrote to <root>/.git/info/exclude, which does not exist when
+  // <root> is itself a linked worktree (.git is a file). The plan got committed.
+  it("keeps the plan untracked when kos runs from a linked worktree", () => {
+    const repo = join(dir, "repo");
+    const outer = join(dir, "outer");
+    const wt = join(dir, "wt");
+    git(`worktree add -q -b outer "${outer}"`, repo);
+    git(`worktree add -q -b xkg/kos-test "${wt}"`, outer);
+    excludePlanFiles(wt);
+    writeFileSync(join(wt, PLAN_FILE), "secret plan");
+    git("add -A", wt);
+    expect(git("status --porcelain", wt)).toBe("");
+    expect(readFileSync(join(repo, ".git", "info", "exclude"), "utf-8")).toContain(PLAN_FILE);
+  });
+
+  it("is idempotent", () => {
+    const repo = join(dir, "repo");
+    excludePlanFiles(repo);
+    excludePlanFiles(repo);
+    const exclude = readFileSync(join(repo, ".git", "info", "exclude"), "utf-8");
+    expect(exclude.split("\n").filter((l) => l === PLAN_FILE)).toHaveLength(1);
+  });
+
+  it("throws instead of continuing when the plan would still be tracked", () => {
+    const repo = join(dir, "repo");
+    writeFileSync(join(repo, PLAN_FILE), "already committed");
+    git(`add ${PLAN_FILE}`, repo);
+    git("-c user.name=t -c user.email=t@t commit -q -m oops", repo);
+    expect(() => excludePlanFiles(repo)).toThrow(/would track/);
+  });
+});
+
+describe("KOS_PROMPT", () => {
+  it("points the agent at the plan file and forbids committing it", () => {
+    expect(KOS_PROMPT).toContain(PLAN_FILE);
+    expect(KOS_PROMPT).toMatch(/never commit/);
   });
 });

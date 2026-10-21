@@ -23,8 +23,8 @@ You do not need to run xkg to use it — the hosted instance at [mnemos-capture.
 | GitHub OAuth app | [create one](https://github.com/settings/developers) with callback `http://localhost:3000/api/auth/callback` |
 
 ```bash
-git clone https://github.com/Soph20/mnemos-capture.git
-cd mnemos-capture
+git clone https://github.com/xmu-labs/xkg.git
+cd xkg
 npm ci
 cp .env.example .env.local
 ```
@@ -85,8 +85,9 @@ every future fix into a guess. Trace the request and response before assuming wh
 ## Local files and privacy
 
 Keep environment values, credentials, and personal assistant notes out of Git. `.env.local`, local
-agent instruction files, and assistant settings directories are ignored. Commit only empty or
-non-secret environment templates. Next.js agent-file generation is disabled so starting development
+agent instruction files, assistant settings directories, and plan or memory files (`XKG_PLAN.md`,
+`*.local.md`, `plans/`, `notes/`, `memory/`) are ignored, and CI fails if any of them is tracked —
+this repository is public. Commit only empty or non-secret environment templates. Next.js agent-file generation is disabled so starting development
 does not create personal instruction files in the repository.
 
 CLI briefing and vault hooks send the project name, branch, and recent commit messages to the
@@ -117,7 +118,7 @@ provenance, and confirms npm recorded the tagged commit.
 ## Security issues
 
 Do not open a public issue for a vulnerability. Report it privately through
-[GitHub Security Advisories](https://github.com/Soph20/mnemos-capture/security/advisories/new).
+[GitHub Security Advisories](https://github.com/xmu-labs/xkg/security/advisories/new).
 
 ## Self-hosting
 
