@@ -17,7 +17,7 @@ import { MAX_INPUT_CHARS } from "./llm";
 
 const FETCH_TIMEOUT_MS = 8000;
 const USER_AGENT =
-  "Mozilla/5.0 (compatible; MnemosCapture/1.0; +https://github.com/Soph20/mnemos-capture)";
+  "Mozilla/5.0 (compatible; xkg/1.0; +https://github.com/xmu-labs/xkg)";
 /** Below this, the extracted text is treated as noise (nav-only page, error wall). */
 const MIN_USABLE_CHARS = 200;
 /** Cap on bytes read from a response. The 8s timeout alone doesn't bound size,

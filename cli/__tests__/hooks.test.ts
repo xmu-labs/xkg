@@ -30,7 +30,7 @@ describe("setupHooks", () => {
   let origHome: string | undefined;
 
   beforeEach(() => {
-    tmpDir = mkdtempSync(join(tmpdir(), "mnemos-test-"));
+    tmpDir = mkdtempSync(join(tmpdir(), "xkg-test-"));
     settingsPath = join(tmpDir, ".claude", "settings.json");
     origHome = process.env["HOME"];
     process.env["HOME"] = tmpDir;
@@ -95,7 +95,7 @@ describe("setupHooks", () => {
     expect(settings.hooks["PreToolCall"]).toBeUndefined();
   });
 
-  it("replaces an existing mnemos hook rather than duplicating it", async () => {
+  it("replaces an existing xkg hook rather than duplicating it", async () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("old-key", { silent: true });
     setupHooks("new-key", { silent: true });
@@ -103,12 +103,12 @@ describe("setupHooks", () => {
       hooks: { SessionStart: Array<{ hooks: Array<{ command: string }> }> };
     };
     const cmds = settings.hooks.SessionStart.flatMap((g) => g.hooks.map((h) => h.command));
-    const mnemosHooks = cmds.filter((c) => c.includes("inbox-check"));
-    expect(mnemosHooks).toHaveLength(1);
-    expect(mnemosHooks[0]).toContain("new-key");
+    const xkgHooks = cmds.filter((c) => c.includes("inbox-check"));
+    expect(xkgHooks).toHaveLength(1);
+    expect(xkgHooks[0]).toContain("new-key");
   });
 
-  it("skipIfExists: keeps exactly one mnemos hook when called twice", async () => {
+  it("skipIfExists: keeps exactly one xkg hook when called twice", async () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("original-key", { silent: true });
     setupHooks("different-key", { silent: true, skipIfExists: true });

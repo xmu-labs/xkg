@@ -158,7 +158,7 @@ export function protectedResourceMetadata(): Record<string, unknown> {
     authorization_servers: [env.appUrl],
     scopes_supported: [MCP_SCOPE],
     bearer_methods_supported: ["header"],
-    resource_documentation: "https://github.com/Soph20/mnemos-capture",
+    resource_documentation: "https://github.com/xmu-labs/xkg",
   };
 }
 

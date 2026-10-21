@@ -3,7 +3,7 @@
  *
  * The transport lets a server hand the client an `Mcp-Session-Id` on the
  * `initialize` response, which the client then echoes on every subsequent
- * request. mnemos runs on serverless (Vercel) with no shared memory between
+ * request. xkg runs on serverless (Vercel) with no shared memory between
  * invocations, so the id is a self-contained, HMAC-signed token — validating it
  * needs only the signing secret, no session store. It binds the transport
  * session to a user id and an issue time (for expiry).

@@ -4,7 +4,7 @@ import crypto from "crypto";
 // env reads these lazily via getters, so setting them before import is enough.
 beforeAll(() => {
   process.env.SESSION_SECRET = "test-secret-for-oauth";
-  process.env.NEXT_PUBLIC_APP_URL = "https://mnemos.example.com";
+  process.env.NEXT_PUBLIC_APP_URL = "https://xkg.example.com";
 });
 
 const oauth = await import("../oauth");
@@ -103,20 +103,20 @@ describe("PKCE verification", () => {
 describe("metadata documents", () => {
   it("advertises the correct MCP resource and endpoints", () => {
     const prm = oauth.protectedResourceMetadata();
-    expect(prm.resource).toBe("https://mnemos.example.com/api/mcp");
-    expect(prm.authorization_servers).toEqual(["https://mnemos.example.com"]);
+    expect(prm.resource).toBe("https://xkg.example.com/api/mcp");
+    expect(prm.authorization_servers).toEqual(["https://xkg.example.com"]);
 
     const asm = oauth.authorizationServerMetadata();
-    expect(asm.issuer).toBe("https://mnemos.example.com");
-    expect(asm.authorization_endpoint).toBe("https://mnemos.example.com/api/oauth/authorize");
-    expect(asm.token_endpoint).toBe("https://mnemos.example.com/api/oauth/token");
-    expect(asm.registration_endpoint).toBe("https://mnemos.example.com/api/oauth/register");
+    expect(asm.issuer).toBe("https://xkg.example.com");
+    expect(asm.authorization_endpoint).toBe("https://xkg.example.com/api/oauth/authorize");
+    expect(asm.token_endpoint).toBe("https://xkg.example.com/api/oauth/token");
+    expect(asm.registration_endpoint).toBe("https://xkg.example.com/api/oauth/register");
     expect(asm.code_challenge_methods_supported).toEqual(["S256"]);
   });
 
   it("points WWW-Authenticate at the protected-resource metadata", () => {
     expect(oauth.wwwAuthenticateHeader()).toContain(
-      'resource_metadata="https://mnemos.example.com/.well-known/oauth-protected-resource"',
+      'resource_metadata="https://xkg.example.com/.well-known/oauth-protected-resource"',
     );
   });
 });

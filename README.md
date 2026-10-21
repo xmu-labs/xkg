@@ -2,8 +2,8 @@
   <br>
   <a href="https://mnemos-capture.vercel.app">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="public/mnemos-hero-dark.gif">
-      <img src="public/mnemos-hero-light.gif" width="160" height="160" alt="xkg">
+      <source media="(prefers-color-scheme: dark)" srcset="public/xkg-hero-dark.gif">
+      <img src="public/xkg-hero-light.gif" width="160" height="160" alt="xkg">
     </picture>
   </a>
   <br>
@@ -53,7 +53,7 @@ You find useful stuff, you capture through the web app, then xkg connects it int
 xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
 
 > [!IMPORTANT]
-> We are migrating from **mnemos** / **Xmu** to **xkg**. The app URL, this GitHub repo, and the npm package still say `mnemos-capture`. Sorry for the inconvenience.
+> We are migrating from **mnemos** / **Xmu** to **xkg**. The code now lives at [xmu-labs/xkg](https://github.com/xmu-labs/xkg); the app URL and the npm package still say `mnemos-capture`. Sorry for the inconvenience.
 
 ## Start here
 
@@ -428,12 +428,12 @@ Working on the code? See [CONTRIBUTING.md](CONTRIBUTING.md).
 If you use xkg in published work:
 
 ```bibtex
-@misc{2026mnemos,
+@misc{2026xkg,
   title        = {xkg: A Knowledge Graph for AI workers},
   author       = {Sofia Padron Valdez},
   year         = 2026,
   journal      = {GitHub repository},
   publisher    = {GitHub},
-  howpublished = {\url{https://github.com/Soph20/mnemos-capture}}
+  howpublished = {\url{https://github.com/xmu-labs/xkg}}
 }
 ```

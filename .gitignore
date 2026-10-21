@@ -36,6 +36,18 @@ AGENTS.local.md
 .vscode/
 .idea/
 
+# Private plans, memory and maintainer notes. This repository is public: these
+# never belong in it. CI rejects them even if force-added (see ci.yml).
+XKG_PLAN.md
+MNEMOS_PLAN.md
+*.local.md
+/plans/
+/notes/
+/memory/
+/docs/superpowers/
+.gstack/
+.superpowers/
+
 # Logs
 *.log
 npm-debug.log*

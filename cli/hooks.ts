@@ -13,11 +13,11 @@ type HookEntry = { type: string; command: string };
 
 // Matches both legacy ("mnemos-capture inbox-check") and modern
 // ("mnemos-capture@latest inbox-check") hook command forms.
-function isMnemosHook(cmd: string): boolean {
+function isXkgHook(cmd: string): boolean {
   return cmd.includes("mnemos-capture") && cmd.includes("inbox-check");
 }
 
-function isMnemosPreToolHook(cmd: string): boolean {
+function isXkgPreToolHook(cmd: string): boolean {
   return cmd.includes("mnemos-capture") && cmd.includes("vault-check");
 }
 
@@ -88,11 +88,11 @@ export function setupHooks(
   const hooks = settings.hooks ?? {};
   const sessionStart: HookGroup[] = hooks.SessionStart ?? [];
 
-  // Inspect any existing mnemos hook so we can either skip, migrate, or replace
+  // Inspect any existing xkg hook so we can either skip, migrate, or replace
   let existingCmd: string | null = null;
   for (const group of sessionStart) {
     for (const h of group.hooks ?? []) {
-      if (typeof h.command === "string" && isMnemosHook(h.command)) {
+      if (typeof h.command === "string" && isXkgHook(h.command)) {
         existingCmd = h.command;
         break;
       }
@@ -113,12 +113,12 @@ export function setupHooks(
     ? `npx -y mnemos-capture@latest inbox-check --key ${apiKey} --briefing`
     : `npx -y mnemos-capture@latest inbox-check --key ${apiKey}`;
 
-  // Remove any existing mnemos inbox-check hook (handles key rotation too)
+  // Remove any existing xkg inbox-check hook (handles key rotation too)
   const filtered = sessionStart
     .map((group: HookGroup) => ({
       ...group,
       hooks: (group.hooks ?? []).filter(
-        (h: HookEntry) => !(typeof h.command === "string" && isMnemosHook(h.command)),
+        (h: HookEntry) => !(typeof h.command === "string" && isXkgHook(h.command)),
       ),
     }))
     .filter((group: HookGroup) => (group.hooks ?? []).length > 0);
@@ -154,7 +154,7 @@ export function setupPreToolHook(
   let existingCmd: string | null = null;
   for (const group of preToolCall) {
     for (const h of group.hooks ?? []) {
-      if (typeof h.command === "string" && isMnemosPreToolHook(h.command)) {
+      if (typeof h.command === "string" && isXkgPreToolHook(h.command)) {
         existingCmd = h.command;
         break;
       }
@@ -172,7 +172,7 @@ export function setupPreToolHook(
     .map((group: HookGroup) => ({
       ...group,
       hooks: (group.hooks ?? []).filter(
-        (h: HookEntry) => !(typeof h.command === "string" && isMnemosPreToolHook(h.command)),
+        (h: HookEntry) => !(typeof h.command === "string" && isXkgPreToolHook(h.command)),
       ),
     }))
     .filter((group: HookGroup) => (group.hooks ?? []).length > 0);
