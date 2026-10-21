@@ -21,7 +21,8 @@ jobs:
       - name: No private plans, notes or credentials
         run: |
           private='(^|/)(XKG|MNEMOS)_PLAN\.md$|(^|/)(CLAUDE|AGENTS)(\.local)?\.md$|\.local\.md$|^(plans|notes|memory|docs/superpowers)/|(^|/)\.(claude|codex|cursor|agents|gstack|superpowers|xkg|xmu|mnemos|aws|ssh)/|(^|/)\.env($|\.)'
-          found=$(git ls-files | grep -E "$private" | grep -vE '\.example$' || true)
+          # Only environment templates are exempt — not any file ending in .example.
+          found=$(git ls-files | grep -E "$private" | grep -vE '(^|/)\.env(\.[^/]+)?\.example$' || true)
           if [ -n "$found" ]; then
             echo "::error::Private files are tracked and must be removed from this public repository:"
             echo "$found"
