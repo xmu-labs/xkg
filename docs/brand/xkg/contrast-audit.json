@@ -1,0 +1,91 @@
+{
+  "method": "WCAG sRGB relative luminance, opaque colors",
+  "AA_normalText": 4.5,
+  "AA_largeText": 3,
+  "tests": [
+    {
+      "description": "dark body",
+      "foreground": "#F2F1F6",
+      "background": "#11131A",
+      "contrast": 16.51,
+      "passesAAnormal": true
+    },
+    {
+      "description": "dark secondary",
+      "foreground": "#B8B5D0",
+      "background": "#11131A",
+      "contrast": 9.33,
+      "passesAAnormal": true
+    },
+    {
+      "description": "dark secondary on raised",
+      "foreground": "#B8B5D0",
+      "background": "#202332",
+      "contrast": 7.83,
+      "passesAAnormal": true
+    },
+    {
+      "description": "dark primary button",
+      "foreground": "#11131A",
+      "background": "#B8B5D0",
+      "contrast": 9.33,
+      "passesAAnormal": true
+    },
+    {
+      "description": "dark secondary button",
+      "foreground": "#F2F1F6",
+      "background": "#2A2D3B",
+      "contrast": 12.16,
+      "passesAAnormal": true
+    },
+    {
+      "description": "light body",
+      "foreground": "#11131A",
+      "background": "#F2F1F6",
+      "contrast": 16.51,
+      "passesAAnormal": true
+    },
+    {
+      "description": "light secondary",
+      "foreground": "#49485E",
+      "background": "#F2F1F6",
+      "contrast": 7.88,
+      "passesAAnormal": true
+    },
+    {
+      "description": "light primary button",
+      "foreground": "#F2F1F6",
+      "background": "#2A2D3B",
+      "contrast": 12.16,
+      "passesAAnormal": true
+    },
+    {
+      "description": "light secondary button",
+      "foreground": "#2A2D3B",
+      "background": "#E5E3ED",
+      "contrast": 10.76,
+      "passesAAnormal": true
+    },
+    {
+      "description": "iris text on dark (prohibited)",
+      "foreground": "#777493",
+      "background": "#11131A",
+      "contrast": 4.16,
+      "passesAAnormal": false
+    },
+    {
+      "description": "iris text on light (prohibited)",
+      "foreground": "#777493",
+      "background": "#F2F1F6",
+      "contrast": 3.97,
+      "passesAAnormal": false
+    },
+    {
+      "description": "white text on iris (prohibited)",
+      "foreground": "#FFFFFF",
+      "background": "#777493",
+      "contrast": 4.46,
+      "passesAAnormal": false
+    }
+  ]
+}
