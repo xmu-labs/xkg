@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const HOSTED_URL = "https://mnemos-capture.vercel.app";
+const HOSTED_URL = "https://xkg.xmu.sh";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

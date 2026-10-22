@@ -15,6 +15,7 @@
  */
 
 import type { User } from "@/lib/db";
+import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
@@ -25,7 +26,7 @@ import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
 
 export async function handleCapture(user: User, args: { content: string; title?: string }): Promise<string> {
-  if (!user.llm_api_key) throw new Error("API key not configured. Complete onboarding at mnemos-capture.vercel.app");
+  if (!user.llm_api_key) throw new Error(`API key not configured. Complete onboarding at ${env.appUrl}/onboard`);
   if (!user.github_repo) throw new Error("Knowledge repo not configured");
 
   // Same ceiling as the web route, and the same identifier, so the two paths

@@ -18,7 +18,7 @@ than contractual.
 ## Scope
 
 **In scope** — the hosted instance at
-[mnemos-capture.vercel.app](https://mnemos-capture.vercel.app) and this repository:
+[xkg.xmu.sh](https://xkg.xmu.sh) and this repository:
 authentication and session handling, the OAuth 2.1 flow used by MCP connectors, credential
 storage, the MCP tool surface, and server-side request handling.
 

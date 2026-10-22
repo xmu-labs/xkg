@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
 
-const HOSTED_URL = "https://mnemos-capture.vercel.app/api/mcp";
+const HOSTED_URL = "https://xkg.xmu.sh/api/mcp";
 const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

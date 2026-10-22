@@ -1,6 +1,6 @@
 <div align="center">
   <br>
-  <a href="https://mnemos-capture.vercel.app">
+  <a href="https://xkg.xmu.sh">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="public/xkg-hero-dark.gif">
       <img src="public/xkg-hero-light.gif" width="160" height="160" alt="xkg">
@@ -53,7 +53,7 @@ You find useful stuff, you capture through the web app, then xkg connects it int
 xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
 
 > [!IMPORTANT]
-> We are migrating from **mnemos** / **Xmu** to **xkg**. The code now lives at [xmu-labs/xkg](https://github.com/xmu-labs/xkg); the app URL and the npm package still say `mnemos-capture`. Sorry for the inconvenience.
+> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). Connectors set up with `mnemos-capture.vercel.app` keep working. The npm package still says `mnemos-capture`. Sorry for the inconvenience.
 
 ## Start here
 
@@ -61,7 +61,7 @@ You do not need a terminal to start.
 
 ### 1. Create your account
 
-Open **[mnemos-capture.vercel.app](https://mnemos-capture.vercel.app)** and sign in with GitHub.
+Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub.
 
 xkg will:
 
@@ -91,7 +91,7 @@ xkg is LLM-agnostic. Any worker that speaks MCP can use the same knowledge.
 Two primitives:
 
 ```text
-https://mnemos-capture.vercel.app/api/mcp
+https://xkg.xmu.sh/api/mcp
 ```
 
 ```bash
@@ -104,7 +104,7 @@ The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). `npx` still uses 
 
 ### On the web
 
-Name the connector `xkg`, paste `https://mnemos-capture.vercel.app/api/mcp`, sign in with GitHub when asked.
+Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHub when asked.
 
 #### Claude
 
@@ -114,7 +114,7 @@ Name the connector `xkg`, paste `https://mnemos-capture.vercel.app/api/mcp`, sig
 
 1. Settings → Plugins → Browse plugins
 2. Name it xkg
-3. Paste `https://mnemos-capture.vercel.app/api/mcp`
+3. Paste `https://xkg.xmu.sh/api/mcp`
 4. Sign in with GitHub when asked
 
 #### Grok
@@ -192,7 +192,7 @@ claude mcp add xkg -- npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
 Or the URL, no API key:
 
 ```bash
-claude mcp add --transport http xkg https://mnemos-capture.vercel.app/api/mcp
+claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
 ```
 
 Optional session hooks (MCP works without them):
@@ -233,7 +233,7 @@ If the tool can launch a local process, register the same `npx` command. If it h
 }
 ```
 
-No MCP support yet? Capture in the [xkg app](https://mnemos-capture.vercel.app) and connect later.
+No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect later.
 
 ## Workflow
 
