@@ -1,0 +1,90 @@
+{
+  "brand": "xkg",
+  "version": "1.1.0-candidate",
+  "reviewStatus": "NOT production approved",
+  "date": "2026-10-22",
+  "primitive": {
+    "obsidian": "#11131A",
+    "graphite": "#2A2D3B",
+    "slateIris": "#777493",
+    "moonstone": "#B8B5D0",
+    "porcelain": "#F2F1F6",
+    "xmuCyan": "#7EC8F3"
+  },
+  "semantic": {
+    "dark": {
+      "bg": {
+        "canvas": "#11131A",
+        "surface": "#202332",
+        "elevated": "#2A2D3B"
+      },
+      "text": {
+        "primary": "#F2F1F6",
+        "secondary": "#B8B5D0"
+      },
+      "action": {
+        "primary": {
+          "bg": "#B8B5D0",
+          "text": "#11131A",
+          "hover": "#C9C6DD"
+        },
+        "secondary": {
+          "bg": "#2A2D3B",
+          "text": "#F2F1F6"
+        }
+      },
+      "border": {
+        "interactive": "#777493"
+      },
+      "focus": "#B8B5D0"
+    },
+    "light": {
+      "bg": {
+        "canvas": "#F2F1F6",
+        "surface": "#FFFFFF",
+        "elevated": "#E5E3ED"
+      },
+      "text": {
+        "primary": "#11131A",
+        "secondary": "#49485E"
+      },
+      "action": {
+        "primary": {
+          "bg": "#2A2D3B",
+          "text": "#F2F1F6",
+          "hover": "#45445E"
+        },
+        "secondary": {
+          "bg": "#E5E3ED",
+          "text": "#2A2D3B"
+        }
+      },
+      "border": {
+        "interactive": "#777493"
+      },
+      "focus": "#2A2D3B"
+    }
+  },
+  "typography": {
+    "heading": "Sora, Inter, system-ui, sans-serif",
+    "body": "Inter, system-ui, sans-serif",
+    "code": "ui-monospace, SFMono-Regular, Menlo, monospace"
+  },
+  "spacingPx": [
+    4,
+    8,
+    12,
+    16,
+    24,
+    32,
+    48,
+    64
+  ],
+  "radiiPx": {
+    "compact": 6,
+    "control": 10,
+    "card": 16,
+    "hero": 24
+  },
+  "note": "The contour is a manually traced approximation from flattened XMU concept-board imagery; do not activate until review."
+}
