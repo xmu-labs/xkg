@@ -114,6 +114,18 @@ function safeFromCodePoint(code: number): string {
 }
 
 /**
+ * One HTML tag, skipping quoted attribute values whole. `<[^>]+>` ends a tag at
+ * the first `>`, but attribute values may contain `>`: Wikipedia's `data-mw`
+ * JSON embeds raw wikitext such as `<ref name="x">`, and cutting the tag there
+ * leaked `<ref …>{{rp|…}}` debris into captures.
+ *
+ * Unquoted parts also stop at `<`. Without that, every unclosed `<` scanned to
+ * the end of the document, which made input like `"<a ".repeat(n)` quadratic
+ * (300 KB took ~30 s); now 5 MB of it takes well under a second.
+ */
+const TAG = /<\/?[a-z!?][^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*>/gi;
+
+/**
  * Strip HTML down to readable text.
  *
  * Uses *separate* passes for `<script>` and `<style>` rather than one combined
@@ -127,7 +139,8 @@ export function htmlToText(html: string): string {
   text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ");
   text = text.replace(/<(nav|header|footer|aside|form|noscript|svg|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
   text = text.replace(/<!--[\s\S]*?-->/g, " ");
-  text = text.replace(/<[^>]+>/g, " "); // any remaining tags
+  text = text.replace(TAG, " "); // any remaining tags, quote-aware
+  text = text.replace(/<[^<>]*>/g, " "); // malformed leftovers, e.g. an unbalanced quote
   text = decodeEntities(text);
   text = text.replace(/\s+/g, " ").trim();
   return text;

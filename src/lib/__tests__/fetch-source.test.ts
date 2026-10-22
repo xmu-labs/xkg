@@ -132,4 +132,36 @@ describe("htmlToText", () => {
   it("decodes common named, decimal, and hex HTML entities", () => {
     expect(htmlToText("<p>Tom &amp; Jerry &#39;n&#39; co &#8212; &#x2764;</p>")).toBe("Tom & Jerry 'n' co — ❤");
   });
+
+  // Wikipedia stores wikitext in data-mw JSON attributes. A raw `>` inside the
+  // quoted value used to end the tag early and leak `<ref …>{{rp|…}}` debris.
+  it("does not end a tag at a > inside a single-quoted attribute value", () => {
+    const html =
+      `<p>Before</p><sup data-mw='{"parts":[{"params":{"1":{"wt":"Unstable.&lt;ref name=\\"sepulchre\\">Royal Society</ref>{{rp|7:33}}"}}}]}'>[a]</sup><p>After</p>`;
+    const out = htmlToText(html);
+    expect(out).toBe("Before [a] After");
+    expect(out).not.toContain("<");
+    expect(out).not.toContain("{{rp");
+  });
+
+  it("does not end a tag at a > inside a double-quoted attribute value", () => {
+    expect(htmlToText(`<a title="a > b" href="/x">Link</a>`)).toBe("Link");
+  });
+
+  it("keeps apostrophes and quotes in ordinary text", () => {
+    expect(htmlToText(`<p>It's a "quoted" word</p><p>Don't drop this</p>`)).toBe(
+      `It's a "quoted" word Don't drop this`,
+    );
+  });
+
+  it("still strips a malformed tag with an unbalanced quote", () => {
+    expect(htmlToText(`<p class="broken>Text</p>`)).not.toContain("<");
+  });
+
+  // Each unclosed `<` used to scan to the end of the document: ~30 s for this.
+  it("stays fast on many unclosed tags", () => {
+    const start = performance.now();
+    htmlToText("<a ".repeat(100_000));
+    expect(performance.now() - start).toBeLessThan(2000);
+  });
 });
