@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { canonicalRedirect } from "@/lib/origin";
 
 const PUBLIC_PATHS = [
   "/login",
@@ -17,6 +18,12 @@ const PUBLIC_PATHS = [
 
 export function middleware(req: NextRequest): NextResponse {
   const { pathname } = req.nextUrl;
+
+  // A browser on an older address moves to the canonical one before anything
+  // else, so sign-in and the session cookie happen on a single host. 307, not
+  // 308: browsers cache 308s for good, and this must stay reversible.
+  const moved = canonicalRedirect(req);
+  if (moved) return NextResponse.redirect(moved, 307);
 
   // Allow public paths. Match on a path-segment boundary rather than a bare
   // prefix, so "/login" does not also allow "/login-something".

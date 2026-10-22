@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { protectedResourceMetadata } from "@/lib/oauth";
+import { requestOrigin } from "@/lib/origin";
 
 // RFC 9728 — served at /.well-known/oauth-protected-resource (via rewrite).
 // Public, cacheable, CORS-open so any MCP client can discover the auth server.
@@ -9,8 +10,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "*",
 };
 
-export function GET(): NextResponse {
-  return NextResponse.json(protectedResourceMetadata(), { headers: CORS });
+export function GET(req: NextRequest): NextResponse {
+  return NextResponse.json(protectedResourceMetadata(requestOrigin(req)), { headers: CORS });
 }
 
 export function OPTIONS(): NextResponse {

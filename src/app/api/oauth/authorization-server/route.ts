@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { authorizationServerMetadata } from "@/lib/oauth";
+import { requestOrigin } from "@/lib/origin";
 
 // RFC 8414 — served at /.well-known/oauth-authorization-server (via rewrite).
 const CORS = {
@@ -8,8 +9,8 @@ const CORS = {
   "Access-Control-Allow-Headers": "*",
 };
 
-export function GET(): NextResponse {
-  return NextResponse.json(authorizationServerMetadata(), { headers: CORS });
+export function GET(req: NextRequest): NextResponse {
+  return NextResponse.json(authorizationServerMetadata(requestOrigin(req)), { headers: CORS });
 }
 
 export function OPTIONS(): NextResponse {

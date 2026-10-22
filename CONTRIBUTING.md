@@ -14,7 +14,7 @@ to a PR.
 
 ## Getting it running
 
-You do not need to run xkg to use it — the hosted instance at [mnemos-capture.vercel.app](https://mnemos-capture.vercel.app) is the supported way in. This section is for working on the code.
+You do not need to run xkg to use it — the hosted instance at [xkg.xmu.sh](https://xkg.xmu.sh) is the supported way in. This section is for working on the code.
 
 | | |
 | --- | --- |
@@ -125,7 +125,7 @@ Do not open a public issue for a vulnerability. Report it privately through
 xkg is MIT licensed, so you may run your own instance. It is not a supported path and there is no
 deployment guide: a self-hosted copy does not receive the security fixes made here, and this project
 has shipped several that matter. The hosted instance at
-[mnemos-capture.vercel.app](https://mnemos-capture.vercel.app) is the maintained way to use it.
+[xkg.xmu.sh](https://xkg.xmu.sh) is the maintained way to use it.
 
 ## Tech stack
 

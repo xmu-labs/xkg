@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getUserByApiKey, getUserById } from "@/lib/db";
 import type { User } from "@/lib/db";
 import { verifyToken, wwwAuthenticateHeader } from "@/lib/oauth";
+import { requestOrigin } from "@/lib/origin";
 import { issueMcpSessionId, verifyMcpSessionId } from "@/lib/mcp-session";
 import { env } from "@/lib/env";
 import { TOOLS, type ToolName } from "@/lib/mcp/tools";
@@ -41,10 +42,10 @@ const CORS = {
 const DEFAULT_PROTOCOL_VERSION = "2025-06-18";
 
 /** 401 that tells the client where to discover the OAuth authorization server. */
-function unauthorized(message: string): NextResponse {
+function unauthorized(req: NextRequest, message: string): NextResponse {
   return NextResponse.json(
     { jsonrpc: "2.0", error: { code: -32600, message } },
-    { status: 401, headers: { ...CORS, "WWW-Authenticate": wwwAuthenticateHeader() } },
+    { status: 401, headers: { ...CORS, "WWW-Authenticate": wwwAuthenticateHeader(requestOrigin(req)) } },
   );
 }
 
@@ -150,12 +151,12 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
   const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
 
   if (!token) {
-    return unauthorized("Missing access token");
+    return unauthorized(req, "Missing access token");
   }
 
   const user = await resolveUser(token);
   if (!user) {
-    return unauthorized("Invalid or expired access token");
+    return unauthorized(req, "Invalid or expired access token");
   }
 
   // Content negotiation: SSE only when the client accepts it and not JSON.

@@ -146,16 +146,20 @@ export function randomClientId(): string {
 
 // ── Metadata ──
 
-/** The canonical MCP resource URL this authorization server protects. */
-export function mcpResourceUrl(): string {
-  return `${env.appUrl}/api/mcp`;
+// Each function takes the origin the client called (see lib/origin): a
+// connector set up on an older address must be told about that address, or it
+// rejects the metadata as describing a different server.
+
+/** The MCP resource URL this authorization server protects. */
+export function mcpResourceUrl(origin: string = env.appUrl): string {
+  return `${origin}/api/mcp`;
 }
 
 /** RFC 9728 — OAuth 2.0 Protected Resource Metadata. */
-export function protectedResourceMetadata(): Record<string, unknown> {
+export function protectedResourceMetadata(origin: string = env.appUrl): Record<string, unknown> {
   return {
-    resource: mcpResourceUrl(),
-    authorization_servers: [env.appUrl],
+    resource: mcpResourceUrl(origin),
+    authorization_servers: [origin],
     scopes_supported: [MCP_SCOPE],
     bearer_methods_supported: ["header"],
     resource_documentation: "https://github.com/xmu-labs/xkg",
@@ -163,12 +167,12 @@ export function protectedResourceMetadata(): Record<string, unknown> {
 }
 
 /** RFC 8414 — OAuth 2.0 Authorization Server Metadata. */
-export function authorizationServerMetadata(): Record<string, unknown> {
+export function authorizationServerMetadata(origin: string = env.appUrl): Record<string, unknown> {
   return {
-    issuer: env.appUrl,
-    authorization_endpoint: `${env.appUrl}/api/oauth/authorize`,
-    token_endpoint: `${env.appUrl}/api/oauth/token`,
-    registration_endpoint: `${env.appUrl}/api/oauth/register`,
+    issuer: origin,
+    authorization_endpoint: `${origin}/api/oauth/authorize`,
+    token_endpoint: `${origin}/api/oauth/token`,
+    registration_endpoint: `${origin}/api/oauth/register`,
     scopes_supported: [MCP_SCOPE],
     response_types_supported: ["code"],
     grant_types_supported: ["authorization_code", "refresh_token"],
@@ -178,7 +182,7 @@ export function authorizationServerMetadata(): Record<string, unknown> {
 }
 
 /** The WWW-Authenticate value the MCP endpoint returns on an unauthenticated request. */
-export function wwwAuthenticateHeader(): string {
-  const metadataUrl = `${env.appUrl}/.well-known/oauth-protected-resource`;
+export function wwwAuthenticateHeader(origin: string = env.appUrl): string {
+  const metadataUrl = `${origin}/.well-known/oauth-protected-resource`;
   return `Bearer resource_metadata="${metadataUrl}"`;
 }

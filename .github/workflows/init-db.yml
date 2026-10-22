@@ -4,7 +4,7 @@
 # → Run workflow.
 #
 # Requires two repository secrets:
-#   XKG_APP_URL          e.g. https://mnemos-capture.vercel.app  (no trailing slash)
+#   XKG_APP_URL          e.g. https://xkg.xmu.sh  (no trailing slash)
 #   XKG_ADMIN_SECRET     the same value as the deployment's ADMIN_SECRET
 # The older MNEMOS_APP_URL / MNEMOS_ADMIN_SECRET names are still read as a fallback.
 name: Initialize database

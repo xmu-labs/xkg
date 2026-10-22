@@ -119,4 +119,21 @@ describe("metadata documents", () => {
       'resource_metadata="https://xkg.example.com/.well-known/oauth-protected-resource"',
     );
   });
+
+  // A connector registered on an older address must see that address, or it
+  // rejects the metadata as describing a different server.
+  it("describes the origin it is given", () => {
+    const old = "https://old.example.com";
+    expect(oauth.protectedResourceMetadata(old)).toMatchObject({
+      resource: `${old}/api/mcp`,
+      authorization_servers: [old],
+    });
+    expect(oauth.authorizationServerMetadata(old)).toMatchObject({
+      issuer: old,
+      authorization_endpoint: `${old}/api/oauth/authorize`,
+      token_endpoint: `${old}/api/oauth/token`,
+      registration_endpoint: `${old}/api/oauth/register`,
+    });
+    expect(oauth.wwwAuthenticateHeader(old)).toContain(`resource_metadata="${old}/.well-known/oauth-protected-resource"`);
+  });
 });
