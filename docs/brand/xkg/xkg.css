@@ -1,0 +1,21 @@
+/* CANDIDATE ONLY — XKG Lunar Graphite. Does not replace production CSS. */
+:root {
+ --xkg-obsidian: #11131A; --xkg-graphite: #2A2D3B;
+ --xkg-slate-iris: #777493; --xkg-moonstone: #B8B5D0;
+ --xkg-porcelain: #F2F1F6; --xkg-xmu-cyan: #7EC8F3;
+ --xkg-font-heading: Sora, Inter, system-ui, sans-serif;
+ --xkg-font-body: Inter, system-ui, sans-serif;
+ --xkg-bg-canvas: #F2F1F6; --xkg-bg-surface: #FFFFFF;
+ --xkg-text-primary: #11131A; --xkg-text-secondary: #49485E;
+ --xkg-action-primary: #2A2D3B; --xkg-action-primary-text: #F2F1F6;
+ --xkg-action-primary-hover: #45445E; --xkg-action-secondary: #E5E3ED;
+ --xkg-action-secondary-text: #2A2D3B; --xkg-focus-ring: #2A2D3B;
+}
+html[data-theme="dark"] {
+ --xkg-bg-canvas: #11131A; --xkg-bg-surface: #202332;
+ --xkg-text-primary: #F2F1F6; --xkg-text-secondary: #B8B5D0;
+ --xkg-action-primary: #B8B5D0; --xkg-action-primary-text: #11131A;
+ --xkg-action-primary-hover: #C9C6DD; --xkg-action-secondary: #2A2D3B;
+ --xkg-action-secondary-text: #F2F1F6; --xkg-focus-ring: #B8B5D0;
+}
+/* Slate Iris fails WCAG AA normal text on Obsidian and Porcelain. */
