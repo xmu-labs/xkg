@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
+import { isHostedInstance } from "@/lib/hosted";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "var(--input-bg)",
@@ -195,11 +196,14 @@ export default function LoginPage() {
         <p className="text-[11px] text-center pt-4" style={{ color: "var(--fg-muted)" }}>
           First time? Sign in with GitHub to get started.
         </p>
-        <p className="text-[11px] text-center" style={{ color: "var(--fg-muted)" }}>
-          By signing in you agree to the{" "}
-          <Link href="/terms" className="underline underline-offset-2">Terms</Link> and{" "}
-          <Link href="/privacy" className="underline underline-offset-2">Privacy Policy</Link>.
-        </p>
+        {/* The hosted service's terms; a self-hosted copy has its own operator. */}
+        {isHostedInstance() && (
+          <p className="text-[11px] text-center" style={{ color: "var(--fg-muted)" }}>
+            By signing in you agree to the{" "}
+            <Link href="/terms" className="underline underline-offset-2">Terms</Link> and{" "}
+            <Link href="/privacy" className="underline underline-offset-2">Privacy Policy</Link>.
+          </p>
+        )}
       </div>
     </main>
   );
