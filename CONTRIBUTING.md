@@ -101,6 +101,9 @@ the file being edited. Enable these hooks only for project context you intend to
 - Say what breaks. If a change invalidates sessions, forces re-auth, or needs `init-db` re-run, put it
   in the PR body — that is the part a reviewer cannot infer from the diff.
 - Add a test when you fix a bug. If the bug could return, something should fail when it does.
+- Keep personal data out. This repository is public: tests, fixtures, docs and PR descriptions use
+  made-up data, never real captures, file names, repository names, emails or URLs from anyone's
+  account, even when a test reproduces a real incident. CI rejects committed secrets.
 
 ## Releasing the CLI
 
