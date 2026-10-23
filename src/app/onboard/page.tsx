@@ -82,7 +82,7 @@ export default function OnboardPage() {
   if (status === "done" && result) {
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-sm space-y-6">
+        <div className="w-full max-w-sm stack-6">
           <div className="flex flex-col items-center mb-2">
             <div className="text-4xl mb-4">✓</div>
             <h1 className="text-lg font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
@@ -90,7 +90,7 @@ export default function OnboardPage() {
             </h1>
           </div>
 
-          <div className="rounded-2xl p-4 space-y-3" style={CARD_STYLE}>
+          <div className="rounded-2xl p-4 stack-3" style={CARD_STYLE}>
             <div>
               <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>Knowledge repo</p>
               <a href={result.repoUrl} target="_blank" rel="noopener noreferrer"
@@ -129,7 +129,7 @@ export default function OnboardPage() {
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
-      <div className="w-full max-w-sm space-y-4">
+      <div className="w-full max-w-sm stack-4">
 
         <div className="flex flex-col items-center mb-6">
           <BrandMark size={96} className="w-24 h-24 mb-4" />
@@ -142,7 +142,7 @@ export default function OnboardPage() {
         </div>
 
         {/* Step 1: Provider + API key */}
-        <div className="rounded-2xl p-4 space-y-2" style={CARD_STYLE}>
+        <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
           <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
             LLM provider
           </label>
@@ -175,7 +175,7 @@ export default function OnboardPage() {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={providerInfo.placeholder}
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none font-mono"
+            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden font-mono"
             style={INPUT_STYLE}
             onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
@@ -186,7 +186,7 @@ export default function OnboardPage() {
         </div>
 
         {/* Step 2: Repo name */}
-        <div className="rounded-2xl p-4 space-y-2" style={CARD_STYLE}>
+        <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
           <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
             Knowledge repo name
           </label>
@@ -195,7 +195,7 @@ export default function OnboardPage() {
             value={repoName}
             onChange={(e) => setRepoName(e.target.value)}
             placeholder="xkg-knowledge"
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none"
+            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden"
             style={INPUT_STYLE}
             onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
@@ -223,7 +223,7 @@ export default function OnboardPage() {
         </div>
 
         {/* Step 3: PIN */}
-        <div className="rounded-2xl p-4 space-y-2" style={CARD_STYLE}>
+        <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
           <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
             Set a PIN
           </label>
@@ -233,7 +233,7 @@ export default function OnboardPage() {
             onChange={(e) => setPin(e.target.value)}
             placeholder={`Quick unlock PIN (min ${MIN_PIN_LENGTH} characters)`}
             minLength={MIN_PIN_LENGTH}
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none"
+            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden"
             style={INPUT_STYLE}
             onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
             onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}

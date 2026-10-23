@@ -28,7 +28,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const INPUT_CLASS =
-  "w-full rounded-2xl px-4 py-3 text-base transition-colors focus:outline-none";
+  "w-full rounded-2xl px-4 py-3 text-base transition-colors focus:outline-hidden";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "var(--input-bg)",
@@ -164,7 +164,7 @@ export default function CapturePage() {
 
       {/* Capture form */}
       {status !== "done" && (
-        <div className="w-full space-y-2.5">
+        <div className="w-full stack-2.5">
           <input
             type="text"
             placeholder="Title (optional — inferred if blank)"
@@ -218,11 +218,11 @@ export default function CapturePage() {
 
       {/* Result */}
       {status === "done" && result && (
-        <div className="w-full space-y-3 animate-in fade-in duration-300">
+        <div className="w-full stack-3 animate-in fade-in duration-300">
 
           {/* Title row */}
           <div className="flex items-start justify-between gap-4 pb-1">
-            <div className="space-y-1.5 min-w-0">
+            <div className="stack-1.5 min-w-0">
               {result.capture.inferredType && (
                 <span className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
                   {TYPE_LABELS[result.capture.inferredType] ?? result.capture.inferredType}
@@ -261,7 +261,7 @@ export default function CapturePage() {
           {/* Takeaways */}
           <div className="rounded-2xl p-4" style={CARD_STYLE}>
             <p className="text-[10px] font-medium uppercase tracking-widest mb-3" style={{ color: "var(--gold)" }}>Takeaways</p>
-            <ul className="space-y-2.5">
+            <ul className="stack-2.5">
               {result.capture.takeaways.map((t, i) => (
                 <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
                   <span className="mt-0.5 shrink-0 select-none" style={{ color: "var(--gold)" }}>–</span>
@@ -273,7 +273,7 @@ export default function CapturePage() {
 
           {/* Quotes */}
           {result.capture.quotes.length > 0 && (
-            <div className="rounded-2xl p-4 space-y-3" style={CARD_STYLE}>
+            <div className="rounded-2xl p-4 stack-3" style={CARD_STYLE}>
               <p className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>Quote</p>
               {result.capture.quotes.map((q, i) => (
                 <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
