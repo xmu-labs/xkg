@@ -53,6 +53,19 @@ for name in "${PACKAGES[@]}"; do
   fi
 done
 
+# Stop here when every name is already published. This also keeps macOS's
+# bash 3.2, which treats an empty "${array[@]}" as unbound under set -u, out
+# of the loop below.
+if [ ${#TO_PUBLISH[@]} -eq 0 ]; then
+  echo "Nothing to publish."
+  exit 0
+fi
+
+# Build before npm reads package.json: it checks the bin paths
+# (dist/cli/index.js) before prepublishOnly runs, and warns "No bin file
+# found" on a fresh clone.
+npm run build:cli
+
 # The other names publish the same tarball: rename in package.json for each,
 # then put it back whatever happens.
 cp package.json package.json.publish-backup

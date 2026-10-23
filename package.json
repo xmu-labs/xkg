@@ -1,6 +1,6 @@
 {
   "name": "@xmu-labs/xkg",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "xkg — Turn what you discover into context your AI workers can use. Capture once, then brief, plan, and execute with any MCP-compatible tool.",
   "type": "module",
   "bin": {
