@@ -131,7 +131,9 @@ body {
   Backdrop artwork (components/Backdrop). The dark file has its blacks lifted
   to Obsidian and the light one is recolored in Porcelain, Moonstone and Slate
   Iris, so each matches its canvas. Portrait screens get a copy rotated 90°,
-  so the waves frame the page instead of being cropped away.
+  so the waves frame the page instead of being cropped away. A soft pool of
+  canvas color sits behind the centered content, so small text never lands
+  on a wave line.
 */
 :root { --backdrop: url(/brand/backdrop-light.webp); }
 :root:not([data-theme="light"]) { --backdrop: url(/brand/backdrop-dark.webp); }
@@ -143,7 +145,9 @@ body {
   position: fixed;
   inset: 0;
   z-index: -1;
-  background: var(--backdrop) center / cover no-repeat;
+  background:
+    radial-gradient(min(24rem, 50vw) min(20rem, 34vh) at 50% 50%, color-mix(in srgb, var(--bg) 80%, transparent) 50%, transparent),
+    var(--backdrop) center / cover no-repeat;
   pointer-events: none;
 }
 .backdrop-quiet { opacity: 0.3; }
