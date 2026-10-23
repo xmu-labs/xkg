@@ -87,6 +87,11 @@ export function decrypt(stored: string | null): string | null {
  * `crypto.randomBytes`, so there is no dictionary to attack and no need for a
  * slow KDF — which would also make every MCP request pay the cost.
  */
+/** True for a stored API key that is already a hash, not a legacy plaintext key. */
+export function isHashedApiKey(value: string): boolean {
+  return typeof value === "string" && value.startsWith(HASH_PREFIX);
+}
+
 export function hashApiKey(apiKey: string): string {
   return HASH_PREFIX + crypto.createHash("sha256").update(apiKey).digest("hex");
 }

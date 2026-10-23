@@ -157,6 +157,23 @@ textarea::placeholder {
   color: var(--fg-muted);
 }
 
+/* Privacy Policy and Terms of Service (components/LegalPage). */
+.legal { font-size: 0.9375rem; line-height: 1.65; }
+.legal h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.01em; margin-top: 0.5rem; }
+.legal h2 { font-size: 1.125rem; font-weight: 600; margin-top: 2.5rem; }
+.legal p, .legal ul, .legal ol, .legal .legal-table { margin-top: 0.75rem; }
+.legal ul { list-style: disc; padding-left: 1.25rem; }
+.legal ol { list-style: decimal; padding-left: 1.25rem; }
+.legal li + li { margin-top: 0.375rem; }
+.legal a { color: var(--gold); text-decoration: underline; text-underline-offset: 2px; }
+.legal code { font-size: 0.85em; background: var(--input-bg); padding: 0.1em 0.35em; border-radius: 0.25rem; }
+.legal .legal-meta { font-size: 0.8125rem; color: var(--fg-muted); }
+.legal .legal-table { overflow-x: auto; }
+.legal table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; }
+.legal th, .legal td { text-align: left; vertical-align: top; padding: 0.5rem 0.75rem 0.5rem 0; border-bottom: 1px solid var(--gold-faint); }
+.legal th { font-weight: 600; color: var(--fg-muted); }
+.legal .legal-nav { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--gold-faint); font-size: 0.8125rem; color: var(--fg-muted); }
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-quick: 1ms;

@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import { getOauthClient, createOauthCode, deleteExpiredOauthCodes } from "@/lib/db";
 import { randomAuthCode, AUTH_CODE_TTL_SECONDS, MCP_SCOPE } from "@/lib/oauth";
 import { env } from "@/lib/env";
+import { isHostedInstance } from "@/lib/hosted";
 
 // OAuth 2.1 authorization endpoint.
 //   GET  — validate the request, ensure the user is signed in (GitHub), show consent.
@@ -167,6 +168,11 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
   }
   const hidden = (name: string, value: string) =>
     `<input type="hidden" name="${name}" value="${value.replace(/"/g, "&quot;")}">`;
+  // Connectors sign in here without passing the sign-in page, so the hosted
+  // service's terms are shown on this screen too.
+  const legal = isHostedInstance()
+    ? `<p style="opacity:0.6;line-height:1.4;font-size:0.75rem;margin:16px 0 0;text-align:center;">By approving you agree to the <a href="/terms" style="color:inherit;">Terms</a> and <a href="/privacy" style="color:inherit;">Privacy Policy</a>.</p>`
+    : "";
 
   const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — connect</title><style>${PAGE_STYLE}</style></head><body>
 <form method="POST" action="/api/oauth/authorize" style="max-width:24rem;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;">
@@ -187,6 +193,7 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     <button type="submit" name="action" value="deny" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:0.9rem;cursor:pointer;">Deny</button>
     <button type="submit" name="action" value="approve" style="flex:2;padding:12px;border-radius:10px;border:none;background:var(--btn);color:var(--btn-fg);font-weight:600;font-size:0.9rem;cursor:pointer;">Approve</button>
   </div>
+  ${legal}
 </form>
 </body></html>`;
 

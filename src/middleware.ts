@@ -3,6 +3,8 @@ import { canonicalRedirect } from "@/lib/origin";
 
 const PUBLIC_PATHS = [
   "/login",
+  "/privacy",
+  "/terms",
   "/api/auth",
   "/api/auth/github",
   "/api/auth/callback",

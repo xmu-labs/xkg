@@ -1,5 +1,6 @@
 import { sql } from "./sql";
-import { encrypt, decrypt, hashApiKey } from "./crypto";
+import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
+import { isLegacyPinHash, wrapLegacyHash } from "./pin";
 import type { LlmProvider } from "./types";
 
 export type { LlmProvider };
@@ -135,6 +136,49 @@ export async function initDb(): Promise<void> {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;
+
+  await upgradeLegacyData();
+}
+
+/**
+ * Bring rows stored before credentials were protected up to what the Privacy
+ * Policy says. Runs from initDb; safe to run repeatedly.
+ *
+ *  - Plaintext GitHub tokens and LLM keys are encrypted. A GitHub token is
+ *    re-encrypted at every sign-in, but an LLM key is only written at
+ *    onboarding, so an old one would otherwise stay plaintext for good.
+ *  - Plaintext MCP keys are hashed (otherwise upgraded only when next used).
+ *  - Unsalted SHA-256 PIN hashes are wrapped in salted scrypt (lib/pin).
+ *  - PIN lockout rows keyed by username, from before they were keyed by user
+ *    id, are deleted: nothing reads them, and a renamed account's old row
+ *    could not be found at account deletion.
+ *
+ * Each update is conditional on the old value, so a sign-in or onboarding
+ * that writes the same column meanwhile is never overwritten.
+ */
+export async function upgradeLegacyData(): Promise<void> {
+  const { rows } = await sql<Pick<User, "id" | "github_token" | "llm_api_key" | "api_key" | "pin_hash">>`
+    SELECT id, github_token, llm_api_key, api_key, pin_hash FROM users
+  `;
+  for (const row of rows) {
+    if (row.github_token && !isEncrypted(row.github_token)) {
+      await sql`UPDATE users SET github_token = ${encrypt(row.github_token)}
+        WHERE id = ${row.id} AND github_token = ${row.github_token}`;
+    }
+    if (row.llm_api_key && !isEncrypted(row.llm_api_key)) {
+      await sql`UPDATE users SET llm_api_key = ${encrypt(row.llm_api_key)}
+        WHERE id = ${row.id} AND llm_api_key = ${row.llm_api_key}`;
+    }
+    if (row.api_key && !isHashedApiKey(row.api_key)) {
+      await sql`UPDATE users SET api_key = ${hashApiKey(row.api_key)}
+        WHERE id = ${row.id} AND api_key = ${row.api_key}`;
+    }
+    if (row.pin_hash && isLegacyPinHash(row.pin_hash)) {
+      await sql`UPDATE users SET pin_hash = ${wrapLegacyHash(row.pin_hash)}
+        WHERE id = ${row.id} AND pin_hash = ${row.pin_hash}`;
+    }
+  }
+  await sql`DELETE FROM login_attempts WHERE identifier NOT LIKE 'user:%'`;
 }
 
 // ── Credential hydration ──
@@ -322,6 +366,26 @@ export async function revokeUserTokens(userId: number): Promise<number> {
     RETURNING token_version
   `;
   return rows[0]?.token_version ?? 0;
+}
+
+/**
+ * Delete everything xkg holds about a user: the account row and every record
+ * keyed to it. Captures are untouched — they live in the user's GitHub repo.
+ *
+ * The users row goes last. A failure part-way leaves the account in place, so
+ * the user can retry from Settings; deleting it first would strand the other
+ * rows with no way back to them.
+ */
+export async function deleteUserData(userId: number, username: string): Promise<void> {
+  await sql`DELETE FROM oauth_refresh_tokens WHERE user_id = ${userId}`;
+  await sql`DELETE FROM oauth_codes WHERE user_id = ${userId}`;
+  await sql`DELETE FROM usage_quota WHERE identifier = ${`capture:user:${userId}`}`;
+  // PIN lockouts are keyed by user id; rows from before that were keyed by username.
+  await sql`
+    DELETE FROM login_attempts
+    WHERE identifier IN (${`user:${userId}`}, ${username.toLowerCase()})
+  `;
+  await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 
 // ── OAuth refresh token tracking ──
