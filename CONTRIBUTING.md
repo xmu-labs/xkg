@@ -104,8 +104,8 @@ the file being edited. Enable these hooks only for project context you intend to
 
 ## Releasing the CLI
 
-Each version is published under two npm names: `xkg`, and `mnemos-capture` so existing installs keep
-updating. `scripts/publish.sh` publishes both. Do not run `npm publish` directly.
+Each version is published under two npm names: `@xmu-labs/xkg`, and `mnemos-capture` so existing
+installs keep updating. `scripts/publish.sh` publishes both. Do not run `npm publish` directly.
 
 1. Open a PR that runs `npm version <patch|minor|major> --no-git-tag-version`, so `package.json` and
    `package-lock.json` move together. Merge it.

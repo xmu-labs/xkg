@@ -12,12 +12,13 @@ type HookGroup = { hooks?: HookEntry[] };
 type HookEntry = { type: string; command: string };
 
 /** The npm package new hooks run. Releases also publish it as `mnemos-capture`. */
-const PACKAGE = "xkg";
+const PACKAGE = "@xmu-labs/xkg";
 
 /**
  * Matches hooks this CLI installed under either package name, with or without
- * a version: `npx -y xkg@latest inbox-check`, `npx -y mnemos-capture@latest
- * inbox-check`, and the legacy `npx mnemos-capture inbox-check`.
+ * a version: `npx -y @xmu-labs/xkg@latest inbox-check`,
+ * `npx -y mnemos-capture@latest inbox-check`, and the legacy
+ * `npx mnemos-capture inbox-check`.
  */
 function isOurHook(cmd: string, subcommand: "inbox-check" | "vault-check"): boolean {
   // The package must be a whole shell word: `my-xkg` or `@acme/xkg` is someone else's.

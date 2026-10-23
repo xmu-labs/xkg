@@ -123,8 +123,8 @@ describe("setupHooks", () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("k", { silent: true, vault: true });
     const settings = readSettings();
-    expect(commands(settings, "SessionStart")).toEqual(["npx -y xkg@latest inbox-check --key k"]);
-    expect(commands(settings, "PreToolCall")).toEqual(["npx -y xkg@latest vault-check --key k"]);
+    expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k"]);
+    expect(commands(settings, "PreToolCall")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
   });
 
   it("skipIfExists: migrates mnemos-capture hooks to xkg, keeping --briefing", async () => {
@@ -138,12 +138,12 @@ describe("setupHooks", () => {
     setupHooks("k", { silent: true, skipIfExists: true });
     setupPreToolHook("k", { silent: true, skipIfExists: true });
     const settings = readSettings();
-    expect(commands(settings, "SessionStart")).toEqual(["npx -y xkg@latest inbox-check --key k --briefing"]);
-    expect(commands(settings, "PreToolCall")).toEqual(["npx -y xkg@latest vault-check --key k"]);
+    expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k --briefing"]);
+    expect(commands(settings, "PreToolCall")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
   });
 
   it("skipIfExists: leaves a current xkg hook and unrelated hooks alone", async () => {
-    const current = "npx -y xkg@latest inbox-check --key user-key --briefing";
+    const current = "npx -y @xmu-labs/xkg@latest inbox-check --key user-key --briefing";
     const other = "echo inbox-check reminder";
     writeSettings({
       hooks: { SessionStart: [{ hooks: [{ type: "command", command: current }, { type: "command", command: other }] }] },
@@ -164,7 +164,7 @@ describe("setupHooks", () => {
     expect(commands(readSettings(), "SessionStart")).toEqual([
       scoped,
       prefixed,
-      "npx -y xkg@latest inbox-check --key k",
+      "npx -y @xmu-labs/xkg@latest inbox-check --key k",
     ]);
   });
 
