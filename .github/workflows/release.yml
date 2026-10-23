@@ -12,6 +12,11 @@
 #   2. GitHub → Releases → Draft a new release → new tag `vX.Y.Z` on `main`
 #      → Publish. Mark it as a pre-release to publish under the `next` dist-tag.
 #
+# While npm/cli#9969 blocks trusted publishing for this repo, publish by hand
+# first, from a clean checkout of the bump commit (`npm publish --access
+# public`), then do step 2: the workflow sees the version on npm with the
+# tagged commit as its gitHead, skips publishing, and still verifies.
+#
 # Auth: npm trusted publishing (OIDC) — no long-lived token. One-time setup on
 # npmjs.com → mnemos-capture → Settings → Trusted publishing → GitHub Actions,
 # repository xmu-labs/xkg, workflow `release.yml`. Provenance also requires
@@ -73,9 +78,18 @@ jobs:
             echo "::error::Tag $TAG points at $(git rev-parse --short HEAD), which is not on main. Merge the version bump first."
             exit 1
           fi
+          # Published by hand from this exact commit (npm trusted publishing
+          # rejects repos renamed after 2026-07-15, npm/cli#9969): skip the
+          # publish and let the last step confirm the tag and npm agree. A
+          # version published from any other commit is still an error.
           if npm view "mnemos-capture@$VERSION" version >/dev/null 2>&1; then
-            echo "::error::mnemos-capture@$VERSION is already on npm. Bump the version."
-            exit 1
+            PUBLISHED_HEAD=$(npm view "mnemos-capture@$VERSION" gitHead 2>/dev/null || true)
+            if [ "$PUBLISHED_HEAD" != "$(git rev-parse HEAD)" ]; then
+              echo "::error::mnemos-capture@$VERSION is already on npm from ${PUBLISHED_HEAD:-an unknown commit}. Bump the version."
+              exit 1
+            fi
+            echo "::notice::mnemos-capture@$VERSION was already published from this commit; skipping publish."
+            echo "ALREADY_PUBLISHED=1" >> "$GITHUB_ENV"
           fi
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
@@ -93,6 +107,7 @@ jobs:
 
       # prepublishOnly builds the CLI into dist/cli.
       - name: Publish
+        if: env.ALREADY_PUBLISHED != '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --provenance --access public --tag "$DIST_TAG"
