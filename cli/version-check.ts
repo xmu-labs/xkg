@@ -3,7 +3,7 @@
 // Strategy: on serve-mcp startup, query npm for the latest published version.
 // If behind, respawn the process via `npx -y <name>@<latest>` and proxy stdio.
 // <name> is the package this copy was installed as: every release is published
-// as both `xkg` and `mnemos-capture`, so each install updates under its own
+// as both `@xmu-labs/xkg` and `mnemos-capture`, so each install updates under its own
 // name. An XKG_UPGRADED=1 env var (MNEMOS_UPGRADED=1 from releases before
 // 1.4.1) prevents infinite recursion.
 
@@ -14,7 +14,7 @@ import { spawn } from "child_process";
 
 const CHECK_TIMEOUT_MS = 2000;
 /** The names releases are published under; anything else falls back to the first. */
-export const PACKAGE_NAMES = ["xkg", "mnemos-capture"] as const;
+export const PACKAGE_NAMES = ["@xmu-labs/xkg", "mnemos-capture"] as const;
 
 function readOwnPackage(): { name?: string; version?: string } {
   try {

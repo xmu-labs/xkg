@@ -12,7 +12,7 @@
 #   2. GitHub → Releases → Draft a new release → new tag `vX.Y.Z` on `main`
 #      → Publish. Mark it as a pre-release to publish under the `next` dist-tag.
 #
-# Every version is published under two names, `xkg` and `mnemos-capture` (the
+# Every version is published under two names, `@xmu-labs/xkg` and `mnemos-capture` (the
 # old name, so existing installs keep updating), by scripts/publish.sh.
 #
 # While npm/cli#9969 blocks trusted publishing for this repo, publish by hand
@@ -47,7 +47,7 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name }}
       DIST_TAG: ${{ github.event.release.prerelease && 'next' || 'latest' }}
-      PACKAGES: xkg mnemos-capture # keep in sync with scripts/publish.sh
+      PACKAGES: "@xmu-labs/xkg mnemos-capture" # keep in sync with scripts/publish.sh
     steps:
       - uses: actions/checkout@v7
         with:

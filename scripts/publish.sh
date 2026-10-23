@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Publishes the current version to npm under both package names:
-#   xkg             — the name going forward
+#   @xmu-labs/xkg   — the name going forward (scoped: npm rejects plain `xkg`
+#                     as too similar to existing packages)
 #   mnemos-capture  — the old name, kept so existing installs, MCP configs and
 #                     hooks that run `npx mnemos-capture@latest` keep updating
 #
@@ -27,7 +28,7 @@ fi
 VERSION=$(node -p 'require("./package.json").version')
 HEAD=$(git rev-parse HEAD)
 
-PACKAGES=(xkg mnemos-capture)
+PACKAGES=(@xmu-labs/xkg mnemos-capture)
 
 # Check every name before publishing any: npm versions can never be replaced,
 # so a conflict found after the first publish would leave the names out of sync.
