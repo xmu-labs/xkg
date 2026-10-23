@@ -40,7 +40,10 @@
     "type": "git",
     "url": "git+https://github.com/xmu-labs/xkg.git"
   },
-  "homepage": "https://github.com/xmu-labs/xkg",
+  "homepage": "https://xkg.xmu.sh",
+  "bugs": {
+    "url": "https://github.com/xmu-labs/xkg/issues"
+  },
   "files": [
     "dist/cli/",
     "LICENSE",

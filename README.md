@@ -423,7 +423,13 @@ Working on the code? See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT License](./LICENSE)
+[MIT License](./LICENSE). Contributions are welcome under the same licence; see
+[CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+**Trademarks.** The MIT licence covers the code, not names or logos: the xkg name and logo are not
+licensed for use as your own brand. Claude, ChatGPT, Codex, Gemini, Grok, Cursor and VS Code are
+trademarks of their respective owners, named here only to say which tools xkg works with; no
+endorsement is implied.
 
 If you use xkg in published work:
 
