@@ -133,4 +133,4 @@ jobs:
               exit 1
             fi
             echo "::notice::$NAME@$VERSION published as '$DIST_TAG' from $EXPECTED."
-          done"
+          done

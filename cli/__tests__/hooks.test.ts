@@ -153,6 +153,21 @@ describe("setupHooks", () => {
     expect(commands(readSettings(), "SessionStart")).toEqual([current, other]);
   });
 
+  it("skipIfExists: does not treat other packages named like xkg as ours", async () => {
+    const scoped = "npx -y @acme/xkg@latest inbox-check --key theirs";
+    const prefixed = "npx -y my-xkg inbox-check --key theirs";
+    writeSettings({
+      hooks: { SessionStart: [{ hooks: [{ type: "command", command: scoped }, { type: "command", command: prefixed }] }] },
+    });
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("k", { silent: true, skipIfExists: true });
+    expect(commands(readSettings(), "SessionStart")).toEqual([
+      scoped,
+      prefixed,
+      "npx -y xkg@latest inbox-check --key k",
+    ]);
+  });
+
   type HookSettings = { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> };
 
   function readSettings(): HookSettings {

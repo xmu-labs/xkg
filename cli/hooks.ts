@@ -20,7 +20,8 @@ const PACKAGE = "xkg";
  * inbox-check`, and the legacy `npx mnemos-capture inbox-check`.
  */
 function isOurHook(cmd: string, subcommand: "inbox-check" | "vault-check"): boolean {
-  return new RegExp(`\\b(?:${PACKAGE}|mnemos-capture)(?:@[\\w.-]+)?\\s+${subcommand}\\b`).test(cmd);
+  // The package must be a whole shell word: `my-xkg` or `@acme/xkg` is someone else's.
+  return new RegExp(`(?:^|\\s)(?:${PACKAGE}|mnemos-capture)(?:@[\\w.-]+)?\\s+${subcommand}\\b`).test(cmd);
 }
 
 function isXkgHook(cmd: string): boolean {
