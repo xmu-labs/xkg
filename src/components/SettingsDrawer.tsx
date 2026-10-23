@@ -32,17 +32,17 @@ function readTheme(): Theme {
     const stored = localStorage.getItem("xkg-theme") ?? localStorage.getItem("xmu-theme") ?? localStorage.getItem("mnemos-theme");
     if (stored === "dark" || stored === "light") return stored;
   } catch { /* private mode */ }
-  if (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark") {
-    return "dark";
+  if (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light") {
+    return "light";
   }
-  return "light";
+  return "dark";
 }
 
 function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
   try { localStorage.setItem("xkg-theme", theme); } catch { /* ignore */ }
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", theme === "dark" ? "#0B1120" : "#E4EDF6");
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#11131A" : "#F2F1F6");
 }
 
 function mcpCommand(key: string): string {
@@ -99,7 +99,7 @@ export default function SettingsDrawer({
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const [theme, setTheme] = useState<Theme>(() =>
-    typeof document === "undefined" ? "light" : readTheme(),
+    typeof document === "undefined" ? "dark" : readTheme(),
   );
   const titleId = useId();
   const closeRef = useRef<HTMLButtonElement>(null);

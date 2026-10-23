@@ -132,7 +132,7 @@ export default function OnboardPage() {
       <div className="w-full max-w-sm stack-4">
 
         <div className="flex flex-col items-center mb-6">
-          <BrandMark size={96} className="w-24 h-24 mb-4" />
+          <BrandMark size={144} variant="expressive" className="-my-6" />
           <h1 className="text-lg font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
             Set up your knowledge hub
           </h1>
@@ -263,7 +263,7 @@ export default function OnboardPage() {
         </button>
 
         {status === "error" && (
-          <p className="text-sm text-center" style={{ color: "#f87171" }}>{errorMsg}</p>
+          <p className="text-sm text-center" style={{ color: "var(--danger)" }}>{errorMsg}</p>
         )}
       </div>
     </main>
