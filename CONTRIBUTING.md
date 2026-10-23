@@ -12,6 +12,8 @@ before the code exists.
 Small, obviously-correct fixes — a typo, a broken link, a failing edge case with a test — go straight
 to a PR.
 
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Getting it running
 
 You do not need to run xkg to use it — the hosted instance at [xkg.xmu.sh](https://xkg.xmu.sh) is the supported way in. This section is for working on the code.
