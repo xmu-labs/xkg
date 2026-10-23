@@ -39,6 +39,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Known high or critical advisories in what ships to users. Dev-only
+      # tooling is excluded: its advisories never reach production, and
+      # several are only fixable upstream (eslint-config-next). A new advisory
+      # can turn this red without a code change; the fix is a dependency bump.
+      - name: No known vulnerable production dependencies
+        run: npm audit --omit=dev --audit-level=high
+
       - name: Typecheck
         run: npm run typecheck
 
@@ -51,3 +58,22 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+  # Blocks a pull request that adds a dependency with a known high or critical
+  # vulnerability, or under a licence outside this list. The list is every
+  # licence already in the tree; copyleft licences (GPL, AGPL) are left out
+  # because they are not compatible with shipping this project under MIT.
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/dependency-review-action@v5
+        with:
+          fail-on-severity: high
+          allow-licenses: >-
+            MIT, Apache-2.0, ISC, BSD-2-Clause, BSD-3-Clause, 0BSD, MPL-2.0,
+            LGPL-3.0-or-later, Python-2.0, CC-BY-4.0, CC0-1.0, Unlicense,
+            BlueOak-1.0.0
