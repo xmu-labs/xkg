@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in xkg doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This repository is public. Don't paste API keys, MCP keys, PINs, or the
+        contents of private captures. Security issues go to
+        [private advisories](https://github.com/xmu-labs/xkg/security/advisories/new) instead.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen?
+      options:
+        - Web app (xkg.xmu.sh)
+        - MCP connector in an AI worker
+        - CLI (serve-mcp, setup-hooks, kos)
+        - Self-hosted instance
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, including the exact error message.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment and date
+      description: The browser or AI worker you used, and when it happened. The CLI runs `@latest`, so the date identifies the release.

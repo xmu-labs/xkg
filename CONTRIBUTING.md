@@ -12,6 +12,8 @@ before the code exists.
 Small, obviously-correct fixes — a typo, a broken link, a failing edge case with a test — go straight
 to a PR.
 
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 ## Getting it running
 
 You do not need to run xkg to use it — the hosted instance at [xkg.xmu.sh](https://xkg.xmu.sh) is the supported way in. This section is for working on the code.
@@ -101,6 +103,9 @@ the file being edited. Enable these hooks only for project context you intend to
 - Say what breaks. If a change invalidates sessions, forces re-auth, or needs `init-db` re-run, put it
   in the PR body — that is the part a reviewer cannot infer from the diff.
 - Add a test when you fix a bug. If the bug could return, something should fail when it does.
+- Keep personal data out. This repository is public: tests, fixtures, docs and PR descriptions use
+  made-up data, never real captures, file names, repository names, emails or URLs from anyone's
+  account, even when a test reproduces a real incident. CI rejects committed secrets.
 
 ## Releasing the CLI
 

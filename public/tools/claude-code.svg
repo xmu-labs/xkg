@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Claude Code">
-  <rect x="1" y="1" width="62" height="62" rx="14" fill="#fcfcfc" stroke="#9dd8f5" stroke-width="1.5"/>
-  <g transform="translate(16,16) scale(1.3333333333333333)">
-    <path fill="#D97757" fill-rule="evenodd" d="M21 10.5h3v3h-3v3h-1.5v3H18v-3h-1.5v3H15v-3H9v3H7.5v-3H6v3H4.5v-3H3v-3H0v-3h3v-6h18Zm-15 0h1.5v-3H6Zm10.5 0H18v-3h-1.5z"/>
-  </g>
-</svg>

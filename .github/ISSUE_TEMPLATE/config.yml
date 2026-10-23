@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/xmu-labs/xkg/security/advisories/new
+    about: Please report privately, never in a public issue. See SECURITY.md.
+  - name: Setup and usage help
+    url: https://github.com/xmu-labs/xkg#start-here
+    about: Connecting a worker, the CLI and hooks are covered in the README.
