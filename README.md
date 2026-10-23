@@ -1,10 +1,7 @@
 <div align="center">
   <br>
   <a href="https://xkg.xmu.sh">
-    <picture>
-      <source media="(prefers-color-scheme: light)" srcset="public/brand/xkg-icon-light.png">
-      <img src="public/brand/xkg-icon-dark.png" width="160" height="160" alt="xkg">
-    </picture>
+    <img src="public/brand/xkg-icon-dark.png" width="160" height="160" alt="xkg">
   </a>
   <br>
   <br>

@@ -211,11 +211,10 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
                 title: "xkg",
                 version: "1.0.0",
                 websiteUrl: env.appUrl,
+                // One dark tile for every theme: no `theme`, so clients use it on any background.
                 icons: [
-                  { src: `${env.appUrl}/connector-icon.png`, mimeType: "image/png", sizes: ["512x512"], theme: "light" },
-                  { src: `${env.appUrl}/connector-icon-dark.png`, mimeType: "image/png", sizes: ["512x512"], theme: "dark" },
-                  { src: `${env.appUrl}/connector-icon-192.png`, mimeType: "image/png", sizes: ["192x192"], theme: "light" },
-                  { src: `${env.appUrl}/connector-icon-192-dark.png`, mimeType: "image/png", sizes: ["192x192"], theme: "dark" },
+                  { src: `${env.appUrl}/connector-icon-dark.png`, mimeType: "image/png", sizes: ["512x512"] },
+                  { src: `${env.appUrl}/connector-icon-192-dark.png`, mimeType: "image/png", sizes: ["192x192"] },
                 ],
               },
             },
