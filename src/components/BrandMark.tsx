@@ -7,7 +7,7 @@
  *    `size` sets the width and the height follows the artwork.
  *  - "expressive": the 3D artwork, for the sign-in and onboarding hero. One
  *    transparent file serves both themes: its body is opaque and its glow
- *    reads on either canvas.
+ *    reads on either canvas and on the backdrop artwork.
  *
  * Both theme variants are rendered; CSS shows the one matching data-theme.
  */
