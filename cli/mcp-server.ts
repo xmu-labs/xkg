@@ -1,5 +1,5 @@
 // MCP server that runs locally via stdio and proxies to the hosted API.
-// Used by Claude Code: claude mcp add xkg -- npx mnemos-capture serve-mcp --key <api-key>
+// Used by Claude Code: claude mcp add xkg -- npx xkg serve-mcp --key <api-key>
 
 const DEFAULT_HOSTED_URL = "https://xkg.xmu.sh/api/mcp";
 
@@ -99,7 +99,7 @@ export async function serveMcp(): Promise<void> {
 
   if (!apiKey) {
     process.stderr.write("\nxkg MCP server requires an API key.\n");
-    process.stderr.write("Usage: npx -y mnemos-capture@latest serve-mcp --key <your-api-key>\n\n");
+    process.stderr.write("Usage: npx -y xkg@latest serve-mcp --key <your-api-key>\n\n");
     process.stderr.write("Get your API key at: https://xkg.xmu.sh/onboard\n\n");
     process.exit(1);
   }

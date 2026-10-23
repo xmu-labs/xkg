@@ -104,7 +104,8 @@ the file being edited. Enable these hooks only for project context you intend to
 
 ## Releasing the CLI
 
-Publishing a GitHub Release is the only way a version reaches npm. Do not run `npm publish` locally.
+Each version is published under two npm names: `xkg`, and `mnemos-capture` so existing installs keep
+updating. `scripts/publish.sh` publishes both. Do not run `npm publish` directly.
 
 1. Open a PR that runs `npm version <patch|minor|major> --no-git-tag-version`, so `package.json` and
    `package-lock.json` move together. Merge it.
@@ -112,8 +113,12 @@ Publishing a GitHub Release is the only way a version reaches npm. Do not run `n
    pre-release to publish under the `next` dist-tag instead of `latest`.
 
 `.github/workflows/release.yml` refuses to publish unless the tag matches `package.json`, the tagged
-commit is on `main`, and the version is not already on npm. It then runs the checks, publishes with
-provenance, and confirms npm recorded the tagged commit.
+commit is on `main`, and the version is not already on npm from another commit. It then runs the
+checks, publishes both names with provenance, and confirms npm recorded the tagged commit for each.
+
+Until npm/cli#9969 is fixed, trusted publishing fails for this repository, so a maintainer runs
+`scripts/publish.sh` by hand from a clean checkout of the bump commit before step 2. The workflow then
+skips the publish and only verifies.
 
 ## Security issues
 

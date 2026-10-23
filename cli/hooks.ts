@@ -11,14 +11,29 @@ type Settings = Record<string, any>;
 type HookGroup = { hooks?: HookEntry[] };
 type HookEntry = { type: string; command: string };
 
-// Matches both legacy ("mnemos-capture inbox-check") and modern
-// ("mnemos-capture@latest inbox-check") hook command forms.
+/** The npm package new hooks run. Releases also publish it as `mnemos-capture`. */
+const PACKAGE = "xkg";
+
+/**
+ * Matches hooks this CLI installed under either package name, with or without
+ * a version: `npx -y xkg@latest inbox-check`, `npx -y mnemos-capture@latest
+ * inbox-check`, and the legacy `npx mnemos-capture inbox-check`.
+ */
+function isOurHook(cmd: string, subcommand: "inbox-check" | "vault-check"): boolean {
+  return new RegExp(`\\b(?:${PACKAGE}|mnemos-capture)(?:@[\\w.-]+)?\\s+${subcommand}\\b`).test(cmd);
+}
+
 function isXkgHook(cmd: string): boolean {
-  return cmd.includes("mnemos-capture") && cmd.includes("inbox-check");
+  return isOurHook(cmd, "inbox-check");
 }
 
 function isXkgPreToolHook(cmd: string): boolean {
-  return cmd.includes("mnemos-capture") && cmd.includes("vault-check");
+  return isOurHook(cmd, "vault-check");
+}
+
+/** True when a hook already runs the current package at @latest — nothing to migrate. */
+function isCurrentHook(cmd: string): boolean {
+  return cmd.includes(`npx -y ${PACKAGE}@latest `);
 }
 
 function readSettings(): Settings {
@@ -101,17 +116,16 @@ export function setupHooks(
   }
 
   // skipIfExists (serve-mcp auto-install): preserve user-configured hooks but
-  // silently migrate legacy hooks that don't use @latest so they always stay fresh.
+  // silently migrate hooks that pin a version or use the old package name.
   if (existingCmd && opts.skipIfExists) {
-    const alreadyLatest = existingCmd.includes("mnemos-capture@latest");
-    if (alreadyLatest) return;
+    if (isCurrentHook(existingCmd)) return;
     // Migration: preserve the existing --briefing flag when upgrading to @latest
     opts = { ...opts, briefing: existingCmd.includes("--briefing") };
   }
 
   const command = opts.briefing
-    ? `npx -y mnemos-capture@latest inbox-check --key ${apiKey} --briefing`
-    : `npx -y mnemos-capture@latest inbox-check --key ${apiKey}`;
+    ? `npx -y ${PACKAGE}@latest inbox-check --key ${apiKey} --briefing`
+    : `npx -y ${PACKAGE}@latest inbox-check --key ${apiKey}`;
 
   // Remove any existing xkg inbox-check hook (handles key rotation too)
   const filtered = sessionStart
@@ -163,10 +177,10 @@ export function setupPreToolHook(
   }
 
   if (existingCmd && opts.skipIfExists) {
-    if (existingCmd.includes("mnemos-capture@latest")) return;
+    if (isCurrentHook(existingCmd)) return;
   }
 
-  const command = `npx -y mnemos-capture@latest vault-check --key ${apiKey}`;
+  const command = `npx -y ${PACKAGE}@latest vault-check --key ${apiKey}`;
 
   const filtered = preToolCall
     .map((group: HookGroup) => ({

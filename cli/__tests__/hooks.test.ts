@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from "fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, writeFileSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -118,6 +118,55 @@ describe("setupHooks", () => {
     const cmds = settings.hooks.SessionStart.flatMap((g) => g.hooks.map((h) => h.command));
     expect(cmds.filter((c) => c.includes("inbox-check"))).toHaveLength(1);
   });
+
+  it("installs hooks that run the xkg package at @latest", async () => {
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("k", { silent: true, vault: true });
+    const settings = readSettings();
+    expect(commands(settings, "SessionStart")).toEqual(["npx -y xkg@latest inbox-check --key k"]);
+    expect(commands(settings, "PreToolCall")).toEqual(["npx -y xkg@latest vault-check --key k"]);
+  });
+
+  it("skipIfExists: migrates mnemos-capture hooks to xkg, keeping --briefing", async () => {
+    writeSettings({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: "npx -y mnemos-capture@latest inbox-check --key k --briefing" }] }],
+        PreToolCall: [{ hooks: [{ type: "command", command: "npx mnemos-capture vault-check --key k" }] }],
+      },
+    });
+    const { setupHooks, setupPreToolHook } = await import("../hooks.js");
+    setupHooks("k", { silent: true, skipIfExists: true });
+    setupPreToolHook("k", { silent: true, skipIfExists: true });
+    const settings = readSettings();
+    expect(commands(settings, "SessionStart")).toEqual(["npx -y xkg@latest inbox-check --key k --briefing"]);
+    expect(commands(settings, "PreToolCall")).toEqual(["npx -y xkg@latest vault-check --key k"]);
+  });
+
+  it("skipIfExists: leaves a current xkg hook and unrelated hooks alone", async () => {
+    const current = "npx -y xkg@latest inbox-check --key user-key --briefing";
+    const other = "echo inbox-check reminder";
+    writeSettings({
+      hooks: { SessionStart: [{ hooks: [{ type: "command", command: current }, { type: "command", command: other }] }] },
+    });
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("server-key", { silent: true, skipIfExists: true });
+    expect(commands(readSettings(), "SessionStart")).toEqual([current, other]);
+  });
+
+  type HookSettings = { hooks: Record<string, Array<{ hooks: Array<{ type: string; command: string }> }>> };
+
+  function readSettings(): HookSettings {
+    return JSON.parse(readFileSync(settingsPath, "utf-8")) as HookSettings;
+  }
+
+  function writeSettings(settings: HookSettings): void {
+    mkdirSync(dirname(settingsPath), { recursive: true });
+    writeFileSync(settingsPath, JSON.stringify(settings));
+  }
+
+  function commands(settings: HookSettings, event: string): string[] {
+    return (settings.hooks[event] ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+  }
 });
 
 // ── inboxCheck — briefing mode parsing ───────────────────────────────────────

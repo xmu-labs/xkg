@@ -9,7 +9,7 @@
   <br>
   <br>
   <p>
-    <a href="https://www.npmjs.com/package/mnemos-capture"><img src="https://img.shields.io/npm/v/mnemos-capture?color=1c74d8&labelColor=000820&style=flat" alt="npm" /></a>
+    <a href="https://www.npmjs.com/package/xkg"><img src="https://img.shields.io/npm/v/xkg?color=1c74d8&labelColor=000820&style=flat" alt="npm" /></a>
     <img src="https://img.shields.io/badge/MCP-compatible-9dd8f5?labelColor=000820&style=flat" alt="MCP" />
     <img src="https://img.shields.io/badge/license-MIT-f0f4f8?labelColor=000820&style=flat" alt="MIT" />
   </p>
@@ -53,7 +53,7 @@ You find useful stuff, you capture through the web app, then xkg connects it int
 xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
 
 > [!IMPORTANT]
-> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). Connectors set up with `mnemos-capture.vercel.app` keep working. The npm package still says `mnemos-capture`. Sorry for the inconvenience.
+> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). The npm package is now `xkg`. Connectors set up with `mnemos-capture.vercel.app` and commands that run `npx mnemos-capture@latest` keep working: every release is published under both names. Sorry for the inconvenience.
 
 ## Start here
 
@@ -95,10 +95,10 @@ https://xkg.xmu.sh/api/mcp
 ```
 
 ```bash
-npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
+npx -y xkg@latest serve-mcp --key YOUR_API_KEY
 ```
 
-The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). `npx` still uses the package name `mnemos-capture`. An MCP server already registered as `xmu` or `mnemos` keeps working.
+The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). An MCP server already registered as `xmu` or `mnemos`, or set up with `mnemos-capture@latest`, keeps working.
 
 **On the web** — paste the URL (no terminal). **In the terminal** — run the command. Finish xkg onboarding first, then ask: *list my inbox* or *brief me*.
 
@@ -126,7 +126,7 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHu
 The same command works in every CLI — Cursor, Codex, Gemini CLI, VS Code, Claude Code, or anything that can launch a local MCP server:
 
 ```bash
-npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
+npx -y xkg@latest serve-mcp --key YOUR_API_KEY
 ```
 
 Register that command in the tool you use.
@@ -140,7 +140,7 @@ Add this to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (all projects):
   "mcpServers": {
     "xkg": {
       "command": "npx",
-      "args": ["-y", "mnemos-capture@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
+      "args": ["-y", "xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
     }
   }
 }
@@ -157,7 +157,7 @@ Add this to `.vscode/mcp.json`:
   "servers": {
     "xkg": {
       "command": "npx",
-      "args": ["-y", "mnemos-capture@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
+      "args": ["-y", "xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
     }
   }
 }
@@ -172,7 +172,7 @@ Codex CLI — add this to `~/.codex/config.toml`:
 ```toml
 [mcp_servers.xkg]
 command = "npx"
-args = ["-y", "mnemos-capture@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
+args = ["-y", "xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
 ```
 
 Codex App: Settings → MCP → add the same `npx` command.
@@ -180,13 +180,13 @@ Codex App: Settings → MCP → add the same `npx` command.
 #### Gemini CLI
 
 ```bash
-gemini mcp add xkg npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
+gemini mcp add xkg npx -y xkg@latest serve-mcp --key YOUR_API_KEY
 ```
 
 #### Claude Code
 
 ```bash
-claude mcp add xkg -- npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
+claude mcp add xkg -- npx -y xkg@latest serve-mcp --key YOUR_API_KEY
 ```
 
 Or the URL, no API key:
@@ -198,7 +198,7 @@ claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
 Optional session hooks (MCP works without them):
 
 ```bash
-npx -y mnemos-capture@latest setup-hooks --key YOUR_API_KEY --briefing --vault
+npx -y xkg@latest setup-hooks --key YOUR_API_KEY --briefing --vault
 ```
 
 Hooks are local files — they run in the CLI and editor extensions, not in the browser.
@@ -212,7 +212,7 @@ Settings → Developer → Edit Config. Add the same `npx` block to `claude_desk
   "mcpServers": {
     "xkg": {
       "command": "npx",
-      "args": ["-y", "mnemos-capture@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
+      "args": ["-y", "xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
     }
   }
 }
@@ -227,7 +227,7 @@ If the tool can launch a local process, register the same `npx` command. If it h
   "mcpServers": {
     "xkg": {
       "command": "npx",
-      "args": ["-y", "mnemos-capture@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
+      "args": ["-y", "xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
     }
   }
 }
@@ -256,14 +256,14 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 4. **Execute** — Hand the plan to your worker in the current session, or run it in an isolated git worktree:
 
    ```bash
-   npx -y mnemos-capture@latest config set agent "claude -p"
-   npx -y mnemos-capture@latest kos --key YOUR_API_KEY
+   npx -y xkg@latest config set agent "claude -p"
+   npx -y xkg@latest kos --key YOUR_API_KEY
    ```
 
    `kos` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
 
    ```bash
-   npx -y mnemos-capture@latest config set agent "codex exec"
+   npx -y xkg@latest config set agent "codex exec"
    ```
 
 ### Example capture
@@ -331,12 +331,12 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 No global install required. The binary is **`xkg`** (also `xmu` and `mnemos-capture`). Via npx:
 
 ```bash
-npx -y mnemos-capture@latest <command>
+npx -y xkg@latest <command>
 ```
 
 | Command | What it does |
 | --- | --- |
-| `npx -y mnemos-capture@latest` | Open the hosted app |
+| `npx -y xkg@latest` | Open the hosted app |
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
 | `config set agent "claude -p"` | Set which assistant `kos` should drive |

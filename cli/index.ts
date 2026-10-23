@@ -22,7 +22,7 @@ async function main(): Promise<void> {
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
     if (!apiKey) {
-      console.error("Usage: npx mnemos-capture setup-hooks --key YOUR_API_KEY [--briefing] [--vault]");
+      console.error("Usage: npx xkg setup-hooks --key YOUR_API_KEY [--briefing] [--vault]");
       process.exit(1);
     }
     setupHooks(apiKey, { briefing: args.includes("--briefing"), vault: args.includes("--vault") });
@@ -76,7 +76,7 @@ async function main(): Promise<void> {
   console.log("  First time? Sign in with GitHub — setup takes 30 seconds.");
   console.log("");
   console.log("  Connect an AI worker:");
-  console.log("  claude mcp add xkg -- npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY");
+  console.log("  claude mcp add xkg -- npx -y xkg@latest serve-mcp --key YOUR_API_KEY");
   console.log("");
 
   // Try to open the URL in the default browser
@@ -101,7 +101,7 @@ function printHelp(): void {
     xkg kos --key KEY [--plan FILE]                            Implement a plan in an isolated worktree
     xkg help                                                   Show this help
 
-    npx -y mnemos-capture@latest …                             Same CLI, via the published package
+    npx -y xkg@latest …                                        Same CLI, via the published package
 
   MCP tools (via your AI worker):
     briefing          — Session-start briefing with ranked insights to apply
@@ -119,13 +119,13 @@ function printHelp(): void {
        and reports the branch + the plan's Verification Checklist when done.
 
   Get started:
-    1. Run: npx mnemos-capture
+    1. Run: npx xkg
     2. Sign in with GitHub (creates your knowledge repo automatically)
     3. Set a PIN for quick mobile access
     4. Start capturing!
 
   Connect to Claude Code:
-    claude mcp add xkg -- npx -y mnemos-capture@latest serve-mcp --key YOUR_API_KEY
+    claude mcp add xkg -- npx -y xkg@latest serve-mcp --key YOUR_API_KEY
 
   The @latest tag ensures every Claude Code session uses the most recent
   published version. serve-mcp also self-upgrades on startup as a safety net
@@ -133,10 +133,10 @@ function printHelp(): void {
 
   The hook is installed automatically when you start the MCP server.
   To upgrade to a full project briefing at session start:
-    npx mnemos-capture setup-hooks --key YOUR_API_KEY --briefing
+    npx xkg setup-hooks --key YOUR_API_KEY --briefing
 
   To enable the vault (surfaces captures as you edit files — opt-in):
-    npx mnemos-capture setup-hooks --key YOUR_API_KEY --vault
+    npx xkg setup-hooks --key YOUR_API_KEY --vault
   `);
 }
 
