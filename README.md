@@ -345,6 +345,8 @@ npx -y @xmu-labs/xkg@latest <command>
 | `vault-check --key YOUR_API_KEY` | Debug the vault hook |
 | `help` | Show help |
 
+What changed in each version: [GitHub Releases](https://github.com/xmu-labs/xkg/releases).
+
 ## Your context stays in GitHub
 
 Captures live as structured Markdown in **your** GitHub repository. Private by default.
