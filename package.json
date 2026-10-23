@@ -4,9 +4,9 @@
   "description": "xkg — Turn what you discover into context your AI workers can use. Capture once, then brief, plan, and execute with any MCP-compatible tool.",
   "type": "module",
   "bin": {
-    "mnemos-capture": "./dist/cli/index.js",
-    "xkg": "./dist/cli/index.js",
-    "xmu": "./dist/cli/index.js"
+    "mnemos-capture": "dist/cli/index.js",
+    "xkg": "dist/cli/index.js",
+    "xmu": "dist/cli/index.js"
   },
   "scripts": {
     "dev": "next dev",
@@ -38,7 +38,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/xmu-labs/xkg.git"
+    "url": "git+https://github.com/xmu-labs/xkg.git"
   },
   "homepage": "https://github.com/xmu-labs/xkg",
   "files": [
@@ -49,7 +49,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
     "@neondatabase/serverless": "^1.2.0",
-    "next": "^16.3.5",
+    "next": "^16.4.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
@@ -60,7 +60,7 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.6.1",
     "eslint": "^9.39.5",
-    "eslint-config-next": "^16.3.5",
+    "eslint-config-next": "^16.4.2",
     "postcss": "^8.5.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^6.0.3",
