@@ -30,13 +30,12 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#F2F1F6" },
-    { media: "(prefers-color-scheme: dark)", color: "#11131A" },
-  ],
+  // Dark by default; THEME_BOOT and the Settings toggle switch it for light.
+  themeColor: "#11131A",
 };
 
-const THEME_BOOT = `(function(){try{var t=localStorage.getItem("xkg-theme")||localStorage.getItem("xmu-theme")||localStorage.getItem("mnemos-theme");if(t!=="dark"&&t!=="light")t=matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light";document.documentElement.setAttribute("data-theme",t);}catch(e){}})();`;
+// Dark unless the user chose light in Settings (the brand leans dark).
+const THEME_BOOT = `(function(){try{var t=localStorage.getItem("xkg-theme")||localStorage.getItem("xmu-theme")||localStorage.getItem("mnemos-theme");if(t!=="light")t="dark";document.documentElement.setAttribute("data-theme",t);if(t==="light")document.addEventListener("DOMContentLoaded",function(){var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content","#F2F1F6");});}catch(e){}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

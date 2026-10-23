@@ -46,19 +46,25 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-/** Lunar Graphite, for the two pages this route renders as plain HTML. */
+/**
+ * Lunar Graphite, for the two pages this route renders as plain HTML. Dark by
+ * default like the app; light when the user chose it in Settings, read from
+ * the same localStorage key by THEME_BOOT.
+ */
 const PAGE_STYLE = `
-:root{color-scheme:light dark;--bg:#F2F1F6;--fg:#11131A;--surface:#FFFFFF;--line:rgba(119,116,147,.32);--note:rgba(119,116,147,.10);--btn:#2A2D3B;--btn-fg:#F2F1F6}
-@media(prefers-color-scheme:dark){:root{--bg:#11131A;--fg:#F2F1F6;--surface:#202332;--line:rgba(184,181,208,.24);--note:rgba(184,181,208,.08);--btn:#B8B5D0;--btn-fg:#11131A}}
+:root{color-scheme:dark;--bg:#11131A;--fg:#F2F1F6;--surface:#202332;--line:rgba(184,181,208,.24);--note:rgba(184,181,208,.08);--btn:#B8B5D0;--btn-fg:#11131A}
+:root[data-theme="light"]{color-scheme:light;--bg:#F2F1F6;--fg:#11131A;--surface:#FFFFFF;--line:rgba(119,116,147,.32);--note:rgba(119,116,147,.10);--btn:#2A2D3B;--btn-fg:#F2F1F6}
 body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
 h1{font-family:Sora,Inter,system-ui,sans-serif}
 .logo{width:96px;height:46px;display:block;margin:0 0 16px}
-.logo-dark{display:none}
-@media(prefers-color-scheme:dark){.logo-light{display:none}.logo-dark{display:block}}
+.logo-light{display:none}
+:root[data-theme="light"] .logo-light{display:block}
+:root[data-theme="light"] .logo-dark{display:none}
 `;
+const THEME_BOOT = `<script>try{if(localStorage.getItem("xkg-theme")==="light")document.documentElement.setAttribute("data-theme","light")}catch(e){}</script>`;
 
 function errorPage(message: string, status = 400): NextResponse {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — authorization error</title><style>${PAGE_STYLE}</style></head><body><div style="max-width:26rem;text-align:center;"><h1 style="font-size:1.1rem;">Authorization error</h1><p style="opacity:0.8;line-height:1.5;">${message}</p></div></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — authorization error</title>${THEME_BOOT}<style>${PAGE_STYLE}</style></head><body><div style="max-width:26rem;text-align:center;"><h1 style="font-size:1.1rem;">Authorization error</h1><p style="opacity:0.8;line-height:1.5;">${message}</p></div></body></html>`;
   return new NextResponse(html, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
@@ -174,7 +180,7 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     ? `<p style="opacity:0.6;line-height:1.4;font-size:0.75rem;margin:16px 0 0;text-align:center;">By approving you agree to the <a href="/terms" style="color:inherit;">Terms</a> and <a href="/privacy" style="color:inherit;">Privacy Policy</a>.</p>`
     : "";
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — connect</title><style>${PAGE_STYLE}</style></head><body>
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — connect</title>${THEME_BOOT}<style>${PAGE_STYLE}</style></head><body>
 <form method="POST" action="/api/oauth/authorize" style="max-width:24rem;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;">
   <img src="/brand/xkg-2d-light.svg" alt="xkg" width="96" height="46" class="logo logo-light" /><img src="/brand/xkg-2d-dark.svg" alt="" width="96" height="46" class="logo logo-dark" />
   <h1 style="font-size:1.15rem;margin:0 0 8px;">Connect to xkg</h1>
