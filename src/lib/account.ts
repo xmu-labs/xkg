@@ -11,8 +11,9 @@ export interface DeleteAccountResult {
  * Self-service account deletion.
  *
  * GitHub is asked to revoke xkg's authorization first, while the token is still
- * on hand. That step is best-effort: the stored token is deleted either way, so
- * a GitHub outage must not keep someone from deleting their account.
+ * on hand. That step is best-effort and time-limited: the stored token is
+ * deleted either way, so a slow or failing GitHub must not keep someone from
+ * deleting their account.
  */
 export async function deleteAccount(user: User): Promise<DeleteAccountResult> {
   let githubRevoked = false;

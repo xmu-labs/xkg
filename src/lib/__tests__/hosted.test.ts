@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { isHostedInstance } from "../hosted";
 
@@ -38,5 +40,23 @@ describe("isHostedInstance", () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubEnv("NEXT_PUBLIC_APP_URL", "http://localhost:3000");
     expect(isHostedInstance()).toBe(true);
+  });
+});
+
+/**
+ * MCP connectors sign in through /api/oauth/authorize without passing the
+ * sign-in page, so the consent screen must carry the same notice. Its HTML is
+ * built inside a route handler, so this is asserted on the source.
+ */
+describe("the connector consent screen", () => {
+  const route = fs.readFileSync(path.join(process.cwd(), "src/app/api/oauth/authorize/route.ts"), "utf-8");
+
+  it("links the Terms and Privacy Policy on the hosted service only", () => {
+    expect(route).toMatch(/isHostedInstance\(\)\s*\?\s*`[^`]*href="\/terms"[^`]*href="\/privacy"/);
+  });
+
+  it("shows the notice inside the consent form", () => {
+    expect(route.indexOf("${legal}")).toBeGreaterThan(route.indexOf('value="approve"'));
+    expect(route.indexOf("${legal}")).toBeLessThan(route.indexOf("</form>", route.indexOf('value="approve"')));
   });
 });

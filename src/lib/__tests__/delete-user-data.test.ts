@@ -66,13 +66,18 @@ describe("revokeGithubGrant", () => {
     expect(JSON.parse(init.body as string)).toEqual({ access_token: "gho_token" });
   });
 
-  it("treats an already-revoked grant as revoked", async () => {
-    fetchMock.mockResolvedValue(new Response(null, { status: 404 }));
-    await expect(revokeGithubGrant("cid", "secret", "gho_token")).resolves.toBe(true);
+  it("gives up on a GitHub that doesn't answer, instead of hanging the deletion", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    await revokeGithubGrant("cid", "secret", "gho_token");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
-  it("reports anything else as not revoked", async () => {
-    fetchMock.mockResolvedValue(new Response("{}", { status: 422 }));
-    await expect(revokeGithubGrant("cid", "secret", "gho_token")).resolves.toBe(false);
+  it("only a 204 confirms revocation", async () => {
+    // A 404 can mean the stored token is stale while another token for the grant still works.
+    for (const status of [404, 422, 500]) {
+      fetchMock.mockResolvedValueOnce(new Response("{}", { status }));
+      await expect(revokeGithubGrant("cid", "secret", "gho_token")).resolves.toBe(false);
+    }
   });
 });
