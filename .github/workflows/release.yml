@@ -16,7 +16,8 @@
 # old name, so existing installs keep updating), by scripts/publish.sh.
 #
 # While npm/cli#9969 blocks trusted publishing for this repo, publish by hand
-# first, from a clean checkout of the bump commit (`scripts/publish.sh`), then
+# first, from a clean checkout of the bump commit (`scripts/publish.sh`, or
+# `scripts/publish.sh next` for a pre-release), then
 # do step 2: the workflow sees the version on npm with the tagged commit as
 # its gitHead under both names, skips publishing, and still verifies.
 #
@@ -130,6 +131,12 @@ jobs:
             done
             if [ "$GIT_HEAD" != "$EXPECTED" ]; then
               echo "::error::npm reports gitHead '$GIT_HEAD' for $NAME@$VERSION, expected $EXPECTED."
+              exit 1
+            fi
+            # A hand publish defaults to `latest`; a pre-release must not land there.
+            TAGGED=$(npm view "$NAME" "dist-tags.$DIST_TAG" 2>/dev/null || true)
+            if [ "$TAGGED" != "$VERSION" ]; then
+              echo "::error::npm's '$DIST_TAG' tag for $NAME is '$TAGGED', expected $VERSION. Fix with: npm dist-tag add $NAME@$VERSION $DIST_TAG (and move 'latest' back if a pre-release took it)."
               exit 1
             fi
             echo "::notice::$NAME@$VERSION published as '$DIST_TAG' from $EXPECTED."

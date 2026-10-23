@@ -117,8 +117,8 @@ commit is on `main`, and the version is not already on npm from another commit. 
 checks, publishes both names with provenance, and confirms npm recorded the tagged commit for each.
 
 Until npm/cli#9969 is fixed, trusted publishing fails for this repository, so a maintainer runs
-`scripts/publish.sh` by hand from a clean checkout of the bump commit before step 2. The workflow then
-skips the publish and only verifies.
+`scripts/publish.sh` (or `scripts/publish.sh next` for a pre-release) by hand from a clean checkout of
+the bump commit before step 2. The workflow then skips the publish and only verifies.
 
 ## Security issues
 

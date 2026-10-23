@@ -6,6 +6,7 @@
 #
 # Usage: scripts/publish.sh [dist-tag] [extra npm publish flags…]
 #   scripts/publish.sh                      # by hand: latest
+#   scripts/publish.sh next                 # by hand, for a GitHub pre-release
 #   scripts/publish.sh latest --provenance  # from the release workflow
 #
 # Run it from a clean checkout of the commit being released: npm records that
@@ -30,17 +31,24 @@ PACKAGES=(xkg mnemos-capture)
 
 # Check every name before publishing any: npm versions can never be replaced,
 # so a conflict found after the first publish would leave the names out of sync.
+# Only npm's E404 means "not published": any other lookup failure (network,
+# auth, registry) aborts, so an unknown state is never taken as safe.
 TO_PUBLISH=()
 for name in "${PACKAGES[@]}"; do
-  if npm view "$name@$VERSION" version >/dev/null 2>&1; then
-    published=$(npm view "$name@$VERSION" gitHead 2>/dev/null || true)
+  if ! lookup=$(npm view "$name@$VERSION" version 2>&1); then
+    if ! grep -q "E404" <<<"$lookup"; then
+      echo "error: could not check $name@$VERSION on npm:" >&2
+      echo "$lookup" >&2
+      exit 1
+    fi
+    TO_PUBLISH+=("$name")
+  else
+    published=$(npm view "$name@$VERSION" gitHead)
     if [ "$published" != "$HEAD" ]; then
       echo "error: $name@$VERSION is already on npm from ${published:-an unknown commit}. Bump the version." >&2
       exit 1
     fi
     echo "$name@$VERSION is already published from this commit; skipping."
-  else
-    TO_PUBLISH+=("$name")
   fi
 done
 
