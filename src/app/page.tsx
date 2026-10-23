@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
+import Backdrop from "@/components/Backdrop";
 
 interface CaptureResult {
   capture: {
@@ -135,6 +136,7 @@ export default function CapturePage() {
 
   return (
     <>
+    <Backdrop strength="quiet" />
     {newVersionAvailable && (
       <div className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-4 py-2.5 text-sm"
         style={{ background: "var(--bg)", borderBottom: "1px solid var(--gold-faint)" }}>

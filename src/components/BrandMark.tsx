@@ -5,9 +5,8 @@
  *
  *  - "flat": the 2D mark, for product chrome at small sizes. It is wide, so
  *    `size` sets the width and the height follows the artwork.
- *  - "expressive": the 3D artwork, for the sign-in and onboarding hero. Its
- *    square tile is painted in the page canvas color, so it sits on the page
- *    without a visible edge.
+ *  - "expressive": the 3D artwork, for the sign-in and onboarding hero. It
+ *    has a transparent background, so it sits on the backdrop artwork.
  *
  * Both theme variants are rendered; CSS shows the one matching data-theme.
  */

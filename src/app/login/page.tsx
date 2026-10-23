@@ -3,6 +3,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
+import Backdrop from "@/components/Backdrop";
 import { isHostedInstance } from "@/lib/hosted";
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -98,6 +99,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
+      <Backdrop />
       <div className="w-full max-w-xs stack-4">
 
         {/* Logo + wordmark */}

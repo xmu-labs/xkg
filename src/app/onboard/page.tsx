@@ -5,6 +5,7 @@ const MIN_PIN_LENGTH = 6;
 
 import { useState } from "react";
 import BrandMark from "@/components/BrandMark";
+import Backdrop from "@/components/Backdrop";
 
 const INPUT_STYLE: React.CSSProperties = {
   background: "var(--input-bg)",
@@ -82,6 +83,7 @@ export default function OnboardPage() {
   if (status === "done" && result) {
     return (
       <main className="min-h-dvh flex flex-col items-center justify-center px-4">
+        <Backdrop />
         <div className="w-full max-w-sm stack-6">
           <div className="flex flex-col items-center mb-2">
             <div className="text-4xl mb-4">✓</div>
@@ -129,6 +131,7 @@ export default function OnboardPage() {
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
+      <Backdrop />
       <div className="w-full max-w-sm stack-4">
 
         <div className="flex flex-col items-center mb-6">
