@@ -12,13 +12,17 @@
 #   2. GitHub → Releases → Draft a new release → new tag `vX.Y.Z` on `main`
 #      → Publish. Mark it as a pre-release to publish under the `next` dist-tag.
 #
+# Every version is published under two names, `xkg` and `mnemos-capture` (the
+# old name, so existing installs keep updating), by scripts/publish.sh.
+#
 # While npm/cli#9969 blocks trusted publishing for this repo, publish by hand
-# first, from a clean checkout of the bump commit (`npm publish --access
-# public`), then do step 2: the workflow sees the version on npm with the
-# tagged commit as its gitHead, skips publishing, and still verifies.
+# first, from a clean checkout of the bump commit (`scripts/publish.sh`, or
+# `scripts/publish.sh next` for a pre-release), then
+# do step 2: the workflow sees the version on npm with the tagged commit as
+# its gitHead under both names, skips publishing, and still verifies.
 #
 # Auth: npm trusted publishing (OIDC) — no long-lived token. One-time setup on
-# npmjs.com → mnemos-capture → Settings → Trusted publishing → GitHub Actions,
+# npmjs.com → each package → Settings → Trusted publishing → GitHub Actions,
 # repository xmu-labs/xkg, workflow `release.yml`. Provenance also requires
 # package.json `repository.url` to name this repository. Falls back to an
 # NPM_TOKEN repository secret if trusted publishing is not configured.
@@ -43,6 +47,7 @@ jobs:
     env:
       TAG: ${{ github.event.release.tag_name }}
       DIST_TAG: ${{ github.event.release.prerelease && 'next' || 'latest' }}
+      PACKAGES: xkg mnemos-capture # keep in sync with scripts/publish.sh
     steps:
       - uses: actions/checkout@v7
         with:
@@ -79,18 +84,19 @@ jobs:
             exit 1
           fi
           # Published by hand from this exact commit (npm trusted publishing
-          # rejects repos renamed after 2026-07-15, npm/cli#9969): skip the
-          # publish and let the last step confirm the tag and npm agree. A
-          # version published from any other commit is still an error.
-          if npm view "mnemos-capture@$VERSION" version >/dev/null 2>&1; then
-            PUBLISHED_HEAD=$(npm view "mnemos-capture@$VERSION" gitHead 2>/dev/null || true)
-            if [ "$PUBLISHED_HEAD" != "$(git rev-parse HEAD)" ]; then
-              echo "::error::mnemos-capture@$VERSION is already on npm from ${PUBLISHED_HEAD:-an unknown commit}. Bump the version."
-              exit 1
+          # rejects repos renamed after 2026-07-15, npm/cli#9969): the publish
+          # script skips that name and the last step confirms the tag and npm
+          # agree. A version published from any other commit is still an error.
+          for NAME in $PACKAGES; do
+            if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+              PUBLISHED_HEAD=$(npm view "$NAME@$VERSION" gitHead 2>/dev/null || true)
+              if [ "$PUBLISHED_HEAD" != "$(git rev-parse HEAD)" ]; then
+                echo "::error::$NAME@$VERSION is already on npm from ${PUBLISHED_HEAD:-an unknown commit}. Bump the version."
+                exit 1
+              fi
+              echo "::notice::$NAME@$VERSION was already published from this commit; skipping it."
             fi
-            echo "::notice::mnemos-capture@$VERSION was already published from this commit; skipping publish."
-            echo "ALREADY_PUBLISHED=1" >> "$GITHUB_ENV"
-          fi
+          done
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Install dependencies
@@ -105,24 +111,33 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # prepublishOnly builds the CLI into dist/cli.
+      # prepublishOnly builds the CLI into dist/cli. Names already published
+      # from this commit are skipped.
       - name: Publish
-        if: env.ALREADY_PUBLISHED != '1'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        run: scripts/publish.sh "$DIST_TAG" --provenance
 
       # Closes the loop: the published gitHead must be the tagged commit.
       - name: Verify published package
         run: |
           EXPECTED=$(git rev-parse HEAD)
-          for attempt in 1 2 3 4 5 6; do
-            GIT_HEAD=$(npm view "mnemos-capture@$VERSION" gitHead 2>/dev/null || true)
-            [ -n "$GIT_HEAD" ] && break
-            sleep 10
+          for NAME in $PACKAGES; do
+            GIT_HEAD=""
+            for attempt in 1 2 3 4 5 6; do
+              GIT_HEAD=$(npm view "$NAME@$VERSION" gitHead 2>/dev/null || true)
+              [ -n "$GIT_HEAD" ] && break
+              sleep 10
+            done
+            if [ "$GIT_HEAD" != "$EXPECTED" ]; then
+              echo "::error::npm reports gitHead '$GIT_HEAD' for $NAME@$VERSION, expected $EXPECTED."
+              exit 1
+            fi
+            # A hand publish defaults to `latest`; a pre-release must not land there.
+            TAGGED=$(npm view "$NAME" "dist-tags.$DIST_TAG" 2>/dev/null || true)
+            if [ "$TAGGED" != "$VERSION" ]; then
+              echo "::error::npm's '$DIST_TAG' tag for $NAME is '$TAGGED', expected $VERSION. Fix with: npm dist-tag add $NAME@$VERSION $DIST_TAG (and move 'latest' back if a pre-release took it)."
+              exit 1
+            fi
+            echo "::notice::$NAME@$VERSION published as '$DIST_TAG' from $EXPECTED."
           done
-          if [ "$GIT_HEAD" != "$EXPECTED" ]; then
-            echo "::error::npm reports gitHead '$GIT_HEAD' for $VERSION, expected $EXPECTED."
-            exit 1
-          fi
-          echo "::notice::mnemos-capture@$VERSION published as '$DIST_TAG' from $EXPECTED."

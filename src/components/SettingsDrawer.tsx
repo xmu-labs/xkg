@@ -45,7 +45,7 @@ function applyTheme(theme: Theme) {
 }
 
 function mcpCommand(key: string): string {
-  return `npx -y mnemos-capture@latest serve-mcp --key ${key}`;
+  return `npx -y xkg@latest serve-mcp --key ${key}`;
 }
 
 function compressAvatar(file: File): Promise<string> {
