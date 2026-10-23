@@ -89,7 +89,7 @@ export default function LoginPage() {
 
         {/* Logo + wordmark */}
         <div className="flex flex-col items-center text-center mb-10">
-          <BrandMark size={160} className="w-40 h-40 mb-4" />
+          <BrandMark size={208} variant="expressive" className="-my-10" />
           <h1 className="text-lg font-semibold tracking-tight" style={{ color: "var(--fg)" }}>xkg</h1>
           <p className="text-sm mt-1 max-w-[16rem]" style={{ color: "var(--fg-muted)" }}>
             A knowledge graph for your AI workers.
@@ -158,7 +158,7 @@ export default function LoginPage() {
               {status === "loading" ? "Checking..." : "Unlock"}
             </button>
             {status === "error" && (
-              <p className="text-xs text-center" style={{ color: "#f87171" }}>{errorMsg}</p>
+              <p className="text-xs text-center" style={{ color: "var(--danger)" }}>{errorMsg}</p>
             )}
           </div>
         ))}

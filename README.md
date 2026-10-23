@@ -2,16 +2,16 @@
   <br>
   <a href="https://xkg.xmu.sh">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="public/xkg-hero-dark.gif">
-      <img src="public/xkg-hero-light.gif" width="160" height="160" alt="xkg">
+      <source media="(prefers-color-scheme: dark)" srcset="public/brand/xkg-icon-dark.png">
+      <img src="public/brand/xkg-icon-light.png" width="160" height="160" alt="xkg">
     </picture>
   </a>
   <br>
   <br>
   <p>
-    <a href="https://www.npmjs.com/package/@xmu-labs/xkg"><img src="https://img.shields.io/npm/v/@xmu-labs/xkg?color=1c74d8&labelColor=000820&style=flat" alt="npm" /></a>
-    <img src="https://img.shields.io/badge/MCP-compatible-9dd8f5?labelColor=000820&style=flat" alt="MCP" />
-    <img src="https://img.shields.io/badge/license-MIT-f0f4f8?labelColor=000820&style=flat" alt="MIT" />
+    <a href="https://www.npmjs.com/package/@xmu-labs/xkg"><img src="https://img.shields.io/npm/v/@xmu-labs/xkg?color=777493&labelColor=11131A&style=flat" alt="npm" /></a>
+    <img src="https://img.shields.io/badge/MCP-compatible-B8B5D0?labelColor=11131A&style=flat" alt="MCP" />
+    <img src="https://img.shields.io/badge/license-MIT-F2F1F6?labelColor=11131A&style=flat" alt="MIT" />
   </p>
 </div>
 

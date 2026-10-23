@@ -45,17 +45,19 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** Lunar Graphite, for the two pages this route renders as plain HTML. */
+const PAGE_STYLE = `
+:root{color-scheme:light dark;--bg:#F2F1F6;--fg:#11131A;--surface:#FFFFFF;--line:rgba(119,116,147,.32);--note:rgba(119,116,147,.10);--btn:#2A2D3B;--btn-fg:#F2F1F6}
+@media(prefers-color-scheme:dark){:root{--bg:#11131A;--fg:#F2F1F6;--surface:#202332;--line:rgba(184,181,208,.24);--note:rgba(184,181,208,.08);--btn:#B8B5D0;--btn-fg:#11131A}}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--fg);display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px}
+h1{font-family:Sora,Inter,system-ui,sans-serif}
+.logo{width:96px;height:46px;display:block;margin:0 0 16px}
+.logo-dark{display:none}
+@media(prefers-color-scheme:dark){.logo-light{display:none}.logo-dark{display:block}}
+`;
+
 function errorPage(message: string, status = 400): NextResponse {
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — authorization error</title><style>
-:root{color-scheme:light dark}
-.logo-dark{display:none!important}
-@media(prefers-color-scheme:dark){
-  body{background:#0B1120!important;color:#E4EDF6!important}
-  form{background:#121A2C!important;border-color:rgba(62,176,234,.25)!important}
-  .logo-light{display:none!important}
-  .logo-dark{display:block!important}
-}
-</style></head><body style="font-family:system-ui,sans-serif;background:#E4EDF6;color:#0B1120;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px;"><div style="max-width:26rem;text-align:center;"><h1 style="font-size:1.1rem;">Authorization error</h1><p style="opacity:0.8;line-height:1.5;">${message}</p></div></body></html>`;
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — authorization error</title><style>${PAGE_STYLE}</style></head><body><div style="max-width:26rem;text-align:center;"><h1 style="font-size:1.1rem;">Authorization error</h1><p style="opacity:0.8;line-height:1.5;">${message}</p></div></body></html>`;
   return new NextResponse(html, { status, headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
 
@@ -166,22 +168,13 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
   const hidden = (name: string, value: string) =>
     `<input type="hidden" name="${name}" value="${value.replace(/"/g, "&quot;")}">`;
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — connect</title><style>
-:root{color-scheme:light dark}
-.logo-dark{display:none!important}
-@media(prefers-color-scheme:dark){
-  body{background:#0B1120!important;color:#E4EDF6!important}
-  form{background:#121A2C!important;border-color:rgba(62,176,234,.25)!important}
-  .logo-light{display:none!important}
-  .logo-dark{display:block!important}
-}
-</style></head><body style="font-family:system-ui,sans-serif;background:#E4EDF6;color:#0B1120;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;padding:24px;">
-<form method="POST" action="/api/oauth/authorize" style="max-width:24rem;width:100%;background:#ffffff;border:1px solid rgba(46,90,154,0.22);border-radius:16px;padding:28px;">
-  <img src="/logo.png" alt="xkg" width="56" height="56" class="logo-light" style="width:56px;height:56px;object-fit:contain;display:block;margin:0 0 16px;" /><img src="/logo-dark.png" alt="" width="56" height="56" class="logo-dark" style="width:56px;height:56px;object-fit:contain;display:none;margin:0 0 16px;" />
+  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>xkg — connect</title><style>${PAGE_STYLE}</style></head><body>
+<form method="POST" action="/api/oauth/authorize" style="max-width:24rem;width:100%;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:28px;">
+  <img src="/brand/xkg-2d-light.svg" alt="xkg" width="96" height="46" class="logo logo-light" /><img src="/brand/xkg-2d-dark.svg" alt="" width="96" height="46" class="logo logo-dark" />
   <h1 style="font-size:1.15rem;margin:0 0 8px;">Connect to xkg</h1>
   <p style="opacity:0.8;line-height:1.5;margin:0 0 4px;"><strong>${escapeHtml(clientName)}</strong> wants to access your knowledge hub.</p>
   <p style="opacity:0.6;line-height:1.5;font-size:0.85rem;margin:0 0 12px;">Signed in as <strong>${escapeHtml(user.github_username)}</strong>. It will be able to capture, search, and apply your captures over MCP.</p>
-  <p style="opacity:0.75;line-height:1.4;font-size:0.8rem;margin:0 0 20px;padding:10px;border-radius:8px;background:rgba(46,90,154,0.10);border:1px solid rgba(46,90,154,0.22);">Access will be sent to <strong style="word-break:break-all;">${escapeHtml(redirectOrigin)}</strong>. Only approve if you recognize this destination.</p>
+  <p style="opacity:0.75;line-height:1.4;font-size:0.8rem;margin:0 0 20px;padding:10px;border-radius:8px;background:var(--note);border:1px solid var(--line);">Access will be sent to <strong style="word-break:break-all;">${escapeHtml(redirectOrigin)}</strong>. Only approve if you recognize this destination.</p>
   ${hidden("response_type", p.responseType)}
   ${hidden("client_id", p.clientId)}
   ${hidden("redirect_uri", redirectUri)}
@@ -191,8 +184,8 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
   ${hidden("code_challenge_method", p.codeChallengeMethod)}
   ${hidden("resource", p.resource)}
   <div style="display:flex;gap:10px;">
-    <button type="submit" name="action" value="deny" style="flex:1;padding:12px;border-radius:10px;border:1px solid rgba(11,17,32,0.2);background:transparent;color:#0B1120;font-size:0.9rem;cursor:pointer;">Deny</button>
-    <button type="submit" name="action" value="approve" style="flex:2;padding:12px;border-radius:10px;border:none;background:#2E5A9A;color:#E4EDF6;font-weight:600;font-size:0.9rem;cursor:pointer;">Approve</button>
+    <button type="submit" name="action" value="deny" style="flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:transparent;color:var(--fg);font-size:0.9rem;cursor:pointer;">Deny</button>
+    <button type="submit" name="action" value="approve" style="flex:2;padding:12px;border-radius:10px;border:none;background:var(--btn);color:var(--btn-fg);font-weight:600;font-size:0.9rem;cursor:pointer;">Approve</button>
   </div>
 </form>
 </body></html>`;

@@ -10,17 +10,24 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     display: "standalone",
     lang: "en",
-    background_color: "#E4EDF6",
-    theme_color: "#E4EDF6",
+    background_color: "#11131A",
+    theme_color: "#11131A",
     icons: [
       {
-        src: "/icon-192.png",
+        src: "/icon-192-dark.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-512.png",
+        src: "/icon-512-dark.png",
+        sizes: "512x512",
+        type: "image/png",
+        purpose: "any",
+      },
+      {
+        // The saddle is wide, so this copy keeps it inside the 80% maskable safe zone.
+        src: "/icon-512-maskable.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

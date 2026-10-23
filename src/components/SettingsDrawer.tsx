@@ -41,7 +41,7 @@ function applyTheme(theme: Theme) {
   document.documentElement.setAttribute("data-theme", theme);
   try { localStorage.setItem("xkg-theme", theme); } catch { /* ignore */ }
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute("content", theme === "dark" ? "#0B1120" : "#E4EDF6");
+  if (meta) meta.setAttribute("content", theme === "dark" ? "#11131A" : "#F2F1F6");
 }
 
 function mcpCommand(key: string): string {

@@ -1,11 +1,14 @@
 @import 'tailwindcss';
 
+/* Lunar Graphite primitives. UI code uses the semantic variables below. */
 @theme {
-  --color-brand-navy: #0b1120;
-  --color-brand-blue: #2e5a9a;
-  --color-brand-cyan: #3eb0ea;
-  --color-brand-silver: #e4edf6;
-  --color-brand-cream: #e4edf6;
+  --color-obsidian: #11131a;
+  --color-graphite: #2a2d3b;
+  --color-slate-iris: #777493;
+  --color-moonstone: #b8b5d0;
+  --color-porcelain: #f2f1f6;
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-sora), var(--font-inter), system-ui, sans-serif;
 }
 
 /*
@@ -43,33 +46,35 @@
 }
 
 /*
-  Palette (same four colors in both themes):
-    #0B1120  ink / dark canvas
-    #E4EDF6  paper / light canvas
-    #2E5A9A  buttons
-    #3EB0EA  accent
-  Light inverts canvas and text so contrast holds.
+  Lunar Graphite. Obsidian #11131A, Graphite #2A2D3B, Slate Iris #777493,
+  Moonstone #B8B5D0, Porcelain #F2F1F6; light and dark swap canvas and text.
+
+  The variable names predate the palette and are kept so call sites don't
+  change: --gold is the accent text color, --gold-low the input border,
+  --gold-high the focus color. Slate Iris is never body text (it fails AA on
+  both canvases); it marks borders, which need 3:1 and get it.
 */
 :root {
-  --bg:               #E4EDF6;
-  --fg:               #0B1120;
-  --fg-muted:         #2E5A9A;
-  --gold:             #2E5A9A;
-  --accent:           #3EB0EA;
-  --btn:              #2E5A9A;
-  --btn-hover:        #24487C;
-  --btn-fg:           #E4EDF6;
-  --gold-faint:       rgba(46,90,154,0.12);
-  --gold-low:         rgba(46,90,154,0.22);
-  --gold-mid:         rgba(46,90,154,0.4);
-  --gold-high:        rgba(46,90,154,0.75);
-  --gold-quote:       rgba(46,90,154,0.45);
-  --input-bg:         rgba(11,17,32,0.05);
-  --card-bg:          rgba(11,17,32,0.04);
-  --spinner-track:    rgba(11,17,32,0.2);
-  --scrim:            rgba(11,17,32,0.28);
-  --drawer-shadow:    0 12px 40px rgba(11,17,32,0.16);
+  --bg:               #F2F1F6;
+  --fg:               #11131A;
+  --fg-muted:         #49485E;
+  --gold:             #49485E;
+  --accent:           #777493;
+  --btn:              #2A2D3B;
+  --btn-hover:        #45445E;
+  --btn-fg:           #F2F1F6;
+  --gold-faint:       rgba(119,116,147,0.18);
+  --gold-low:         #777493;
+  --gold-mid:         rgba(119,116,147,0.55);
+  --gold-high:        #2A2D3B;
+  --gold-quote:       rgba(119,116,147,0.5);
+  --input-bg:         #FFFFFF;
+  --card-bg:          #FFFFFF;
+  --spinner-track:    rgba(17,19,26,0.2);
+  --scrim:            rgba(17,19,26,0.32);
+  --drawer-shadow:    0 12px 40px rgba(17,19,26,0.16);
   --danger:           #b42318;
+  --focus:            #2A2D3B;
   --motion-quick:     150ms;
   --motion-fast:      250ms;
   --motion-medium:    350ms;
@@ -77,31 +82,44 @@
 }
 
 html[data-theme="dark"] {
-  --bg:               #0B1120;
-  --fg:               #E4EDF6;
-  --fg-muted:         #3EB0EA;
-  --gold:             #3EB0EA;
-  --accent:           #3EB0EA;
-  --btn:              #2E5A9A;
-  --btn-hover:        #3A6CB5;
-  --btn-fg:           #E4EDF6;
-  --gold-faint:       rgba(62,176,234,0.12);
-  --gold-low:         rgba(62,176,234,0.22);
-  --gold-mid:         rgba(46,90,154,0.55);
-  --gold-high:        rgba(62,176,234,0.8);
-  --gold-quote:       rgba(62,176,234,0.45);
-  --input-bg:         rgba(228,237,246,0.06);
-  --card-bg:          rgba(228,237,246,0.05);
-  --spinner-track:    rgba(228,237,246,0.2);
-  --scrim:            rgba(5,8,16,0.6);
-  --drawer-shadow:    -8px 0 40px rgba(0,0,0,0.45);
+  --bg:               #11131A;
+  --fg:               #F2F1F6;
+  --fg-muted:         #B8B5D0;
+  --gold:             #B8B5D0;
+  --accent:           #B8B5D0;
+  --btn:              #B8B5D0;
+  --btn-hover:        #C9C6DD;
+  --btn-fg:           #11131A;
+  --gold-faint:       rgba(184,181,208,0.14);
+  --gold-low:         #777493;
+  --gold-mid:         rgba(184,181,208,0.4);
+  --gold-high:        #B8B5D0;
+  --gold-quote:       rgba(184,181,208,0.45);
+  --input-bg:         #11131A;
+  --card-bg:          #202332;
+  --spinner-track:    rgba(242,241,246,0.2);
+  --scrim:            rgba(5,6,10,0.6);
+  --drawer-shadow:    -8px 0 40px rgba(0,0,0,0.5);
   --danger:           #ff7b72;
+  --focus:            #B8B5D0;
+}
+
+/* Keyboard focus: inputs keep their own border change; everything else gets a ring. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+  }
+}
+
+h1, h2 {
+  font-family: var(--font-display);
 }
 
 body {
   background: var(--bg);
   color: var(--fg);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   min-height: 100dvh;
   padding-bottom: env(safe-area-inset-bottom);
 }
