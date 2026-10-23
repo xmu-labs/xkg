@@ -324,6 +324,26 @@ export async function revokeUserTokens(userId: number): Promise<number> {
   return rows[0]?.token_version ?? 0;
 }
 
+/**
+ * Delete everything xkg holds about a user: the account row and every record
+ * keyed to it. Captures are untouched — they live in the user's GitHub repo.
+ *
+ * The users row goes last. A failure part-way leaves the account in place, so
+ * the user can retry from Settings; deleting it first would strand the other
+ * rows with no way back to them.
+ */
+export async function deleteUserData(userId: number, username: string): Promise<void> {
+  await sql`DELETE FROM oauth_refresh_tokens WHERE user_id = ${userId}`;
+  await sql`DELETE FROM oauth_codes WHERE user_id = ${userId}`;
+  await sql`DELETE FROM usage_quota WHERE identifier = ${`capture:user:${userId}`}`;
+  // PIN lockouts are keyed by user id; rows from before that were keyed by username.
+  await sql`
+    DELETE FROM login_attempts
+    WHERE identifier IN (${`user:${userId}`}, ${username.toLowerCase()})
+  `;
+  await sql`DELETE FROM users WHERE id = ${userId}`;
+}
+
 // ── OAuth refresh token tracking ──
 
 export interface RefreshRecord {

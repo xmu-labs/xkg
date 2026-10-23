@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import Link from "next/link";
 
 export interface Me {
   githubUsername: string;
@@ -123,6 +124,12 @@ export default function SettingsDrawer({
 
   const [signingOut, setSigningOut] = useState(false);
 
+  const deleteInputId = useId();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteStatus, setDeleteStatus] = useState<"idle" | "deleting" | "error">("idle");
+  const [deleteError, setDeleteError] = useState("");
+
   const cleanup = useCallback(() => {
     setMcpKey(null);
     setKeyError("");
@@ -135,6 +142,10 @@ export default function SettingsDrawer({
     setPinStatus("idle");
     setProfileError("");
     setProfileStatus("idle");
+    setDeleteOpen(false);
+    setDeleteConfirm("");
+    setDeleteStatus("idle");
+    setDeleteError("");
     if (fileRef.current) fileRef.current.value = "";
   }, []);
 
@@ -337,7 +348,32 @@ export default function SettingsDrawer({
     }
   }
 
+  async function handleDeleteAccount() {
+    setDeleteStatus("deleting");
+    setDeleteError("");
+    try {
+      const res = await fetch("/api/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: deleteConfirm }),
+      });
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
+      }
+      const data = await res.json().catch(() => ({})) as { error?: string; githubRevoked?: boolean };
+      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // If GitHub couldn't confirm the revocation, the sign-in page tells them to do it there.
+      window.location.href = data.githubRevoked ? "/login?deleted=1" : "/login?deleted=1&revoke=1";
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Could not delete account");
+      setDeleteStatus("error");
+    }
+  }
+
   const avatar = me?.avatarUrl;
+  const deleteConfirmed =
+    Boolean(me) && deleteConfirm.trim().toLowerCase() === me?.githubUsername.toLowerCase();
 
   return (
     <>
@@ -651,6 +687,62 @@ export default function SettingsDrawer({
                   </button>
                 </div>
               </section>
+
+              {/* 5. Delete account */}
+              <section>
+                <SectionLabel>Delete account</SectionLabel>
+                <div className="rounded-2xl p-4" style={CARD_STYLE}>
+                  <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                    Deletes your xkg account, keys and settings, and revokes xkg&apos;s access to GitHub.
+                    Your captures stay in your GitHub repository.
+                  </p>
+                  {!deleteOpen ? (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteOpen(true)}
+                      className="mt-3 w-full text-sm font-medium rounded-xl py-2.5"
+                      style={{ color: "var(--danger)", border: "1px solid color-mix(in srgb, var(--danger) 35%, transparent)" }}
+                    >
+                      Delete account…
+                    </button>
+                  ) : (
+                    <div className="mt-3 stack-2">
+                      <label htmlFor={deleteInputId} className="block text-xs" style={{ color: "var(--fg)" }}>
+                        Type <strong>{me?.githubUsername}</strong> to confirm. This can&apos;t be undone.
+                      </label>
+                      <input
+                        id={deleteInputId}
+                        type="text"
+                        autoComplete="off"
+                        autoCapitalize="none"
+                        spellCheck={false}
+                        value={deleteConfirm}
+                        onChange={(e) => setDeleteConfirm(e.target.value)}
+                        className={INPUT_CLASS}
+                        style={INPUT_STYLE}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteAccount()}
+                        disabled={deleteStatus === "deleting" || !deleteConfirmed}
+                        className="w-full text-sm font-medium rounded-xl py-2.5 disabled:opacity-30"
+                        style={{ background: "var(--danger)", color: "var(--bg)" }}
+                      >
+                        {deleteStatus === "deleting" ? "Deleting…" : "Delete my account"}
+                      </button>
+                      {deleteStatus === "error" && (
+                        <p className="text-xs" style={{ color: "var(--danger)" }}>{deleteError}</p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              <p className="text-xs text-center" style={{ color: "var(--fg-muted)" }}>
+                <Link href="/privacy" className="underline underline-offset-2">Privacy</Link>
+                <span aria-hidden="true"> · </span>
+                <Link href="/terms" className="underline underline-offset-2">Terms</Link>
+              </p>
             </div>
           </aside>
         </div>

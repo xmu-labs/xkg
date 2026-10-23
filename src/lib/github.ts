@@ -127,6 +127,27 @@ export async function githubDelete(
   }
 }
 
+/**
+ * Revoke the user's authorization of this OAuth app, which invalidates every
+ * token GitHub issued to it for that user. Same effect as the user revoking xkg
+ * under GitHub → Settings → Applications. Authenticated as the app itself.
+ *
+ * Returns whether GitHub confirmed it. 404 means the grant was already gone.
+ */
+export async function revokeGithubGrant(
+  clientId: string,
+  clientSecret: string,
+  token: string,
+): Promise<boolean> {
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const res = await fetch(`${GITHUB_API}/applications/${encodeURIComponent(clientId)}/grant`, {
+    method: "DELETE",
+    headers: { ...GITHUB_HEADERS, Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token: token }),
+  });
+  return res.status === 204 || res.status === 404;
+}
+
 // ── High-level helpers ──
 
 /** Read a file's decoded UTF-8 content and sha from a repo. */

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -14,6 +15,16 @@ const CARD_STYLE: React.CSSProperties = {
   border: "1px solid var(--gold-faint)",
 };
 
+// Self-service account deletion redirects here with ?deleted=1 (and &revoke=1
+// when GitHub couldn't confirm it revoked xkg). Read from the URL on the client
+// only; the server render shows no notice.
+function readDeleted(): null | "done" | "revoke" {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("deleted") !== "1") return null;
+  return params.get("revoke") === "1" ? "revoke" : "done";
+}
+const noSubscribe = () => () => {};
+
 export default function LoginPage() {
   const [showPin, setShowPin] = useState(false);
   const [pin, setPin] = useState("");
@@ -23,6 +34,7 @@ export default function LoginPage() {
   // the server whether to offer it rather than showing a form that can't work.
   const [pinAvailable, setPinAvailable] = useState(false);
   const [pinUser, setPinUser] = useState("");
+  const deleted = useSyncExternalStore(noSubscribe, readDeleted, () => null);
 
   useEffect(() => {
     let cancelled = false;
@@ -96,6 +108,23 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {deleted && (
+          <div role="status" className="rounded-2xl p-4 text-xs leading-relaxed" style={CARD_STYLE}>
+            <p style={{ color: "var(--fg)" }}>
+              Your xkg account has been deleted. Your captures are still in your GitHub repository.
+            </p>
+            {deleted === "revoke" && (
+              <p className="mt-2" style={{ color: "var(--fg-muted)" }}>
+                GitHub didn&apos;t confirm that xkg&apos;s access was revoked. To be sure, remove xkg under{" "}
+                <a href="https://github.com/settings/applications" className="underline underline-offset-2">
+                  GitHub → Settings → Applications
+                </a>
+                .
+              </p>
+            )}
+          </div>
+        )}
+
         {/* GitHub OAuth — primary */}
         <a
           href="/api/auth/github"
@@ -165,6 +194,11 @@ export default function LoginPage() {
 
         <p className="text-[11px] text-center pt-4" style={{ color: "var(--fg-muted)" }}>
           First time? Sign in with GitHub to get started.
+        </p>
+        <p className="text-[11px] text-center" style={{ color: "var(--fg-muted)" }}>
+          By signing in you agree to the{" "}
+          <Link href="/terms" className="underline underline-offset-2">Terms</Link> and{" "}
+          <Link href="/privacy" className="underline underline-offset-2">Privacy Policy</Link>.
         </p>
       </div>
     </main>

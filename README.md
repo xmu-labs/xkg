@@ -374,6 +374,7 @@ The whole point of this repo being public is that you can check these claims rat
 | `pin_hash` | salted scrypt (`src/lib/pin.ts`) |
 | `api_key` | hashed — not recoverable |
 | `llm_provider`, `llm_api_key` | encrypted |
+| `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
@@ -398,7 +399,11 @@ Your MCP key is shown exactly once. If you lose it, generate a new one.
 
 **PIN unlock is device-bound.** It only works on a device that has already signed in with GitHub. A PIN on its own is not enough to reach your account.
 
-**Revoking access.** Generating a new MCP key invalidates the old key, every signed-in session, and every connected MCP client. Sessions also expire after 30 days.
+**Revoking access.** Generating a new MCP key invalidates the old key, every other signed-in session, and every connected MCP client. Sessions also expire after 30 days.
+
+**Deleting your account.** Settings → Delete account removes your account row and every record keyed to it, and asks GitHub to revoke xkg's access (`src/lib/account.ts`). Your captures stay in your repo.
+
+The hosted service's [Privacy Policy](https://xkg.xmu.sh/privacy) and [Terms of Service](https://xkg.xmu.sh/terms) say the same in legal form.
 
 ## Cost
 
