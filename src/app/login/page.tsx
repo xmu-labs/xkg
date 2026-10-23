@@ -85,7 +85,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-dvh flex flex-col items-center justify-center px-4">
-      <div className="w-full max-w-xs space-y-4">
+      <div className="w-full max-w-xs stack-4">
 
         {/* Logo + wordmark */}
         <div className="flex flex-col items-center text-center mb-10">
@@ -131,7 +131,7 @@ export default function LoginPage() {
             Quick unlock with PIN
           </button>
         ) : (
-          <div className="space-y-2.5 rounded-2xl p-4" style={CARD_STYLE}>
+          <div className="stack-2.5 rounded-2xl p-4" style={CARD_STYLE}>
             {pinUser && (
               <p className="text-xs text-center pb-0.5" style={{ color: "var(--fg-muted)" }}>
                 Unlocking as <strong>{pinUser}</strong>
@@ -144,7 +144,7 @@ export default function LoginPage() {
               onChange={(e) => setPin(e.target.value)}
               onKeyDown={handleKeyDown}
               autoFocus
-              className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-none"
+              className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden"
               style={INPUT_STYLE}
               onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
               onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
