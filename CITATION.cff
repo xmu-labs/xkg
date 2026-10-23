@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: If you use xkg in published work, please cite it as below.
+type: software
+title: "xkg: A Knowledge Graph for AI workers"
+authors:
+  - given-names: Sofía
+    family-names: Padrón Valdez
+repository-code: https://github.com/xmu-labs/xkg
+url: https://xkg.xmu.sh
+license: MIT
+keywords:
+  - knowledge graph
+  - mcp
+  - ai agents
+  - claude
