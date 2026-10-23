@@ -5,6 +5,9 @@ const PUBLIC_PATHS = [
   "/login",
   "/privacy",
   "/terms",
+  // Browsers fetch the web app manifest without cookies, so gating it would
+  // hand them the login page and the installed app would lose its icons.
+  "/manifest.webmanifest",
   "/api/auth",
   "/api/auth/github",
   "/api/auth/callback",
