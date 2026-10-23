@@ -8,19 +8,25 @@ on:
   push:
     branches: [main]
 
+# Read-only token: CI only checks out and tests code.
+permissions:
+  contents: read
+
 jobs:
   verify:
     name: Typecheck and tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history, for the secret scan below
 
       # This repository is public. .gitignore keeps private files out of a
       # normal `git add`, but not out of `git add -f`; this keeps them out of main.
       # Keep the pattern in step with the "Private plans" block in .gitignore.
       - name: No private plans, notes or credentials
         run: |
-          private='(^|/)(XKG|MNEMOS)_PLAN\.md$|(^|/)(CLAUDE|AGENTS)(\.local)?\.md$|\.local\.md$|^(plans|notes|memory|docs/superpowers)/|(^|/)\.(claude|codex|cursor|agents|gstack|superpowers|xkg|xmu|mnemos|aws|ssh)/|(^|/)\.env($|\.)'
+          private='(^|/)(XKG|MNEMOS)_PLAN\.md$|(^|/)(CLAUDE|AGENTS)(\.local)?\.md$|\.local\.md$|^(plans|notes|memory|docs/superpowers)/|(^|/)\.(claude|codex|cursor|agents|gstack|superpowers|xkg|xmu|mnemos|aws|ssh)/|(^|/)\.env($|\.)|(^|/)\.DS_Store$'
           # Only environment templates are exempt — not any file ending in .example.
           found=$(git ls-files | grep -E "$private" | grep -vE '(^|/)\.env(\.[^/]+)?\.example$' || true)
           if [ -n "$found" ]; then
@@ -28,6 +34,34 @@ jobs:
             echo "$found"
             exit 1
           fi
+
+      # Scans every commit, not only the current tree: a token committed and
+      # deleted later is still public in history. Pinned and checksum-verified
+      # rather than a third-party action, which needs a paid licence for
+      # organisation repositories.
+      #
+      # The policy comes from here, never from the code under test: gitleaks
+      # would load a repository .gitleaks.toml or .gitleaksignore (either can
+      # allowlist everything) and honour inline gitleaks:allow comments.
+      - name: No secrets in history
+        env:
+          GITLEAKS_VERSION: 8.21.2
+          GITLEAKS_SHA256: 5bc41815076e6ed6ef8fbecc9d9b75bcae31f39029ceb55da08086315316e3ba
+        run: |
+          policy=$(git -C "$GITHUB_WORKSPACE" ls-files | grep -E '(^|/)\.gitleaks(\.toml|ignore)$' || true)
+          if [ -n "$policy" ]; then
+            echo "::error::Secret-scan policy files are not accepted here; remove: $policy"
+            exit 1
+          fi
+          cd "$RUNNER_TEMP"
+          curl -sSfL -o gitleaks.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tgz" | sha256sum -c -
+          tar -xzf gitleaks.tgz gitleaks
+          printf '[extend]\nuseDefault = true\n' > gitleaks.toml
+          ./gitleaks git --config gitleaks.toml --ignore-gitleaks-allow --log-opts="--all" --redact --no-banner "$GITHUB_WORKSPACE"
+          # Commit messages are not part of any patch, so scan them separately.
+          git -C "$GITHUB_WORKSPACE" log --all --format='%H%n%B' |
+            ./gitleaks stdin --config gitleaks.toml --ignore-gitleaks-allow --redact --no-banner
 
       - uses: actions/setup-node@v7
         with:

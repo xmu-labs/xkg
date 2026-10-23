@@ -10,17 +10,18 @@ import type { ExtractedCapture } from "../types";
  * not fetch) it returned nulls for slug/title/coreIdea, the cast let them
  * through, and buildIndexRow threw on `.slice()` of null. By then the capture
  * file was already written, so the file existed with no index row and could
- * not be found by search. Two captures in mnemos-knowledge ended up that way:
- *   inbox/2026-04-12-poetiq-arc-agi-benchmark-language-models.md
- *   inbox/2026-06-02-url-only-arxiv-extraction-insufficient.md
+ * not be found by search.
+ *
+ * Fixtures here are synthetic: never copy captures, file names or URLs from
+ * someone's knowledge repository into this public repo.
  */
 
-// The shape those two captures were actually written from.
+// The shape an orphaned capture was written from: everything null.
 const nullExtraction = {
   slug: null,
   inferredTitle: null,
   inferredAuthor: null,
-  inferredUrl: "https://arxiv.org/abs/2605.30621",
+  inferredUrl: "https://example.com/paper",
   inferredType: null,
   coreIdea: null,
   takeaways: null,
@@ -31,7 +32,7 @@ const nullExtraction = {
 };
 
 describe("normalizeCapture", () => {
-  it("survives the null-everything extraction that orphaned two captures", () => {
+  it("survives the null-everything extraction that orphaned captures", () => {
     const c = normalizeCapture(nullExtraction);
     expect(c.slug).toBe("untitled");
     expect(c.inferredTitle).toBe("Untitled capture");
