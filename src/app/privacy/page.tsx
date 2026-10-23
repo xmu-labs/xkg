@@ -49,6 +49,10 @@ export default function PrivacyPage() {
           From the optional CLI hooks: your project&apos;s name, current git branch, last five commit
           messages, and the path of a file being edited.
         </li>
+        <li>
+          What you or your AI tools send to get briefings, plans and suggestions: project context,
+          task descriptions and code snippets.
+        </li>
       </ul>
       <p>
         <strong>Not collected.</strong> No email address, no payment details, no analytics, tracking
@@ -92,8 +96,12 @@ export default function PrivacyPage() {
           ],
           [
             "Your LLM provider (Anthropic, OpenAI or Google)",
-            <>Capture content and relevant knowledge-base entries, sent with <strong>your</strong> API key</>,
-            "Extracting and ranking insights",
+            <>
+              Capture content, relevant knowledge-base entries, and the context sent for briefings,
+              plans and suggestions (such as project name, branch, recent commit messages, file paths,
+              task descriptions and code), sent with <strong>your</strong> API key
+            </>,
+            "Extracting and ranking insights, writing briefings, plans and suggestions",
             "Your provider's infrastructure",
           ],
           ["Websites you capture", "A request from xkg's servers, not from your device", "Reading the page you submitted", "Anywhere"],
