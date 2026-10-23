@@ -28,6 +28,7 @@ HEAD=$(git rev-parse HEAD)
 
 publish_as() {
   local name=$1
+  shift
   if npm view "$name@$VERSION" version >/dev/null 2>&1; then
     local published
     published=$(npm view "$name@$VERSION" gitHead 2>/dev/null || true)
