@@ -11,6 +11,13 @@
  * Legacy hashes (bare 64-char hex = the old unsalted SHA-256) still verify, so
  * existing users can sign in; `needsRehash` tells the caller to transparently
  * upgrade the stored hash on the next successful login.
+ *
+ * Stored legacy hashes are also wrapped in bulk, without the PIN, by
+ * `wrapLegacyHash` (see upgradeLegacyData in lib/db):
+ *
+ *     scrypt-sha256$<N>$<r>$<p>$<saltBase64>$<hashBase64>   = scrypt(sha256hex(pin))
+ *
+ * which verifies the same PIN and is re-hashed plainly at the next login.
  */
 
 import crypto from "crypto";
@@ -55,6 +62,18 @@ export function hashPin(pin: string): string {
   return `scrypt$${N}$${R}$${P}$${salt.toString("base64")}$${hash.toString("base64")}`;
 }
 
+/** True for the old unsalted SHA-256 format. */
+export function isLegacyPinHash(stored: string): boolean {
+  return LEGACY_SHA256.test(stored);
+}
+
+/** Wrap a legacy unsalted SHA-256 hash in salted scrypt, without needing the PIN. */
+export function wrapLegacyHash(legacyHex: string): string {
+  const salt = crypto.randomBytes(SALT_BYTES);
+  const hash = derive(legacyHex.toLowerCase(), salt, N, R, P);
+  return `scrypt-sha256$${N}$${R}$${P}$${salt.toString("base64")}$${hash.toString("base64")}`;
+}
+
 /**
  * Verify a PIN against a stored hash, in constant time for a given format.
  * Returns false (never throws) on a malformed or unrecognized stored hash.
@@ -68,7 +87,11 @@ export function verifyPin(pin: string, stored: string): boolean {
   }
 
   const parts = stored.split("$");
-  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  if (parts.length !== 6) return false;
+  let input: string;
+  if (parts[0] === "scrypt") input = pin;
+  else if (parts[0] === "scrypt-sha256") input = crypto.createHash("sha256").update(pin).digest("hex");
+  else return false;
 
   const n = Number(parts[1]);
   const r = Number(parts[2]);
@@ -89,7 +112,7 @@ export function verifyPin(pin: string, stored: string): boolean {
 
   let actual: Buffer;
   try {
-    actual = crypto.scryptSync(pin, salt, expected.length, { N: n, r, p, maxmem: 256 * n * r });
+    actual = crypto.scryptSync(input, salt, expected.length, { N: n, r, p, maxmem: 256 * n * r });
   } catch {
     return false;
   }

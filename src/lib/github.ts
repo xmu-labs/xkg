@@ -127,6 +127,33 @@ export async function githubDelete(
   }
 }
 
+/** Account deletion waits at most this long for GitHub before deleting anyway. */
+export const GITHUB_REVOKE_TIMEOUT_MS = 5000;
+
+/**
+ * Revoke the user's authorization of this OAuth app, which invalidates every
+ * token GitHub issued to it for that user. Same effect as the user revoking xkg
+ * under GitHub → Settings → Applications. Authenticated as the app itself.
+ *
+ * Returns whether GitHub confirmed it, which only a 204 does: a 404 can mean
+ * the stored token is stale while another token for the same grant still
+ * works. Throws when GitHub does not answer within the timeout.
+ */
+export async function revokeGithubGrant(
+  clientId: string,
+  clientSecret: string,
+  token: string,
+): Promise<boolean> {
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+  const res = await fetch(`${GITHUB_API}/applications/${encodeURIComponent(clientId)}/grant`, {
+    method: "DELETE",
+    headers: { ...GITHUB_HEADERS, Authorization: `Basic ${basic}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ access_token: token }),
+    signal: AbortSignal.timeout(GITHUB_REVOKE_TIMEOUT_MS),
+  });
+  return res.status === 204;
+}
+
 // ── High-level helpers ──
 
 /** Read a file's decoded UTF-8 content and sha from a repo. */

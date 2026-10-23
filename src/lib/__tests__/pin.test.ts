@@ -5,6 +5,8 @@ import {
   verifyPin,
   needsRehash,
   validatePin,
+  isLegacyPinHash,
+  wrapLegacyHash,
   MIN_PIN_LENGTH,
   MAX_PIN_LENGTH,
 } from "../pin";
@@ -69,6 +71,35 @@ describe("hashPin / verifyPin", () => {
 
   it("returns false for an empty PIN", () => {
     expect(verifyPin("", hashPin("123456"))).toBe(false);
+  });
+});
+
+describe("wrapLegacyHash", () => {
+  const legacy = crypto.createHash("sha256").update("123456").digest("hex");
+
+  it("recognizes only the legacy format", () => {
+    expect(isLegacyPinHash(legacy)).toBe(true);
+    expect(isLegacyPinHash(hashPin("123456"))).toBe(false);
+    expect(isLegacyPinHash(wrapLegacyHash(legacy))).toBe(false);
+  });
+
+  it("wraps a legacy hash so the same PIN still verifies, and no other", () => {
+    const wrapped = wrapLegacyHash(legacy);
+    expect(wrapped).toMatch(/^scrypt-sha256\$\d+\$\d+\$\d+\$[A-Za-z0-9+/=]+\$[A-Za-z0-9+/=]+$/);
+    expect(verifyPin("123456", wrapped)).toBe(true);
+    expect(verifyPin("654321", wrapped)).toBe(false);
+  });
+
+  it("matches however the legacy hex was cased", () => {
+    expect(verifyPin("123456", wrapLegacyHash(legacy.toUpperCase()))).toBe(true);
+  });
+
+  it("is salted: wrapping the same hash twice gives different values", () => {
+    expect(wrapLegacyHash(legacy)).not.toBe(wrapLegacyHash(legacy));
+  });
+
+  it("is re-hashed plainly at the next login", () => {
+    expect(needsRehash(wrapLegacyHash(legacy))).toBe(true);
   });
 });
 
