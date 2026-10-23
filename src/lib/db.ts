@@ -1,4 +1,4 @@
-import { sql } from "@vercel/postgres";
+import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey } from "./crypto";
 import type { LlmProvider } from "./types";
 

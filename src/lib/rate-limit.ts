@@ -10,7 +10,7 @@
  * anyone who knows a username deny that user access indefinitely.
  */
 
-import { sql } from "@vercel/postgres";
+import { sql } from "./sql";
 
 /** Failures allowed inside one window before the identifier is locked. */
 export const MAX_ATTEMPTS = 5;
