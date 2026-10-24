@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
-import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType } from "@/lib/llm";
+import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings } from "@/lib/llm";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
@@ -96,7 +96,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   // Extract insights via LLM
   let capture;
   try {
-    capture = await extractCapture(user.llm_api_key, llmContent, title, user.llm_provider);
+    capture = await extractCapture(user.llm_api_key, llmContent, title, llmSettings(user));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     return NextResponse.json({ error: message }, { status: 502 });
@@ -124,7 +124,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     try {
       const indexFile = await readFile(user.github_token, user.github_repo, "INDEX.md");
       if (indexFile) {
-        await linkCapture(user.llm_api_key, user.github_token, user.github_repo, capture, filename, "inbox", indexFile.content, user.llm_provider);
+        await linkCapture(user.llm_api_key, user.github_token, user.github_repo, capture, filename, "inbox", indexFile.content, llmSettings(user));
       }
     } catch {
       // Linking is best-effort

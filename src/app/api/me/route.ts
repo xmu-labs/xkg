@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
-import { ensureProfileColumns, updateUserProfile } from "@/lib/db";
+import { ensureLlmColumns, ensureProfileColumns, updateUserLlmSettings, updateUserProfile } from "@/lib/db";
+import { LLM_EFFORTS, defaultModel, validateLlmModel } from "@/lib/llm";
+import type { LlmEffort, LlmProvider } from "@/lib/types";
 import {
   githubAvatarUrl,
   validateAvatarData,
@@ -24,6 +26,9 @@ function mePayload(user: {
   avatar_data: string | null;
   api_key: string | null;
   pin_hash: string | null;
+  llm_provider: LlmProvider;
+  llm_model?: string | null;
+  llm_effort?: LlmEffort | null;
 }) {
   return {
     githubUsername: user.github_username,
@@ -32,6 +37,10 @@ function mePayload(user: {
     hasCustomAvatar: Boolean(user.avatar_data),
     hasMcpKey: Boolean(user.api_key),
     hasPin: Boolean(user.pin_hash),
+    llmProvider: user.llm_provider,
+    llmModel: user.llm_model ?? null,
+    llmEffort: user.llm_effort ?? null,
+    defaultModel: defaultModel(user.llm_provider),
     version: appVersion(),
   };
 }
@@ -41,6 +50,7 @@ export async function GET(): Promise<NextResponse> {
     const user = await getSession();
     if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     await ensureProfileColumns();
+    await ensureLlmColumns();
     return NextResponse.json(mePayload(user));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load profile";
@@ -53,9 +63,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     const user = await getSession();
     if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-    let body: { displayName?: unknown; avatarData?: unknown };
+    let body: { displayName?: unknown; avatarData?: unknown; llmModel?: unknown; llmEffort?: unknown };
     try {
-      body = await req.json() as { displayName?: unknown; avatarData?: unknown };
+      body = await req.json() as typeof body;
     } catch {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
@@ -83,15 +93,46 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (fields.displayName === undefined && fields.avatarData === undefined) {
+    // Model and effort are saved together: the pair is what the next LLM call uses.
+    const llmChange = "llmModel" in body || "llmEffort" in body;
+    let llmModel = user.llm_model ?? null;
+    let llmEffort = user.llm_effort ?? null;
+    if ("llmModel" in body) {
+      if (body.llmModel === null || body.llmModel === "") {
+        llmModel = null;
+      } else if (typeof body.llmModel === "string") {
+        const trimmed = body.llmModel.trim();
+        const error = validateLlmModel(trimmed);
+        if (error) return NextResponse.json({ error }, { status: 400 });
+        llmModel = trimmed;
+      } else {
+        return NextResponse.json({ error: "Model must be a string." }, { status: 400 });
+      }
+    }
+    if ("llmEffort" in body) {
+      if (body.llmEffort === null || body.llmEffort === "") {
+        llmEffort = null;
+      } else if (LLM_EFFORTS.includes(body.llmEffort as LlmEffort)) {
+        llmEffort = body.llmEffort as LlmEffort;
+      } else {
+        return NextResponse.json({ error: "Effort must be low, medium or high." }, { status: 400 });
+      }
+    }
+
+    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
-    await updateUserProfile(user.id, fields);
+    if (fields.displayName !== undefined || fields.avatarData !== undefined) {
+      await updateUserProfile(user.id, fields);
+    }
+    if (llmChange) await updateUserLlmSettings(user.id, llmModel, llmEffort);
     const next = {
       ...user,
       display_name: fields.displayName !== undefined ? fields.displayName : user.display_name,
       avatar_data: fields.avatarData !== undefined ? fields.avatarData : user.avatar_data,
+      llm_model: llmModel,
+      llm_effort: llmEffort,
     };
     return NextResponse.json(mePayload(next));
   } catch (err) {

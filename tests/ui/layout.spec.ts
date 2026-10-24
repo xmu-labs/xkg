@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME } from "./fixtures";
 
 // M3 (XKG-11): one composer, a reachable Capture button, quieter Settings.
 
@@ -73,4 +73,28 @@ test("the PIN fields stay folded behind one row until asked for", async ({ page 
   await dialog.getByPlaceholder("New PIN", { exact: true }).fill("654321");
   await dialog.getByPlaceholder("Confirm new PIN").fill("654321");
   await expect(dialog.getByRole("button", { name: "Update PIN" })).toBeVisible();
+});
+
+test("Settings saves the model and effort together, only once they change", async ({ page }) => {
+  await signIn(page);
+  let patched: unknown = null;
+  await page.route("**/api/me", async (r) => {
+    if (r.request().method() === "PATCH") {
+      patched = r.request().postDataJSON();
+      return r.fulfill({ json: { ...WORST_ME, llmModel: "gpt-5", llmEffort: "low" } });
+    }
+    return r.fulfill({ json: WORST_ME });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue(WORST_ME.llmModel);
+  await expect(dialog.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("button", { name: "Save model" })).toHaveCount(0);
+
+  await dialog.getByLabel("Model", { exact: true }).fill("gpt-5");
+  await dialog.getByRole("button", { name: "Low" }).tap();
+  await dialog.getByRole("button", { name: "Save model" }).tap();
+  await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
+  expect(patched).toEqual({ llmModel: "gpt-5", llmEffort: "low" });
 });

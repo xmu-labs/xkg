@@ -19,7 +19,7 @@ import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
-import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows } from "@/lib/llm";
+import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
@@ -40,7 +40,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   }
 
   const sourceType = detectSourceType(args.content);
-  const capture: ExtractedCapture = await extractCapture(user.llm_api_key, args.content, args.title, user.llm_provider);
+  const capture: ExtractedCapture = await extractCapture(user.llm_api_key, args.content, args.title, llmSettings(user));
 
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
@@ -88,7 +88,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   let linkedCount = 0;
   if (existing) {
     try {
-      const related = await linkCapture(user.llm_api_key!, user.github_token, user.github_repo, capture, filename, "inbox", existing.content, user.llm_provider);
+      const related = await linkCapture(user.llm_api_key!, user.github_token, user.github_repo, capture, filename, "inbox", existing.content, llmSettings(user));
       linkedCount = related.length;
     } catch {
       // Linking is best-effort — don't fail the capture
@@ -236,7 +236,7 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
         const indexFile = await readFile(user.github_token, user.github_repo, "INDEX.md");
         if (indexFile && tags.length > 0) {
           // Re-synthesize the first tag (limit API calls)
-          await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo, tags[0]!, indexFile.content, user.llm_provider);
+          await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo, tags[0]!, indexFile.content, llmSettings(user));
         }
       }
     } catch {
@@ -282,7 +282,7 @@ export async function handleRecall(user: User, args: { context: string; max_resu
   if (!existing) return "No captures yet. Use the capture tool to build your knowledge base.";
 
   const maxResults = Math.min(args.max_results ?? 5, 10);
-  const ranked = await rankByRelevance(user.llm_api_key, args.context, existing.content, maxResults, user.llm_provider);
+  const ranked = await rankByRelevance(user.llm_api_key, args.context, existing.content, maxResults, llmSettings(user));
 
   if (ranked.length === 0) return `No relevant captures found for: "${args.context}"`;
 
@@ -313,7 +313,7 @@ export async function handleSynthesize(user: User, args: { tag: string }): Promi
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
   if (!existing) return "No captures yet.";
 
-  const result = await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo, args.tag, existing.content, user.llm_provider);
+  const result = await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo, args.tag, existing.content, llmSettings(user));
 
   if (result.rules.length === 0) {
     return `No captures found matching tag "${args.tag}". Use search_captures to find available tags.`;
@@ -349,7 +349,7 @@ export async function handleBriefing(user: User, args: { project_context: string
   if (!existing) return "No captures yet. Build your knowledge base with the capture tool first.";
 
   // 1. Find relevant captures (top 7 to give the briefing more candidates for the 0.7 threshold)
-  const ranked = await rankByRelevance(user.llm_api_key, args.project_context, existing.content, 7, user.llm_provider);
+  const ranked = await rankByRelevance(user.llm_api_key, args.project_context, existing.content, 7, llmSettings(user));
 
   // 2. Read relevant capture contents in parallel, keeping filename + score for the briefing prompt
   const relevantCaptures = await Promise.all(
@@ -384,7 +384,7 @@ export async function handleBriefing(user: User, args: { project_context: string
   }
 
   // 5. Compose briefing via LLM — return the full text (JSON block + Markdown narrative)
-  const briefingOutput = await composeBriefing(user.llm_api_key, args.project_context, validCaptures, rules, recentInbox, user.llm_provider);
+  const briefingOutput = await composeBriefing(user.llm_api_key, args.project_context, validCaptures, rules, recentInbox, llmSettings(user));
   return briefingOutput.text;
 }
 
@@ -403,7 +403,7 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
   const taskContext = contextParts.join("\n");
 
   // Find relevant captures
-  const ranked = await rankByRelevance(user.llm_api_key, taskContext, existing.content, 7, user.llm_provider);
+  const ranked = await rankByRelevance(user.llm_api_key, taskContext, existing.content, 7, llmSettings(user));
   if (ranked.length === 0) return `No relevant captures found for this task context.`;
 
   // Read capture contents
@@ -418,7 +418,7 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
   if (validContents.length === 0) return "Could not read relevant captures.";
 
   // Generate application suggestions
-  return generateApplicationSuggestions(user.llm_api_key, taskContext, validContents, user.llm_provider);
+  return generateApplicationSuggestions(user.llm_api_key, taskContext, validContents, llmSettings(user));
 }
 
 export async function handleGeneratePlan(
@@ -462,7 +462,7 @@ export async function handleGeneratePlan(
     selectedCaptures,
     args.project_context,
     codebaseFiles.length > 0 ? codebaseFiles : undefined,
-    user.llm_provider,
+    llmSettings(user),
   );
 
   // Save plan to plans/ folder in knowledge repo
@@ -524,7 +524,7 @@ export async function handleVaultScan(
   if (!existing) return "";
 
   // Search all captures — INDEX.md covers inbox, applied, and archived
-  const ranked = await rankByRelevance(user.llm_api_key, args.activity_context, existing.content, 3, user.llm_provider);
+  const ranked = await rankByRelevance(user.llm_api_key, args.activity_context, existing.content, 3, llmSettings(user));
 
   // Filter: score >= 0.7 and not already surfaced this session
   const surfaced = new Set(args.session_surfaced ?? []);

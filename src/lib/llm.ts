@@ -4,18 +4,36 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import type { ExtractedCapture, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, BriefingSuggestion, BriefingOutput, SourceType, LlmProvider } from "./types";
+import type { ExtractedCapture, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, BriefingSuggestion, BriefingOutput, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
 // ── Config ──
 
 const MAX_TOKENS = 800;
 
 /** Default model per provider for xkg's server-side extraction/briefing/plan work.
- *  Tuned for low cost — these are fast, cheap models. BYOK: the user's key, the user's bill. */
+ *  Tuned for low cost — these are fast, cheap models. BYOK: the user's key, the user's bill.
+ *  A user can replace it with any model their provider serves (Settings → Model). */
 const MODELS: Record<LlmProvider, string> = {
   anthropic: "claude-haiku-4-5",
   openai: "gpt-4o-mini",
   google: "gemini-2.0-flash",
+};
+
+/** The model xkg uses for a provider when the user has not picked one. */
+export function defaultModel(provider: LlmProvider): string {
+  return MODELS[provider];
+}
+
+/**
+ * Extra output tokens reserved for reasoning at each effort level. Every
+ * provider counts reasoning against the same output ceiling as the answer, so
+ * without this headroom a high-effort call spends its budget thinking and the
+ * JSON answer comes back cut off.
+ */
+export const REASONING_TOKENS: Record<LlmEffort, number> = {
+  low: 1024,
+  medium: 4096,
+  high: 12000,
 };
 
 /** Max input characters sent to the LLM (~1500 tokens, covers 95% of captures). */
@@ -26,43 +44,117 @@ export const MAX_INPUT_CHARS = 6000;
 // the rest of this file is provider-agnostic. Anthropic keeps the SDK (prompt
 // caching via cache_control); OpenAI and Google use their REST APIs over fetch.
 
-interface LlmCallOptions {
+/**
+ * What every public LLM function accepts: a bare provider (its default model,
+ * no extra reasoning) or the user's full settings.
+ */
+export type LlmConfig = LlmProvider | LlmSettings;
+
+export const LLM_EFFORTS: readonly LlmEffort[] = ["low", "medium", "high"];
+
+/**
+ * Check a user-typed model name. Any model the provider serves is allowed, so
+ * this only checks shape: the name lands in a URL path for Google, so it must
+ * not carry slashes, spaces or query characters. Returns an error or null.
+ */
+export function validateLlmModel(name: string): string | null {
+  if (name.length > 100) return "Model name is too long.";
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(name)) {
+    return "Use the model's ID, like claude-sonnet-5-5 (letters, numbers, dots, dashes).";
+  }
+  return null;
+}
+
+/** A stored user's LLM choice (the users row) in the shape every function here accepts. */
+export function llmSettings(user: {
+  llm_provider: LlmProvider;
+  llm_model?: string | null;
+  llm_effort?: LlmEffort | null;
+}): LlmSettings {
+  return { provider: user.llm_provider, model: user.llm_model ?? null, effort: user.llm_effort ?? null };
+}
+
+interface ResolvedLlm {
   provider: LlmProvider;
+  model: string;
+  /** null = the model's own default; no reasoning parameters are sent. */
+  effort: LlmEffort | null;
+}
+
+/** Normalize an LlmConfig: blank model → provider default, unknown effort → none. */
+export function resolveLlm(llm: LlmConfig): ResolvedLlm {
+  if (typeof llm === "string") return { provider: llm, model: MODELS[llm], effort: null };
+  const model = llm.model?.trim();
+  const effort = llm.effort && llm.effort in REASONING_TOKENS ? llm.effort : null;
+  return { provider: llm.provider, model: model || MODELS[llm.provider], effort };
+}
+
+interface LlmCallOptions {
+  llm: LlmConfig;
   apiKey: string;
   system: string;
   user: string;
   maxTokens: number;
-  /** Optional model override; defaults to the provider's entry in MODELS. */
-  model?: string;
 }
 
 /** Call the configured provider and return the raw text response (empty string on no content). */
 async function callLlm(opts: LlmCallOptions): Promise<string> {
-  const model = opts.model ?? MODELS[opts.provider];
-  switch (opts.provider) {
+  const llm = resolveLlm(opts.llm);
+  switch (llm.provider) {
     case "anthropic":
-      return callAnthropic(opts, model);
+      return callAnthropic(opts, llm);
     case "openai":
-      return callOpenAI(opts, model);
+      return callOpenAI(opts, llm);
     case "google":
-      return callGoogle(opts, model);
+      return callGoogle(opts, llm);
     default:
-      throw new Error(`[llm] Unsupported provider: ${opts.provider as string}`);
+      throw new Error(`[llm] Unsupported provider: ${llm.provider as string}`);
   }
 }
 
-async function callAnthropic(opts: LlmCallOptions, model: string): Promise<string> {
-  const client = new Anthropic({ apiKey: opts.apiKey });
-  const message = await client.messages.create({
-    model,
-    max_tokens: opts.maxTokens,
-    system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
-    messages: [{ role: "user", content: opts.user }],
-  });
-  return message.content[0]?.type === "text" ? message.content[0].text : "";
+/**
+ * Claude models before the 4.6 generation take a fixed thinking budget; 4.6
+ * and later take adaptive thinking plus an effort level, and reject a budget.
+ */
+function usesThinkingBudget(model: string): boolean {
+  return /^claude-(3|(haiku|sonnet|opus)-4(-[0-5])?($|-\d{8}$))/.test(model);
 }
 
-async function callOpenAI(opts: LlmCallOptions, model: string): Promise<string> {
+async function callAnthropic(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
+  const client = new Anthropic({ apiKey: opts.apiKey });
+  const budgeted = usesThinkingBudget(llm.model);
+  const reasoning = llm.effort
+    ? budgeted
+      ? { thinking: { type: "enabled" as const, budget_tokens: REASONING_TOKENS[llm.effort] } }
+      : { thinking: { type: "adaptive" as const }, output_config: { effort: llm.effort } }
+    : {};
+  // Newer models (Opus 5.5, Sonnet 5.5, Haiku 5.5…) think by default, so they
+  // get reasoning headroom even when no effort is set.
+  const headroom = llm.effort ? REASONING_TOKENS[llm.effort] : budgeted ? 0 : REASONING_TOKENS.medium;
+  const message = await client.messages.create({
+    model: llm.model,
+    max_tokens: opts.maxTokens + headroom,
+    system: [{ type: "text", text: opts.system, cache_control: { type: "ephemeral" } }],
+    messages: [{ role: "user", content: opts.user }],
+    ...reasoning,
+  });
+  // With thinking on, the first block is the thinking block, not the answer.
+  const text = message.content.find((b) => b.type === "text");
+  return text?.type === "text" ? text.text : "";
+}
+
+/** OpenAI's reasoning models (o-series, GPT-5 and later) take reasoning_effort; others reject it. */
+function isOpenAIReasoningModel(model: string): boolean {
+  return /^(o\d|gpt-([5-9]|\d{2,}))/i.test(model);
+}
+
+async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
+  // Reasoning models reject max_tokens and count reasoning inside
+  // max_completion_tokens, so they get the reasoning headroom too.
+  const reasoning = isOpenAIReasoningModel(llm.model);
+  const limit = reasoning
+    ? { max_completion_tokens: opts.maxTokens + REASONING_TOKENS[llm.effort ?? "medium"] }
+    : { max_tokens: opts.maxTokens };
   const res = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -70,8 +162,9 @@ async function callOpenAI(opts: LlmCallOptions, model: string): Promise<string> 
       Authorization: `Bearer ${opts.apiKey}`,
     },
     body: JSON.stringify({
-      model,
-      max_tokens: opts.maxTokens,
+      model: llm.model,
+      ...limit,
+      ...(reasoning && llm.effort ? { reasoning_effort: llm.effort } : {}),
       messages: [
         { role: "system", content: opts.system },
         { role: "user", content: opts.user },
@@ -85,16 +178,29 @@ async function callOpenAI(opts: LlmCallOptions, model: string): Promise<string> 
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function callGoogle(opts: LlmCallOptions, model: string): Promise<string> {
+/** Gemini 2.5 and later can think; earlier models reject a thinking config. */
+function isGeminiThinkingModel(model: string): boolean {
+  return /^gemini-(2\.5|[3-9])/.test(model);
+}
+
+async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
+  // Thinking models think by default and count it against maxOutputTokens,
+  // so they get headroom even when the user left effort on Default.
+  const thinkingModel = isGeminiThinkingModel(llm.model);
+  const budget = llm.effort && thinkingModel ? REASONING_TOKENS[llm.effort] : 0;
+  const headroom = budget || (thinkingModel ? REASONING_TOKENS.medium : 0);
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(opts.apiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(llm.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: opts.system }] },
         contents: [{ role: "user", parts: [{ text: opts.user }] }],
-        generationConfig: { maxOutputTokens: opts.maxTokens },
+        generationConfig: {
+          maxOutputTokens: opts.maxTokens + headroom,
+          ...(budget ? { thinkingConfig: { thinkingBudget: budget } } : {}),
+        },
       }),
     },
   );
@@ -102,9 +208,10 @@ async function callGoogle(opts: LlmCallOptions, model: string): Promise<string> 
     throw new Error(`[llm:google] HTTP ${res.status} — ${await res.text()}`);
   }
   const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
   };
-  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  return parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("");
 }
 
 // ── System prompt ──
@@ -146,12 +253,12 @@ export async function extractCapture(
   apiKey: string,
   content: string,
   title?: string,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<ExtractedCapture> {
   const input = buildInput(content, title);
 
   const rawText = await callLlm({
-    provider,
+    llm,
     apiKey,
     system: SYSTEM_PROMPT,
     user: input,
@@ -310,7 +417,7 @@ export async function findRelatedCaptures(
   apiKey: string,
   capture: ExtractedCapture,
   indexContent: string,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<RelatedCapture[]> {
   const userMessage = `NEW CAPTURE:
 Title: ${capture.inferredTitle}
@@ -323,7 +430,7 @@ INDEX OF EXISTING CAPTURES:
 ${indexContent}`;
 
   const rawText = (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: LINKING_PROMPT,
     user: userMessage,
@@ -358,7 +465,7 @@ export async function rankByRelevance(
   taskContext: string,
   indexContent: string,
   maxResults: number = 5,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<RelevanceResult[]> {
   const userMessage = `TASK CONTEXT:
 ${taskContext}
@@ -369,7 +476,7 @@ INDEX OF CAPTURES:
 ${indexContent}`;
 
   const rawText = (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: RANKING_PROMPT,
     user: userMessage,
@@ -404,7 +511,7 @@ export async function synthesizeRules(
   apiKey: string,
   topic: string,
   captureContents: string[],
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<SynthesisResult> {
   const userMessage = `TOPIC: ${topic}
 
@@ -412,7 +519,7 @@ CAPTURES TO SYNTHESIZE:
 ${captureContents.map((c, i) => `--- Capture ${i + 1} ---\n${c}`).join("\n\n")}`;
 
   const rawText = (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: SYNTHESIS_PROMPT,
     user: userMessage,
@@ -461,7 +568,7 @@ export async function composeBriefing(
   relevantCaptures: Array<{ content: string; filename: string; score: number }>,
   rules: string,
   recentInbox: string[],
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<BriefingOutput> {
   const userMessage = `PROJECT CONTEXT:
 ${projectContext}
@@ -478,7 +585,7 @@ RECENT INBOX (unreviewed):
 ${recentInbox.length > 0 ? recentInbox.map((c, i) => `--- Recent ${i + 1} ---\n${c}`).join("\n\n") : "Inbox is empty."}`;
 
   const rawText = (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: BRIEFING_PROMPT,
     user: userMessage,
@@ -521,7 +628,7 @@ export async function generateApplicationSuggestions(
   apiKey: string,
   taskContext: string,
   captureContents: string[],
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<string> {
   const userMessage = `TASK CONTEXT:
 ${taskContext}
@@ -530,7 +637,7 @@ RELEVANT CAPTURES:
 ${captureContents.map((c, i) => `--- Capture ${i + 1} ---\n${c}`).join("\n\n")}`;
 
   return (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: APPLICATION_PROMPT,
     user: userMessage,
@@ -592,7 +699,7 @@ export async function generatePlan(
   selectedCaptures: Array<{ filename: string; content: string }>,
   projectContext: string,
   codebaseFiles?: Array<{ path: string; content: string }>,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<string> {
   const captureSection = selectedCaptures
     .map((c, i) => `--- Capture ${i + 1}: ${c.filename} ---\n${c.content}`)
@@ -609,7 +716,7 @@ SELECTED CAPTURES (${selectedCaptures.length} total):
 ${captureSection}${codebaseSection}`;
 
   return (await callLlm({
-    provider,
+    llm,
     apiKey,
     system: PLAN_PROMPT,
     user: userMessage,

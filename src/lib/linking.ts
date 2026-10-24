@@ -4,8 +4,8 @@
  */
 
 import { readFile, githubPut } from "./github";
-import { findRelatedCaptures } from "./llm";
-import type { ExtractedCapture, RelatedCapture, LlmProvider } from "./types";
+import { findRelatedCaptures, type LlmConfig } from "./llm";
+import type { ExtractedCapture, RelatedCapture } from "./types";
 
 /** Format related captures as Markdown links for the "Links to memory" section. */
 function formatLinks(related: RelatedCapture[]): string {
@@ -36,10 +36,10 @@ export async function linkCapture(
   filename: string,
   folder: string,
   indexContent: string,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<RelatedCapture[]> {
   // Find related captures via LLM
-  const related = await findRelatedCaptures(apiKey, capture, indexContent, provider);
+  const related = await findRelatedCaptures(apiKey, capture, indexContent, llm);
   if (related.length === 0) return [];
 
   // Update the new capture's "Links to memory" section
