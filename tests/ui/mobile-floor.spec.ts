@@ -21,6 +21,7 @@ test("every text field is at least 16px, so iOS never zooms on focus", async ({ 
   await page.goto("/");
   await page.getByRole("button", { name: "Open settings" }).tap();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("button", { name: "Change PIN" }).tap();
 
   const sizes = await page.locator("input:not([type=file]), textarea").evaluateAll((els) =>
     els.map((el) => ({ name: el.getAttribute("placeholder") ?? el.getAttribute("aria-label") ?? el.outerHTML.slice(0, 60), px: parseFloat(getComputedStyle(el).fontSize) })),
@@ -65,6 +66,7 @@ test("tapping Capture does not leave it stuck in its hover colour", async ({ pag
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   const button = page.getByRole("button", { name: "Capture", exact: true });
+  await page.waitForTimeout(500); // let the fill-in from the disabled outline finish
   const rest = await button.evaluate((b) => getComputedStyle(b).backgroundColor);
   await button.tap();
   const loading = page.getByRole("button", { name: /Extracting/ });

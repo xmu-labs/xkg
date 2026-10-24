@@ -144,6 +144,9 @@ export default function SettingsDrawer({
   const [signingOut, setSigningOut] = useState(false);
 
   const deleteInputId = useId();
+  const nameInputId = useId();
+  const pinPanelId = useId();
+  const [pinOpen, setPinOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteStatus, setDeleteStatus] = useState<"idle" | "deleting" | "error">("idle");
@@ -159,6 +162,7 @@ export default function SettingsDrawer({
     setConfirmPin("");
     setPinError("");
     setPinStatus("idle");
+    setPinOpen(false);
     setProfileError("");
     setProfileStatus("idle");
     setDeleteOpen(false);
@@ -527,17 +531,19 @@ export default function SettingsDrawer({
                     />
                   </div>
                   <div>
-                    <label className="block eyebrow mb-1.5"
+                    <label htmlFor={nameInputId} className="block eyebrow mb-1.5"
                       style={{ color: "var(--fg-muted)" }}>
                       Name
                     </label>
                     <input
+                      id={nameInputId}
                       type="text"
                       value={displayName}
                       maxLength={40}
                       onChange={(e) => setDisplayName(e.target.value)}
                       className={INPUT_CLASS}
                     />
+                    {(profileStatus !== "idle" || (displayName.trim() && displayName.trim() !== me?.displayName)) && (
                     <button
                       type="button"
                       onClick={() => void saveName()}
@@ -547,6 +553,7 @@ export default function SettingsDrawer({
                     >
                       {profileStatus === "saving" ? "Saving…" : profileStatus === "saved" ? "Saved" : "Save name"}
                     </button>
+                    )}
                     {profileStatus === "error" && (
                       <p className="text-xs mt-2" style={{ color: "var(--danger)" }}>{profileError}</p>
                     )}
@@ -612,8 +619,23 @@ export default function SettingsDrawer({
                   </div>
 
                   <div style={{ borderTop: "1px solid var(--gold-faint)", paddingTop: 16 }}>
-                    <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Change PIN</p>
-                    <p className="text-xs mb-3" style={{ color: "var(--fg-muted)" }}>
+                    <button
+                      type="button"
+                      onClick={() => setPinOpen((o) => !o)}
+                      aria-expanded={pinOpen}
+                      aria-controls={pinPanelId}
+                      className="w-full flex items-center justify-between text-left"
+                    >
+                      <span className="card-title" style={{ color: "var(--fg)" }}>Change PIN</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"
+                        style={{ color: "var(--fg-muted)", transform: pinOpen ? "rotate(90deg)" : "none", transition: "transform var(--motion-quick) var(--ease-out)" }}>
+                        <path d="m9 6 6 6-6 6" />
+                      </svg>
+                    </button>
+                    {pinOpen && (
+                    <div id={pinPanelId}>
+                    <p className="text-xs mt-1 mb-3" style={{ color: "var(--fg-muted)" }}>
                       Quick unlock on this device. Minimum 6 characters.
                     </p>
                     <div className="stack-2">
@@ -627,6 +649,7 @@ export default function SettingsDrawer({
                         value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)}
                         className={INPUT_CLASS} />
                     </div>
+                    {(pinStatus !== "idle" || (currentPin && newPin && confirmPin)) && (
                     <button
                       type="button"
                       onClick={() => void handleChangePin()}
@@ -636,8 +659,11 @@ export default function SettingsDrawer({
                     >
                       {pinStatus === "saving" ? "Updating…" : pinStatus === "saved" ? "PIN updated" : "Update PIN"}
                     </button>
+                    )}
                     {pinStatus === "error" && (
                       <p className="text-xs mt-2" style={{ color: "var(--danger)" }}>{pinError}</p>
+                    )}
+                    </div>
                     )}
                   </div>
                 </div>

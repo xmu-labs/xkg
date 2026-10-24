@@ -240,6 +240,27 @@ button:not(:disabled):active, a.btn-primary:active, a.btn-secondary:active {
 
 .btn-primary { background: var(--btn); color: var(--btn-fg); }
 .btn-secondary { background: transparent; border: 1px solid var(--gold-mid); color: var(--fg-muted); }
+/* Disabled but not busy: an outline that fills in once there's something to send. */
+.btn-primary { border: 1px solid transparent; }
+.btn-primary:disabled:not([aria-busy="true"]) {
+  background: transparent; border-color: var(--gold-mid); color: var(--fg-muted); opacity: 0.6;
+}
+
+/* One composer: title and paste field share a single card. */
+.composer { background: var(--input-bg); border: 1px solid var(--gold-low); transition: border-color var(--motion-quick) ease; }
+.composer:focus-within { border-color: var(--gold-high); }
+
+/* On touch screens Capture rides at the bottom of the viewport while the
+   form scrolls. body already pads the home-indicator inset at the end of
+   the page; this adds it only while the bar is stuck to the bottom edge. */
+@media (pointer: coarse) {
+  .capture-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    padding: 0.5rem 0 calc(0.75rem + env(safe-area-inset-bottom));
+  }
+}
 @media (hover: hover) and (pointer: fine) {
   .btn-primary:not(:disabled):hover { background: var(--btn-hover); }
   .btn-secondary:not(:disabled):hover { border-color: var(--gold-high); }
