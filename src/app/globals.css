@@ -115,8 +115,50 @@
   }
 }
 
-h1, h2 {
+/*
+  Typography. Sora carries the brand voice: the wordmark, headings, card
+  titles and the small uppercase eyebrow labels. Inter sets everything else.
+  Display sizes get tighter tracking; Sora's wide caps get looser tracking at
+  eyebrow size so they stay legible.
+*/
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-optical-sizing: auto;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1, h2, h3 {
   font-family: var(--font-display);
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+
+p { text-wrap: pretty; }
+
+@utility wordmark {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+@utility card-title {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
+}
+
+@utility eyebrow {
+  font-family: var(--font-display);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  line-height: 1.2;
+  text-transform: uppercase;
 }
 
 body {

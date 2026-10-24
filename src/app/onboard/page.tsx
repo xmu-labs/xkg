@@ -87,21 +87,21 @@ export default function OnboardPage() {
         <div className="w-full max-w-sm stack-6">
           <div className="flex flex-col items-center mb-2">
             <div className="text-4xl mb-4">✓</div>
-            <h1 className="text-lg font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
+            <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>
               You&apos;re all set
             </h1>
           </div>
 
           <div className="rounded-2xl p-4 stack-3" style={CARD_STYLE}>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>Knowledge repo</p>
+              <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>Knowledge repo</p>
               <a href={result.repoUrl} target="_blank" rel="noopener noreferrer"
                 className="text-sm underline" style={{ color: "var(--fg)" }}>
                 {result.repo}
               </a>
             </div>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>Your API key</p>
+              <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>Your API key</p>
               <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
                 {result.apiKey}
               </code>
@@ -110,7 +110,7 @@ export default function OnboardPage() {
               </p>
             </div>
             <div>
-              <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>Connect with your AI worker</p>
+              <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>Connect with your AI worker</p>
               <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
                 npx -y @xmu-labs/xkg@latest serve-mcp --key {result.apiKey}
               </code>
@@ -136,7 +136,7 @@ export default function OnboardPage() {
 
         <div className="flex flex-col items-center mb-6">
           <BrandMark size={144} variant="expressive" className="-my-6" />
-          <h1 className="text-lg font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
+          <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>
             Set up your knowledge hub
           </h1>
           <p className="text-sm mt-1 text-center" style={{ color: "var(--fg-muted)" }}>
@@ -146,7 +146,7 @@ export default function OnboardPage() {
 
         {/* Step 1: Provider + API key */}
         <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
-          <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
+          <label className="eyebrow" style={{ color: "var(--gold)" }}>
             LLM provider
           </label>
           <div className="grid grid-cols-3 gap-1.5">
@@ -170,7 +170,7 @@ export default function OnboardPage() {
             })}
           </div>
 
-          <label className="text-[10px] font-medium uppercase tracking-widest pt-1 block" style={{ color: "var(--gold)" }}>
+          <label className="eyebrow pt-1 block" style={{ color: "var(--gold)" }}>
             {providerInfo.label} API key
           </label>
           <input
@@ -190,7 +190,7 @@ export default function OnboardPage() {
 
         {/* Step 2: Repo name */}
         <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
-          <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
+          <label className="eyebrow" style={{ color: "var(--gold)" }}>
             Knowledge repo name
           </label>
           <input
@@ -227,7 +227,7 @@ export default function OnboardPage() {
 
         {/* Step 3: PIN */}
         <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
-          <label className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
+          <label className="eyebrow" style={{ color: "var(--gold)" }}>
             Set a PIN
           </label>
           <input
