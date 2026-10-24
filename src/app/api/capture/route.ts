@@ -5,6 +5,7 @@ import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceT
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
+import { captureFileUrl } from "@/lib/captureFileUrl";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -130,5 +131,5 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ capture, filename });
+  return NextResponse.json({ capture, filename, fileUrl: captureFileUrl(user.github_repo, filename) });
 }

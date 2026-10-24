@@ -16,6 +16,8 @@ interface CaptureResult {
     inferredType: string;
   };
   filename: string;
+  /** The capture on GitHub; older servers don't send it. */
+  fileUrl?: string;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -29,6 +31,8 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 /** A field inside the composer: borderless, the composer card draws the edge. */
+const CAPTURE_FAILED = "Couldn't capture that. Try again in a moment.";
+
 const COMPOSER_FIELD = "w-full bg-transparent px-4 py-3 text-base focus:outline-hidden";
 
 /** Known types get their label; a type the model invented reads as words. */
@@ -100,7 +104,7 @@ export default function CapturePage() {
           window.location.href = "/login";
           return;
         }
-        let errorMsg = `HTTP ${res.status}`;
+        let errorMsg = CAPTURE_FAILED;
         try {
           const data = await res.json() as { error?: string };
           if (data.error) errorMsg = data.error;
@@ -119,7 +123,7 @@ export default function CapturePage() {
       setContent("");
       setTitle("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+      setError(err instanceof Error ? err.message : CAPTURE_FAILED);
       setStatus("error");
     }
   }
@@ -162,7 +166,7 @@ export default function CapturePage() {
           <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
         </div>
         <p className="text-[15px] leading-snug mt-3" style={{ color: "var(--fg-muted)" }}>
-          Find something. Use it with AI workers.
+          Learn it once. Your AI applies it.
         </p>
       </div>
 
@@ -173,7 +177,7 @@ export default function CapturePage() {
           <input
             type="text"
             aria-label="Title"
-            placeholder="Title (optional — inferred if blank)"
+            placeholder="Title (optional)"
             enterKeyHint="next"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -183,7 +187,7 @@ export default function CapturePage() {
 
           <textarea
             aria-label="Content to capture"
-            placeholder="Paste anything — URL, article, thread, notes, transcript…"
+            placeholder="Paste a link, an article or your notes…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -191,6 +195,9 @@ export default function CapturePage() {
             className={COMPOSER_FIELD + " resize-none leading-relaxed"}
           />
           </div>
+          <p className="text-xs leading-relaxed px-1" style={{ color: "var(--fg-muted)" }}>
+            Paste a link or a note. xkg saves the core idea and where to use it to your GitHub, and your AI tools read it from there.
+          </p>
 
           <div className="capture-bar">
           <button
@@ -200,13 +207,13 @@ export default function CapturePage() {
             className="btn-primary w-full py-3.5 rounded-2xl font-semibold text-[15px] disabled:cursor-not-allowed"
           >
             {status === "loading" ? (
-              <span data-label key="loading" className="flex items-center justify-center gap-2">
+              <span data-label="loading" key="loading" className="flex items-center justify-center gap-2">
                 <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
                   style={{ borderColor: "var(--spinner-track)", borderTopColor: "var(--fg)" }} />
                 Extracting insights…
               </span>
             ) : (
-              <span data-label key="idle">Capture</span>
+              <span data-label="idle" key="idle">Capture</span>
             )}
           </button>
           </div>
@@ -234,7 +241,7 @@ export default function CapturePage() {
               </h2>
             </div>
             <span className="saved-pop text-[11px] font-medium whitespace-nowrap pt-0.5 shrink-0" style={{ color: "var(--gold)" }}>
-              Saved ✓
+              Saved to GitHub ✓
             </span>
           </div>
 
@@ -288,14 +295,22 @@ export default function CapturePage() {
           {/* Applied to */}
           {result.capture.appliedTo && (
             <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(5) }}>
-              <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Applied to</p>
+              <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Where to use it</p>
               <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.capture.appliedTo}</p>
             </div>
           )}
 
           {/* Filename */}
           <p className="text-[10px] text-center pt-1 font-mono" style={{ color: "var(--fg-muted)" }}>
-            {result.filename}
+            {result.fileUrl ? (
+              <a href={result.fileUrl} target="_blank" rel="noopener noreferrer"
+                className="underline underline-offset-2">{result.filename}</a>
+            ) : result.filename}
+          </p>
+
+          {/* Next step */}
+          <p className="text-sm text-center leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+            Try it: ask your AI <em style={{ color: "var(--fg)" }}>&ldquo;brief me on what I saved today&rdquo;</em>
           </p>
 
           {/* Reset */}

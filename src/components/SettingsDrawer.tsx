@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 
 export interface Me {
@@ -90,6 +90,20 @@ function SectionLabel({ children }: { children: string }) {
  * fast 404 can fire before hydration, when React isn't listening yet, so the
  * ref also checks for an image that already finished with no pixels.
  */
+/** Tracks prefers-reduced-motion, so the panel can fade instead of slide. */
+const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
+function useReducedMotion(): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const query = window.matchMedia(REDUCED_MOTION);
+      query.addEventListener("change", onChange);
+      return () => query.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(REDUCED_MOTION).matches,
+    () => false,
+  );
+}
+
 function AvatarImage({ src, size, fallback }: { src?: string; size: number; fallback: React.ReactNode }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const checkLoaded = useCallback((img: HTMLImageElement | null) => {
@@ -147,6 +161,11 @@ export default function SettingsDrawer({
   const nameInputId = useId();
   const pinPanelId = useId();
   const [pinOpen, setPinOpen] = useState(false);
+  const reduceMotion = useReducedMotion();
+  const [urlCopied, setUrlCopied] = useState(false);
+  // The deployment this page came from, so previews hand out their own URL.
+  // The panel only renders in the browser, so window is always there when it's read.
+  const connectorUrl = typeof window === "undefined" ? "https://xkg.xmu.sh/api/mcp" : `${window.location.origin}/api/mcp`;
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteStatus, setDeleteStatus] = useState<"idle" | "deleting" | "error">("idle");
@@ -330,6 +349,14 @@ export default function SettingsDrawer({
     }
   }
 
+  async function copyConnectorUrl() {
+    try {
+      await navigator.clipboard.writeText(connectorUrl);
+      setUrlCopied(true);
+      window.setTimeout(() => setUrlCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  }
+
   async function handleCopy(text: string) {
     try {
       await navigator.clipboard.writeText(text);
@@ -457,10 +484,14 @@ export default function SettingsDrawer({
               boxShadow: "var(--drawer-shadow)",
               paddingTop: "env(safe-area-inset-top)",
               paddingBottom: "env(safe-area-inset-bottom)",
-              transform: visible ? "translateX(0)" : "translateX(100%)",
-              transition: visible
-                ? "transform var(--motion-sheet-in) var(--ease-sheet)"
-                : "transform var(--motion-sheet-out) var(--ease-sheet)",
+              ...(reduceMotion
+                ? { opacity: visible ? 1 : 0, transition: "opacity var(--motion-sheet-out) ease" }
+                : {
+                    transform: visible ? "translateX(0)" : "translateX(100%)",
+                    transition: visible
+                      ? "transform var(--motion-sheet-in) var(--ease-sheet)"
+                      : "transform var(--motion-sheet-out) var(--ease-sheet)",
+                  }),
             }}
           >
             <header className="flex items-center justify-between px-5 h-14 shrink-0"
@@ -548,7 +579,7 @@ export default function SettingsDrawer({
                       type="button"
                       onClick={() => void saveName()}
                       disabled={profileStatus === "saving" || !displayName.trim() || displayName.trim() === me?.displayName}
-                      className="mt-2 text-sm font-medium rounded-xl px-3 py-2 transition-opacity disabled:opacity-30"
+                      className="mt-2 text-sm font-medium rounded-xl px-3 py-2 disabled:opacity-30"
                       style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
                     >
                       {profileStatus === "saving" ? "Saving…" : profileStatus === "saved" ? "Saved" : "Save name"}
@@ -568,7 +599,22 @@ export default function SettingsDrawer({
                   <div>
                     <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Connect with your AI worker</p>
                     <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
-                      Generate an MCP key to use xkg from terminal. This action rotates your key — any existing one stops working.
+                      Connect Claude, ChatGPT or any MCP tool. On the web, add a custom connector with this URL and sign in with GitHub:
+                    </p>
+                    <div className="flex items-center gap-2 mb-3">
+                      <code className="text-xs flex-1 min-w-0 p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
+                        {connectorUrl}
+                      </code>
+                      <button
+                        type="button"
+                        onClick={() => void copyConnectorUrl()}
+                        className="btn-secondary shrink-0 text-sm font-medium rounded-xl px-3 py-2"
+                      >
+                        {urlCopied ? "Copied" : "Copy URL"}
+                      </button>
+                    </div>
+                    <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
+                      In a terminal, use a key instead. A new key replaces the old one.
                     </p>
                     {!mcpKey ? (
                       <>
@@ -634,7 +680,7 @@ export default function SettingsDrawer({
                       </svg>
                     </button>
                     {pinOpen && (
-                    <div id={pinPanelId}>
+                    <div id={pinPanelId} className="fade-in">
                     <p className="text-xs mt-1 mb-3" style={{ color: "var(--fg-muted)" }}>
                       Quick unlock on this device. Minimum 6 characters.
                     </p>

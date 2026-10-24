@@ -132,7 +132,7 @@ export default function OnboardPage() {
         <div className="flex flex-col items-center mb-6">
           <BrandMark size={144} variant="expressive" className="-my-6" />
           <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>
-            Set up your knowledge hub
+            Set up your knowledge repo
           </h1>
           <p className="text-sm mt-1 text-center" style={{ color: "var(--fg-muted)" }}>
             Three things and you&apos;re capturing.
@@ -176,7 +176,7 @@ export default function OnboardPage() {
             className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden font-mono"
           />
           <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
-            {providerInfo.blurb} <a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get yours here</a>. Your key, your cost — BYOK.
+            {providerInfo.blurb} <a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get yours here</a>. You pay your provider directly.
           </p>
         </div>
 
@@ -244,7 +244,7 @@ export default function OnboardPage() {
               Setting up...
             </span>
           ) : (
-            "Create knowledge hub"
+            "Create knowledge repo"
           )}
         </button>
 

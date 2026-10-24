@@ -80,8 +80,6 @@
   --focus:            #2A2D3B;
   color-scheme:       light;
   --motion-quick:     150ms;
-  --motion-fast:      250ms;
-  --motion-medium:    350ms;
   --motion-sheet-in:  280ms;
   --motion-sheet-out: 200ms;
   --ease-out:         cubic-bezier(0.22, 1, 0.36, 1);
@@ -321,16 +319,18 @@ textarea::placeholder {
   animation: xkg-rise 240ms var(--ease-out) both;
   animation-delay: calc(var(--i, 0) * 40ms);
 }
-[data-label] { animation: xkg-label-in var(--motion-quick) var(--ease-out); }
+/* Only the switch into loading animates; the idle label appears on every
+   visit and after a keyboard submit, so it stays still. */
+[data-label="loading"] { animation: xkg-label-in var(--motion-quick) var(--ease-out); }
+.fade-in { animation: xkg-fade var(--motion-quick) var(--ease-out); }
 .saved-pop { display: inline-block; animation: xkg-pop 200ms var(--ease-out) 160ms both; }
 
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-quick: 1ms;
-    --motion-fast: 1ms;
-    --motion-medium: 1ms;
-    --motion-sheet-in: 1ms;
-    --motion-sheet-out: 1ms;
+    /* Settings crossfades instead of sliding (see SettingsDrawer). */
+    --motion-sheet-in: 200ms;
+    --motion-sheet-out: 200ms;
   }
   [data-reveal], .saved-pop { animation-name: xkg-fade; }
 }

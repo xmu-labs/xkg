@@ -11,7 +11,7 @@ const sora = Sora({ subsets: ["latin"], variable: "--font-sora", display: "swap"
 export const metadata: Metadata = {
   title: "xkg",
   applicationName: "xkg",
-  description: "A knowledge graph for your AI workers.",
+  description: "Learn it once. Your AI applies it.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

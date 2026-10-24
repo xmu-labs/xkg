@@ -56,7 +56,7 @@ test("result cards rise in one after another", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved")).toBeVisible();
+  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
 
   const cards = await page.locator("[data-reveal]").evaluateAll((els) =>
     els.map((el) => ({ name: getComputedStyle(el).animationName, delay: parseFloat(getComputedStyle(el).animationDelay) })),
@@ -73,7 +73,7 @@ test("with reduced motion the cards fade without moving", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved")).toBeVisible();
+  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
   const names = await page.locator("[data-reveal]").evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
   expect(new Set(names)).toEqual(new Set(["xkg-fade"]));
 });
@@ -108,5 +108,5 @@ test("Saved pops in from slightly smaller", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved")).toHaveCSS("animation-name", "xkg-pop");
+  await expect(page.getByText("Saved to GitHub ✓")).toHaveCSS("animation-name", "xkg-pop");
 });
