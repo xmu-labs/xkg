@@ -3,7 +3,7 @@ import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
 // Framing and copy (2026-10-24 review): say what xkg does, and show the next step.
 
 const TAGLINE = "Learn it once. Your AI applies it.";
-const FILE_URL = "https://github.com/ola/xkg-knowledge/blob/HEAD/inbox/" + WORST_CAPTURE.filename;
+const FILE_URL = "https://github.com/ola/xkg-knowledge/blob/main/inbox/" + WORST_CAPTURE.filename;
 
 test("the capture screen leads with the tagline and says how it works", async ({ page }) => {
   await signIn(page);
