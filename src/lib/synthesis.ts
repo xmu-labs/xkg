@@ -3,8 +3,8 @@
  */
 
 import { readFile, githubPut } from "./github";
-import { synthesizeRules } from "./llm";
-import type { SynthesisResult, LlmProvider } from "./types";
+import { synthesizeRules, type LlmConfig } from "./llm";
+import type { SynthesisResult } from "./types";
 
 /** Update (or create) a topic section in RULES.md. */
 export async function updateRulesFile(
@@ -64,7 +64,7 @@ export async function synthesizeTopic(
   repo: string,
   tag: string,
   indexContent: string,
-  provider: LlmProvider = "anthropic",
+  llm: LlmConfig = "anthropic",
 ): Promise<SynthesisResult> {
   // Find captures matching this tag from the index
   const lines = indexContent
@@ -100,7 +100,7 @@ export async function synthesizeTopic(
   }
 
   // Synthesize via LLM
-  const result = await synthesizeRules(apiKey, tag, validContents, provider);
+  const result = await synthesizeRules(apiKey, tag, validContents, llm);
 
   // Update RULES.md
   await updateRulesFile(githubToken, repo, result);

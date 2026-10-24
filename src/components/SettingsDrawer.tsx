@@ -10,8 +10,31 @@ export interface Me {
   hasCustomAvatar: boolean;
   hasMcpKey: boolean;
   hasPin: boolean;
+  /** Provider of the saved LLM key; absent on older servers. */
+  llmProvider?: "anthropic" | "openai" | "google";
+  llmModel?: string | null;
+  llmEffort?: Effort | null;
+  defaultModel?: string;
   version: string;
 }
+
+type Effort = "low" | "medium" | "high";
+
+const PROVIDER_NAMES = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" } as const;
+
+/** Suggestions only: any model ID the provider serves can be typed in. */
+const MODEL_SUGGESTIONS = {
+  anthropic: ["claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
+  openai: ["gpt-4o-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "o4-mini"],
+  google: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
+} as const;
+
+const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
+  { value: null, label: "Default" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
 
 type Theme = "light" | "dark";
 
@@ -155,6 +178,13 @@ export default function SettingsDrawer({
   const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [pinError, setPinError] = useState("");
 
+  const [llmModel, setLlmModel] = useState("");
+  const [llmEffort, setLlmEffort] = useState<Effort | null>(null);
+  const [llmStatus, setLlmStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [llmError, setLlmError] = useState("");
+  const modelInputId = useId();
+  const modelListId = useId();
+
   const [signingOut, setSigningOut] = useState(false);
 
   const deleteInputId = useId();
@@ -184,6 +214,8 @@ export default function SettingsDrawer({
     setPinOpen(false);
     setProfileError("");
     setProfileStatus("idle");
+    setLlmError("");
+    setLlmStatus("idle");
     setDeleteOpen(false);
     setDeleteConfirm("");
     setDeleteStatus("idle");
@@ -205,6 +237,8 @@ export default function SettingsDrawer({
 
   const openDrawer = useCallback(() => {
     setDisplayName(me?.displayName ?? "");
+    setLlmModel(me?.llmModel ?? "");
+    setLlmEffort(me?.llmEffort ?? null);
     closing.current = false;
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
@@ -281,6 +315,31 @@ export default function SettingsDrawer({
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Could not save name");
       setProfileStatus("error");
+    }
+  }
+
+  const llmDirty =
+    llmModel.trim() !== (me?.llmModel ?? "") || llmEffort !== (me?.llmEffort ?? null);
+
+  async function saveLlm() {
+    setLlmStatus("saving");
+    setLlmError("");
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ llmModel: llmModel.trim() || null, llmEffort }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      onMe(await res.json() as Me);
+      setLlmStatus("saved");
+      window.setTimeout(() => setLlmStatus("idle"), 1500);
+    } catch (err) {
+      setLlmError(err instanceof Error ? err.message : "Could not save model");
+      setLlmStatus("error");
     }
   }
 
@@ -715,7 +774,81 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 3. System */}
+              {/* 3. Model */}
+              {me?.llmProvider && (
+              <section>
+                <SectionLabel>Model</SectionLabel>
+                <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
+                  <div>
+                    <label htmlFor={modelInputId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
+                      Model
+                    </label>
+                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
+                      Any {PROVIDER_NAMES[me.llmProvider]} model your key can use. Leave it empty for {me.defaultModel ?? "the default"}.
+                    </p>
+                    <input
+                      id={modelInputId}
+                      type="text"
+                      list={modelListId}
+                      value={llmModel}
+                      placeholder={me.defaultModel}
+                      maxLength={100}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      onChange={(e) => setLlmModel(e.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                    <datalist id={modelListId}>
+                      {MODEL_SUGGESTIONS[me.llmProvider].map((m) => <option key={m} value={m} />)}
+                    </datalist>
+                  </div>
+                  <div>
+                    <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Reasoning effort</p>
+                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
+                      Higher effort thinks longer before writing insights. It&apos;s slower and costs more on your key. Models that can&apos;t reason ignore it.
+                    </p>
+                    <div className="grid grid-cols-4 gap-2" role="group" aria-label="Reasoning effort">
+                      {EFFORT_OPTIONS.map(({ value, label }) => {
+                        const active = llmEffort === value;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setLlmEffort(value)}
+                            aria-pressed={active}
+                            className="rounded-xl py-2 text-sm font-medium"
+                            style={{
+                              background: active ? "var(--gold)" : "transparent",
+                              color: active ? "var(--btn-fg)" : "var(--fg)",
+                              border: `1px solid ${active ? "var(--gold)" : "var(--gold-mid)"}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {(llmStatus !== "idle" || llmDirty) && (
+                  <button
+                    type="button"
+                    onClick={() => void saveLlm()}
+                    disabled={llmStatus === "saving" || !llmDirty}
+                    className="text-sm font-medium rounded-xl px-3 py-2 disabled:opacity-30"
+                    style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
+                  >
+                    {llmStatus === "saving" ? "Saving…" : llmStatus === "saved" ? "Saved" : "Save model"}
+                  </button>
+                  )}
+                  {llmStatus === "error" && (
+                    <p className="text-xs" style={{ color: "var(--danger)" }}>{llmError}</p>
+                  )}
+                </div>
+              </section>
+              )}
+
+              {/* 4. System */}
               <section>
                 <SectionLabel>System</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
@@ -766,7 +899,7 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 4. Session */}
+              {/* 5. Session */}
               <section>
                 <SectionLabel>Session</SectionLabel>
                 <div className="rounded-2xl p-4" style={CARD_STYLE}>
@@ -782,7 +915,7 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 5. Delete account */}
+              {/* 6. Delete account */}
               <section>
                 <SectionLabel>Delete account</SectionLabel>
                 <div className="rounded-2xl p-4" style={CARD_STYLE}>
