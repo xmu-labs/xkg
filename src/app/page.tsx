@@ -28,8 +28,13 @@ const TYPE_LABELS: Record<string, string> = {
   book: "Book",
 };
 
-const INPUT_CLASS =
-  "field w-full rounded-2xl px-4 py-3 text-base focus:outline-hidden";
+/** A field inside the composer: borderless, the composer card draws the edge. */
+const COMPOSER_FIELD = "w-full bg-transparent px-4 py-3 text-base focus:outline-hidden";
+
+/** Known types get their label; a type the model invented reads as words. */
+function typeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type.replace(/[-_]+/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
 
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--card-bg)",
@@ -164,6 +169,7 @@ export default function CapturePage() {
       {/* Capture form */}
       {status !== "done" && (
         <div className="w-full stack-2.5">
+          <div data-composer className="composer rounded-2xl overflow-hidden">
           <input
             type="text"
             aria-label="Title"
@@ -171,9 +177,9 @@ export default function CapturePage() {
             enterKeyHint="next"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            className={INPUT_CLASS}
-
+            className={COMPOSER_FIELD + " font-medium"}
           />
+          <div className="h-px mx-4" style={{ background: "var(--gold-faint)" }} aria-hidden="true" />
 
           <textarea
             aria-label="Content to capture"
@@ -182,14 +188,16 @@ export default function CapturePage() {
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={9}
-            className={INPUT_CLASS + " resize-none leading-relaxed"}
-
+            className={COMPOSER_FIELD + " resize-none leading-relaxed"}
           />
+          </div>
 
+          <div className="capture-bar">
           <button
             onClick={() => void handleSubmit()}
             disabled={!content.trim() || status === "loading"}
-            className="btn-primary w-full py-3.5 rounded-2xl font-semibold text-[15px] disabled:opacity-25 disabled:cursor-not-allowed"
+            aria-busy={status === "loading"}
+            className="btn-primary w-full py-3.5 rounded-2xl font-semibold text-[15px] disabled:cursor-not-allowed"
           >
             {status === "loading" ? (
               <span data-label key="loading" className="flex items-center justify-center gap-2">
@@ -201,6 +209,7 @@ export default function CapturePage() {
               <span data-label key="idle">Capture</span>
             )}
           </button>
+          </div>
 
           {status === "error" && (
             <p role="alert" className="text-xs text-center pt-1" style={{ color: "var(--danger)" }}>{error}</p>
@@ -217,7 +226,7 @@ export default function CapturePage() {
             <div className="stack-1.5 min-w-0">
               {result.capture.inferredType && (
                 <span className="eyebrow" style={{ color: "var(--gold)" }}>
-                  {TYPE_LABELS[result.capture.inferredType] ?? result.capture.inferredType}
+                  {typeLabel(result.capture.inferredType)}
                 </span>
               )}
               <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
