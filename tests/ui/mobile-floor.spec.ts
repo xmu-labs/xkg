@@ -8,7 +8,7 @@ test("a capture full of long URLs never scrolls the page sideways", async ({ pag
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved")).toBeVisible();
+  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
 
   // Compare with the device width, not innerWidth: a mobile browser widens
   // the layout viewport to fit overflowing content, which hides the bug.
