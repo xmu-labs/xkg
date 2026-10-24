@@ -3,8 +3,10 @@ import { Inter, Sora } from "next/font/google";
 import "./globals.css";
 
 // Inter for the UI, Sora for headings and the wordmark (Lunar Graphite brand).
-const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
-const sora = Sora({ subsets: ["latin"], weight: ["600", "700"], variable: "--font-sora", display: "swap" });
+// Both load as variable fonts; Inter also carries its optical-size axis, so
+// small labels and large text each get the cut drawn for that size.
+const inter = Inter({ subsets: ["latin"], axes: ["opsz"], variable: "--font-inter", display: "swap" });
+const sora = Sora({ subsets: ["latin"], variable: "--font-sora", display: "swap" });
 
 export const metadata: Metadata = {
   title: "xkg",

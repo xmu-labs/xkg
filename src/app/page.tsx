@@ -156,10 +156,10 @@ export default function CapturePage() {
       <div className="w-full mb-10">
         <div className="flex items-center gap-3 mb-1 overflow-visible">
           <BrandMark size={56} />
-          <h1 className="text-base font-semibold tracking-tight" style={{ color: "var(--fg)" }}>xkg</h1>
+          <h1 className="wordmark text-2xl" style={{ color: "var(--fg)" }}>xkg</h1>
           <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
         </div>
-        <p className="text-sm pl-10" style={{ color: "var(--fg-muted)" }}>
+        <p className="text-[15px] leading-snug mt-3" style={{ color: "var(--fg-muted)" }}>
           Find something. Use it with AI workers.
         </p>
       </div>
@@ -193,7 +193,7 @@ export default function CapturePage() {
           <button
             onClick={() => void handleSubmit()}
             disabled={!content.trim() || status === "loading"}
-            className="w-full py-3.5 rounded-2xl font-medium text-sm transition-all disabled:opacity-25 disabled:cursor-not-allowed"
+            className="w-full py-3.5 rounded-2xl font-semibold text-[15px] transition-all disabled:opacity-25 disabled:cursor-not-allowed"
             style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
             onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn-hover)"; }}
             onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn)"; }}
@@ -205,10 +205,7 @@ export default function CapturePage() {
                 Extracting insights...
               </span>
             ) : (
-              <span className="flex items-center justify-center gap-2">
-                Capture
-                <kbd className="text-xs font-normal opacity-60">⌘↵</kbd>
-              </span>
+              "Capture"
             )}
           </button>
 
@@ -226,11 +223,11 @@ export default function CapturePage() {
           <div className="flex items-start justify-between gap-4 pb-1">
             <div className="stack-1.5 min-w-0">
               {result.capture.inferredType && (
-                <span className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>
+                <span className="eyebrow" style={{ color: "var(--gold)" }}>
                   {TYPE_LABELS[result.capture.inferredType] ?? result.capture.inferredType}
                 </span>
               )}
-              <h2 className="text-base font-semibold leading-snug" style={{ color: "var(--fg)" }}>
+              <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
                 {result.capture.inferredTitle}
               </h2>
             </div>
@@ -256,13 +253,13 @@ export default function CapturePage() {
 
           {/* Core idea */}
           <div className="rounded-2xl p-4" style={CARD_STYLE}>
-            <p className="text-[10px] font-medium uppercase tracking-widest mb-2" style={{ color: "var(--gold)" }}>Core idea</p>
+            <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Core idea</p>
             <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{result.capture.coreIdea}</p>
           </div>
 
           {/* Takeaways */}
           <div className="rounded-2xl p-4" style={CARD_STYLE}>
-            <p className="text-[10px] font-medium uppercase tracking-widest mb-3" style={{ color: "var(--gold)" }}>Takeaways</p>
+            <p className="eyebrow mb-3" style={{ color: "var(--gold)" }}>Takeaways</p>
             <ul className="stack-2.5">
               {result.capture.takeaways.map((t, i) => (
                 <li key={i} className="flex gap-2.5 text-sm leading-relaxed">
@@ -276,7 +273,7 @@ export default function CapturePage() {
           {/* Quotes */}
           {result.capture.quotes.length > 0 && (
             <div className="rounded-2xl p-4 stack-3" style={CARD_STYLE}>
-              <p className="text-[10px] font-medium uppercase tracking-widest" style={{ color: "var(--gold)" }}>Quote</p>
+              <p className="eyebrow" style={{ color: "var(--gold)" }}>Quote</p>
               {result.capture.quotes.map((q, i) => (
                 <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
                   style={{ color: "var(--fg-muted)", borderLeft: "2px solid var(--gold-quote)" }}>
@@ -289,7 +286,7 @@ export default function CapturePage() {
           {/* Applied to */}
           {result.capture.appliedTo && (
             <div className="rounded-2xl p-4" style={CARD_STYLE}>
-              <p className="text-[10px] font-medium uppercase tracking-widest mb-2" style={{ color: "var(--gold)" }}>Applied to</p>
+              <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Applied to</p>
               <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.capture.appliedTo}</p>
             </div>
           )}

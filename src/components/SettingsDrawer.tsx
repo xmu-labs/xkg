@@ -81,7 +81,7 @@ function compressAvatar(file: File): Promise<string> {
 
 function SectionLabel({ children }: { children: string }) {
   return (
-    <p className="text-[10px] font-medium uppercase tracking-widest px-1 mb-2" style={{ color: "var(--gold)" }}>
+    <p className="eyebrow px-1 mb-2" style={{ color: "var(--gold)" }}>
       {children}
     </p>
   );
@@ -436,7 +436,7 @@ export default function SettingsDrawer({
           >
             <header className="flex items-center justify-between px-5 h-14 shrink-0"
               style={{ borderBottom: "1px solid var(--gold-faint)" }}>
-              <h2 id={titleId} className="text-sm font-semibold tracking-tight" style={{ color: "var(--fg)" }}>
+              <h2 id={titleId} className="text-base font-semibold" style={{ color: "var(--fg)" }}>
                 Settings
               </h2>
               <button
@@ -504,7 +504,7 @@ export default function SettingsDrawer({
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] font-medium uppercase tracking-widest mb-1.5"
+                    <label className="block eyebrow mb-1.5"
                       style={{ color: "var(--fg-muted)" }}>
                       Name
                     </label>
@@ -537,7 +537,7 @@ export default function SettingsDrawer({
                 <SectionLabel>Credentials</SectionLabel>
                 <div className="rounded-2xl p-4 stack-5" style={CARD_STYLE}>
                   <div>
-                    <p className="text-sm font-medium mb-1" style={{ color: "var(--fg)" }}>Connect with your AI worker</p>
+                    <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Connect with your AI worker</p>
                     <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
                       Generate an MCP key to use xkg from terminal. This action rotates your key — any existing one stops working.
                     </p>
@@ -559,7 +559,7 @@ export default function SettingsDrawer({
                     ) : (
                       <div className="stack-3">
                         <div>
-                          <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>
+                          <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>
                             Your new API key
                           </p>
                           <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
@@ -570,7 +570,7 @@ export default function SettingsDrawer({
                           </p>
                         </div>
                         <div>
-                          <p className="text-[10px] font-medium uppercase tracking-widest mb-1" style={{ color: "var(--gold)" }}>
+                          <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>
                             Add to your worker
                           </p>
                           <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
@@ -590,7 +590,7 @@ export default function SettingsDrawer({
                   </div>
 
                   <div style={{ borderTop: "1px solid var(--gold-faint)", paddingTop: 16 }}>
-                    <p className="text-sm font-medium mb-1" style={{ color: "var(--fg)" }}>Change PIN</p>
+                    <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Change PIN</p>
                     <p className="text-xs mb-3" style={{ color: "var(--fg-muted)" }}>
                       Quick unlock on this device. Minimum 6 characters.
                     </p>
@@ -626,7 +626,7 @@ export default function SettingsDrawer({
                 <SectionLabel>System</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
                   <div>
-                    <p className="text-sm font-medium mb-2" style={{ color: "var(--fg)" }}>Theme</p>
+                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Theme</p>
                     <div className="grid grid-cols-2 gap-2">
                       {(["light", "dark"] as const).map((value) => {
                         const active = theme === value;
@@ -650,8 +650,8 @@ export default function SettingsDrawer({
                     </div>
                   </div>
                   <div style={{ borderTop: "1px solid var(--gold-faint)", paddingTop: 16 }}>
-                    <p className="text-sm font-medium" style={{ color: "var(--fg)" }}>Version</p>
-                    <p className="text-xs mt-0.5" style={{ color: "var(--fg-muted)" }}>
+                    <p className="card-title" style={{ color: "var(--fg)" }}>Version</p>
+                    <p className="text-xs mt-0.5 tabular-nums" style={{ color: "var(--fg-muted)" }}>
                       {me?.version ?? "—"}
                     </p>
                     {newVersionAvailable ? (
