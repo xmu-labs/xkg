@@ -116,6 +116,15 @@ describe("htmlToText", () => {
     expect(out).not.toContain("doEvil");
   });
 
+  it("ends script, style and comment blocks the way browsers do", () => {
+    expect(htmlToText(`<script>doEvil()</script foo="bar"><p>A</p>`)).toBe("A");
+    expect(htmlToText(`<style>.a{}</style\n><p>B</p>`)).toBe("B");
+    expect(htmlToText(`<nav>Menu</nav x><p>C</p>`)).toBe("C");
+    expect(htmlToText(`<!-- hidden --!><p>D</p>`)).toBe("D");
+    // `</script-template>` is a different tag name, not a closing script tag.
+    expect(htmlToText(`<script>t = "</script-template>"; track();</script><p>E</p>`)).toBe("E");
+  });
+
   it("removes style blocks", () => {
     expect(htmlToText("<style>.a{color:red}</style><p>Body</p>")).toBe("Body");
   });
