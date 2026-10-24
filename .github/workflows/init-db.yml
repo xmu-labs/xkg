@@ -17,6 +17,9 @@ on:
         required: true
         default: "no"
 
+# Only curl runs here, against the deployment; the job needs no repository access.
+permissions: {}
+
 jobs:
   init:
     name: Run init-db

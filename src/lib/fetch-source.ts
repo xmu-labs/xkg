@@ -132,13 +132,16 @@ const TAG = /<\/?[a-z!?][^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*>/gi;
  * backreference regex: embedded strings like `"</script>"` inside JavaScript
  * make a lazy combined regex stop early and leak code into the output (the bug
  * caused by parsing an HTML response as JSON).
+ *
+ * Closing tags match the way browsers end them: `</script foo>` closes a
+ * script and `--!>` closes a comment, so neither leaks its contents.
  */
 export function htmlToText(html: string): string {
   let text = html;
-  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, " ");
-  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, " ");
-  text = text.replace(/<(nav|header|footer|aside|form|noscript|svg|iframe)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, " ");
-  text = text.replace(/<!--[\s\S]*?-->/g, " ");
+  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script(?:[\s/][^>]*)?>/gi, " ");
+  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style(?:[\s/][^>]*)?>/gi, " ");
+  text = text.replace(/<(nav|header|footer|aside|form|noscript|svg|iframe)\b[^>]*>[\s\S]*?<\/\1(?:[\s/][^>]*)?>/gi, " ");
+  text = text.replace(/<!--[\s\S]*?--!?>/g, " ");
   text = text.replace(TAG, " "); // any remaining tags, quote-aware
   text = text.replace(/<[^<>]*>/g, " "); // malformed leftovers, e.g. an unbalanced quote
   text = decodeEntities(text);
