@@ -124,6 +124,14 @@ describe("OpenAI and Google reasoning", () => {
     expect(body.max_tokens).toBeUndefined();
   });
 
+  it("treats GPT-6 models as reasoning models", async () => {
+    fetchSpy.mockResolvedValue(Response.json({ choices: [{ message: { content: "ok" } }] }));
+    await generatePlan("k", CAPTURES, "ctx", undefined, { provider: "openai", model: "gpt-6.1-sol", effort: "high" });
+    const body = lastBody();
+    expect(body.reasoning_effort).toBe("high");
+    expect(body.max_completion_tokens).toBe(3000 + REASONING_TOKENS.high);
+  });
+
   it("does not send reasoning_effort to non-reasoning OpenAI models", async () => {
     fetchSpy.mockResolvedValue(Response.json({ choices: [{ message: { content: "ok" } }] }));
     await generatePlan("k", CAPTURES, "ctx", undefined, { provider: "openai", effort: "high" });
@@ -143,6 +151,14 @@ describe("OpenAI and Google reasoning", () => {
     expect(config.thinkingConfig).toEqual({ thinkingBudget: REASONING_TOKENS.medium });
     expect(config.maxOutputTokens).toBe(3000 + REASONING_TOKENS.medium);
     expect(out).toBe("answer");
+  });
+
+  it("leaves Gemini 2.5+ thinking room on Default effort without forcing a budget", async () => {
+    fetchSpy.mockResolvedValue(Response.json({ candidates: [{ content: { parts: [{ text: "ok" }] } }] }));
+    await generatePlan("k", CAPTURES, "ctx", undefined, { provider: "google", model: "gemini-2.5-flash" });
+    const config = lastBody().generationConfig as Record<string, unknown>;
+    expect(config.thinkingConfig).toBeUndefined();
+    expect(config.maxOutputTokens).toBe(3000 + REASONING_TOKENS.medium);
   });
 
   it("does not send a thinking config to Gemini 2.0", async () => {

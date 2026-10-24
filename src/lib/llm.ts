@@ -143,9 +143,9 @@ async function callAnthropic(opts: LlmCallOptions, llm: ResolvedLlm): Promise<st
   return text?.type === "text" ? text.text : "";
 }
 
-/** OpenAI's reasoning models (o-series, GPT-5) take reasoning_effort; others reject it. */
+/** OpenAI's reasoning models (o-series, GPT-5 and later) take reasoning_effort; others reject it. */
 function isOpenAIReasoningModel(model: string): boolean {
-  return /^(o\d|gpt-5)/i.test(model);
+  return /^(o\d|gpt-([5-9]|\d{2,}))/i.test(model);
 }
 
 async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
@@ -184,9 +184,11 @@ function isGeminiThinkingModel(model: string): boolean {
 }
 
 async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
-  const thinking = llm.effort && isGeminiThinkingModel(llm.model)
-    ? REASONING_TOKENS[llm.effort]
-    : 0;
+  // Thinking models think by default and count it against maxOutputTokens,
+  // so they get headroom even when the user left effort on Default.
+  const thinkingModel = isGeminiThinkingModel(llm.model);
+  const budget = llm.effort && thinkingModel ? REASONING_TOKENS[llm.effort] : 0;
+  const headroom = budget || (thinkingModel ? REASONING_TOKENS.medium : 0);
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(llm.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`,
     {
@@ -196,8 +198,8 @@ async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
         systemInstruction: { parts: [{ text: opts.system }] },
         contents: [{ role: "user", parts: [{ text: opts.user }] }],
         generationConfig: {
-          maxOutputTokens: opts.maxTokens + thinking,
-          ...(thinking ? { thinkingConfig: { thinkingBudget: thinking } } : {}),
+          maxOutputTokens: opts.maxTokens + headroom,
+          ...(budget ? { thinkingConfig: { thinkingBudget: budget } } : {}),
         },
       }),
     },
