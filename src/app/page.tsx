@@ -36,6 +36,9 @@ const CARD_STYLE: React.CSSProperties = {
   border: "1px solid var(--gold-faint)",
 };
 
+/** Stagger slot for a result card's entrance (see [data-reveal] in globals.css). */
+const reveal = (i: number) => ({ "--i": i }) as React.CSSProperties;
+
 export default function CapturePage() {
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
@@ -189,13 +192,13 @@ export default function CapturePage() {
             className="btn-primary w-full py-3.5 rounded-2xl font-semibold text-[15px] disabled:opacity-25 disabled:cursor-not-allowed"
           >
             {status === "loading" ? (
-              <span className="flex items-center justify-center gap-2">
+              <span data-label key="loading" className="flex items-center justify-center gap-2">
                 <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
                   style={{ borderColor: "var(--spinner-track)", borderTopColor: "var(--fg)" }} />
                 Extracting insights…
               </span>
             ) : (
-              "Capture"
+              <span data-label key="idle">Capture</span>
             )}
           </button>
 
@@ -210,7 +213,7 @@ export default function CapturePage() {
         <div className="w-full min-w-0 stack-3 wrap-anywhere">
 
           {/* Title row */}
-          <div className="flex items-start justify-between gap-4 pb-1">
+          <div data-reveal style={reveal(0)} className="flex items-start justify-between gap-4 pb-1">
             <div className="stack-1.5 min-w-0">
               {result.capture.inferredType && (
                 <span className="eyebrow" style={{ color: "var(--gold)" }}>
@@ -221,14 +224,14 @@ export default function CapturePage() {
                 {result.capture.inferredTitle}
               </h2>
             </div>
-            <span className="text-[11px] font-medium whitespace-nowrap pt-0.5 shrink-0" style={{ color: "var(--gold)" }}>
+            <span className="saved-pop text-[11px] font-medium whitespace-nowrap pt-0.5 shrink-0" style={{ color: "var(--gold)" }}>
               Saved ✓
             </span>
           </div>
 
           {/* Tags */}
           {result.capture.tags.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
+            <div data-reveal style={reveal(1)} className="flex flex-wrap gap-1.5">
               {result.capture.tags.map((tag) => (
                 <span
                   key={tag}
@@ -242,13 +245,13 @@ export default function CapturePage() {
           )}
 
           {/* Core idea */}
-          <div className="rounded-2xl p-4" style={CARD_STYLE}>
+          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(2) }}>
             <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Core idea</p>
             <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{result.capture.coreIdea}</p>
           </div>
 
           {/* Takeaways */}
-          <div className="rounded-2xl p-4" style={CARD_STYLE}>
+          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(3) }}>
             <p className="eyebrow mb-3" style={{ color: "var(--gold)" }}>Takeaways</p>
             <ul className="stack-2.5">
               {result.capture.takeaways.map((t, i) => (
@@ -262,7 +265,7 @@ export default function CapturePage() {
 
           {/* Quotes */}
           {result.capture.quotes.length > 0 && (
-            <div className="rounded-2xl p-4 stack-3" style={CARD_STYLE}>
+            <div data-reveal className="rounded-2xl p-4 stack-3" style={{ ...CARD_STYLE, ...reveal(4) }}>
               <p className="eyebrow" style={{ color: "var(--gold)" }}>Quote</p>
               {result.capture.quotes.map((q, i) => (
                 <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
@@ -275,7 +278,7 @@ export default function CapturePage() {
 
           {/* Applied to */}
           {result.capture.appliedTo && (
-            <div className="rounded-2xl p-4" style={CARD_STYLE}>
+            <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(5) }}>
               <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Applied to</p>
               <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.capture.appliedTo}</p>
             </div>
