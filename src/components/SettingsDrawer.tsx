@@ -15,6 +15,9 @@ export interface Me {
 
 type Theme = "light" | "dark";
 
+/** Matches --motion-sheet-out: the panel unmounts once its slide-out ends. */
+const SHEET_OUT_MS = 200;
+
 const INPUT_CLASS =
   "field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden";
 const CARD_STYLE: React.CSSProperties = {
@@ -119,6 +122,9 @@ export default function SettingsDrawer({
   const panelRef = useRef<HTMLElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const openedFromPop = useRef(false);
+  // Set while a close is under way, so the popstate that close() itself
+  // triggers with history.back() doesn't run the teardown a second time.
+  const closing = useRef(false);
 
   const [displayName, setDisplayName] = useState("");
   const [profileStatus, setProfileStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -163,9 +169,11 @@ export default function SettingsDrawer({
   }, []);
 
   const close = useCallback(() => {
+    if (closing.current) return;
+    closing.current = true;
     cleanup();
     setVisible(false);
-    window.setTimeout(() => setOpen(false), 200);
+    window.setTimeout(() => setOpen(false), SHEET_OUT_MS);
     if (openedFromPop.current && window.history.state?.xkgDrawer) {
       openedFromPop.current = false;
       window.history.back();
@@ -174,6 +182,7 @@ export default function SettingsDrawer({
 
   const openDrawer = useCallback(() => {
     setDisplayName(me?.displayName ?? "");
+    closing.current = false;
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
     openedFromPop.current = true;
@@ -209,9 +218,11 @@ export default function SettingsDrawer({
 
     function onPop() {
       openedFromPop.current = false;
+      if (closing.current) return;
+      closing.current = true;
       cleanup();
       setVisible(false);
-      window.setTimeout(() => setOpen(false), 200);
+      window.setTimeout(() => setOpen(false), SHEET_OUT_MS);
     }
 
     window.addEventListener("keydown", onKey);
@@ -425,7 +436,9 @@ export default function SettingsDrawer({
             style={{
               background: "var(--scrim)",
               opacity: visible ? 1 : 0,
-              transition: `opacity var(--motion-fast) var(--ease-out)`,
+              transition: visible
+                ? "opacity var(--motion-sheet-in) var(--ease-sheet)"
+                : "opacity var(--motion-sheet-out) var(--ease-sheet)",
             }}
           />
           <aside
@@ -441,7 +454,9 @@ export default function SettingsDrawer({
               paddingTop: "env(safe-area-inset-top)",
               paddingBottom: "env(safe-area-inset-bottom)",
               transform: visible ? "translateX(0)" : "translateX(100%)",
-              transition: `transform var(--motion-medium) var(--ease-out)`,
+              transition: visible
+                ? "transform var(--motion-sheet-in) var(--ease-sheet)"
+                : "transform var(--motion-sheet-out) var(--ease-sheet)",
             }}
           >
             <header className="flex items-center justify-between px-5 h-14 shrink-0"

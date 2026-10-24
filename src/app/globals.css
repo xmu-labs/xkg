@@ -82,7 +82,10 @@
   --motion-quick:     150ms;
   --motion-fast:      250ms;
   --motion-medium:    350ms;
+  --motion-sheet-in:  280ms;
+  --motion-sheet-out: 200ms;
   --ease-out:         cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-sheet:       cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 :root:not([data-theme="light"]) {
@@ -287,10 +290,26 @@ textarea::placeholder {
 .legal th { font-weight: 600; color: var(--fg-muted); }
 .legal .legal-nav { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--gold-faint); font-size: 0.8125rem; color: var(--fg-muted); }
 
+/* Entrances. Each result card rises 8px and fades, 40ms after the one
+   above it; reduced motion keeps the fade and drops the movement. */
+@keyframes xkg-rise { from { opacity: 0; transform: translateY(8px); } }
+@keyframes xkg-fade { from { opacity: 0; } }
+@keyframes xkg-label-in { from { opacity: 0; filter: blur(2px); } }
+@keyframes xkg-pop { from { opacity: 0; transform: scale(0.9); } }
+[data-reveal] {
+  animation: xkg-rise 240ms var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+[data-label] { animation: xkg-label-in var(--motion-quick) var(--ease-out); }
+.saved-pop { display: inline-block; animation: xkg-pop 200ms var(--ease-out) 160ms both; }
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --motion-quick: 1ms;
     --motion-fast: 1ms;
     --motion-medium: 1ms;
+    --motion-sheet-in: 1ms;
+    --motion-sheet-out: 1ms;
   }
+  [data-reveal], .saved-pop { animation-name: xkg-fade; }
 }
