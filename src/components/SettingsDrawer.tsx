@@ -16,12 +16,7 @@ export interface Me {
 type Theme = "light" | "dark";
 
 const INPUT_CLASS =
-  "w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden";
-const INPUT_STYLE: React.CSSProperties = {
-  background: "var(--input-bg)",
-  border: "1px solid var(--gold-low)",
-  color: "var(--fg)",
-};
+  "field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden";
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--card-bg)",
   border: "1px solid var(--gold-faint)",
@@ -84,6 +79,24 @@ function SectionLabel({ children }: { children: string }) {
     <p className="eyebrow px-1 mb-2" style={{ color: "var(--gold)" }}>
       {children}
     </p>
+  );
+}
+
+/**
+ * The avatar photo, or `fallback` when there is none or it fails to load. A
+ * fast 404 can fire before hydration, when React isn't listening yet, so the
+ * ref also checks for an image that already finished with no pixels.
+ */
+function AvatarImage({ src, size, fallback }: { src?: string; size: number; fallback: React.ReactNode }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const checkLoaded = useCallback((img: HTMLImageElement | null) => {
+    if (img?.complete && img.naturalWidth === 0) setFailedSrc(img.getAttribute("src"));
+  }, []);
+  if (!src || failedSrc === src) return <>{fallback}</>;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img ref={checkLoaded} src={src} alt="" width={size} height={size} onError={() => setFailedSrc(src)}
+      className="w-full h-full object-cover" />
   );
 }
 
@@ -392,10 +405,7 @@ export default function SettingsDrawer({
           opacity: 0.95,
         }}
       >
-        {avatar ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={avatar} alt="" width={36} height={36} className="w-full h-full object-cover" />
-        ) : (
+        <AvatarImage src={avatar} size={36} fallback={
           <span className="flex items-center justify-center w-full h-full" style={{ color: "var(--fg-muted)" }}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -403,7 +413,7 @@ export default function SettingsDrawer({
               <path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" />
             </svg>
           </span>
-        )}
+        } />
       </button>
 
       {open && (
@@ -454,7 +464,7 @@ export default function SettingsDrawer({
               </button>
             </header>
 
-            <div className="flex-1 overflow-y-auto px-5 py-5 stack-8">
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 stack-8">
               {/* 1. Account */}
               <section>
                 <SectionLabel>Account</SectionLabel>
@@ -467,13 +477,11 @@ export default function SettingsDrawer({
                       className="relative rounded-full overflow-hidden shrink-0"
                       style={{ width: 56, height: 56, border: "1px solid var(--gold-low)" }}
                     >
-                      {avatar ? (
-                        <img src={avatar} alt="" width={56} height={56} className="w-full h-full object-cover" />
-                      ) : (
+                      <AvatarImage src={avatar} size={56} fallback={
                         <span className="flex items-center justify-center w-full h-full text-xs" style={{ color: "var(--fg-muted)" }}>
                           Photo
                         </span>
-                      )}
+                      } />
                     </button>
                     <div className="min-w-0">
                       <p className="text-sm font-medium truncate" style={{ color: "var(--fg)" }}>
@@ -514,7 +522,6 @@ export default function SettingsDrawer({
                       maxLength={40}
                       onChange={(e) => setDisplayName(e.target.value)}
                       className={INPUT_CLASS}
-                      style={INPUT_STYLE}
                     />
                     <button
                       type="button"
@@ -597,13 +604,13 @@ export default function SettingsDrawer({
                     <div className="stack-2">
                       <input type="password" autoComplete="current-password" placeholder="Current PIN"
                         value={currentPin} onChange={(e) => setCurrentPin(e.target.value)}
-                        className={INPUT_CLASS} style={INPUT_STYLE} />
+                        className={INPUT_CLASS} />
                       <input type="password" autoComplete="new-password" placeholder="New PIN"
                         value={newPin} onChange={(e) => setNewPin(e.target.value)}
-                        className={INPUT_CLASS} style={INPUT_STYLE} />
+                        className={INPUT_CLASS} />
                       <input type="password" autoComplete="new-password" placeholder="Confirm new PIN"
                         value={confirmPin} onChange={(e) => setConfirmPin(e.target.value)}
-                        className={INPUT_CLASS} style={INPUT_STYLE} />
+                        className={INPUT_CLASS} />
                     </div>
                     <button
                       type="button"
@@ -719,7 +726,6 @@ export default function SettingsDrawer({
                         value={deleteConfirm}
                         onChange={(e) => setDeleteConfirm(e.target.value)}
                         className={INPUT_CLASS}
-                        style={INPUT_STYLE}
                       />
                       <button
                         type="button"
