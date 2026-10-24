@@ -32,6 +32,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // Android Chrome: the keyboard shrinks the layout instead of covering it.
+  interactiveWidget: "resizes-content",
   // Dark by default; THEME_BOOT and the Settings toggle switch it for light.
   themeColor: "#11131A",
 };

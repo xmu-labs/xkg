@@ -7,11 +7,6 @@ import { useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 
-const INPUT_STYLE: React.CSSProperties = {
-  background: "var(--input-bg)",
-  border: "1px solid var(--gold-low)",
-  color: "var(--fg)",
-};
 
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--card-bg)",
@@ -119,8 +114,8 @@ export default function OnboardPage() {
 
           <a
             href="/"
-            className="w-full py-3.5 rounded-2xl font-medium text-sm transition-all flex items-center justify-center"
-            style={{ background: "var(--btn)", color: "var(--btn-fg)", textDecoration: "none" }}
+            className="btn-primary w-full py-3.5 rounded-2xl font-medium text-sm flex items-center justify-center"
+            style={{ textDecoration: "none" }}
           >
             Start capturing
           </a>
@@ -157,7 +152,7 @@ export default function OnboardPage() {
                   key={p}
                   type="button"
                   onClick={() => setProvider(p)}
-                  className="rounded-xl py-2 text-xs font-medium transition-all"
+                  className="rounded-xl py-2 text-xs font-medium transition-colors"
                   style={{
                     background: selected ? "var(--btn)" : "var(--input-bg)",
                     color: selected ? "var(--btn-fg)" : "var(--fg-muted)",
@@ -178,10 +173,7 @@ export default function OnboardPage() {
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={providerInfo.placeholder}
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden font-mono"
-            style={INPUT_STYLE}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
+            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden font-mono"
           />
           <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
             {providerInfo.blurb} <a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get yours here</a>. Your key, your cost — BYOK.
@@ -198,10 +190,7 @@ export default function OnboardPage() {
             value={repoName}
             onChange={(e) => setRepoName(e.target.value)}
             placeholder="xkg-knowledge"
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden"
-            style={INPUT_STYLE}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
+            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden"
           />
           <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
             We&apos;ll create this repo on your GitHub. Your captures live here.
@@ -236,10 +225,7 @@ export default function OnboardPage() {
             onChange={(e) => setPin(e.target.value)}
             placeholder={`Quick unlock PIN (min ${MIN_PIN_LENGTH} characters)`}
             minLength={MIN_PIN_LENGTH}
-            className="w-full rounded-xl px-3 py-2.5 text-sm transition-colors focus:outline-hidden"
-            style={INPUT_STYLE}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
+            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden"
           />
           <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
             For quick access from your phone — no GitHub login needed.
@@ -249,10 +235,7 @@ export default function OnboardPage() {
         <button
           onClick={() => void handleSubmit()}
           disabled={!repoName.trim() || !apiKey.trim() || pin.length < MIN_PIN_LENGTH || status === "loading"}
-          className="w-full py-3.5 rounded-2xl font-medium text-sm transition-all disabled:opacity-25 disabled:cursor-not-allowed"
-          style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
-          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn-hover)"; }}
-          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn)"; }}
+          className="btn-primary w-full py-3.5 rounded-2xl font-medium text-sm disabled:opacity-25 disabled:cursor-not-allowed"
         >
           {status === "loading" ? (
             <span className="flex items-center justify-center gap-2">

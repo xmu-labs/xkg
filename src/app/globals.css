@@ -78,6 +78,7 @@
   --drawer-shadow:    0 12px 40px rgba(17,19,26,0.16);
   --danger:           #b42318;
   --focus:            #2A2D3B;
+  color-scheme:       light;
   --motion-quick:     150ms;
   --motion-fast:      250ms;
   --motion-medium:    350ms;
@@ -105,6 +106,7 @@
   --drawer-shadow:    -8px 0 40px rgba(0,0,0,0.5);
   --danger:           #ff7b72;
   --focus:            #B8B5D0;
+  color-scheme:       dark;
 }
 
 /* Keyboard focus: inputs keep their own border change; everything else gets a ring. */
@@ -197,6 +199,47 @@ body {
 button:not(:disabled),
 [role="button"]:not(:disabled) {
   cursor: pointer;
+}
+
+/*
+  Touch. The browser's grey tap flash is off; every control answers the
+  press itself instead, on the way down rather than on release. Control
+  labels can't be long-press selected (content text still can).
+*/
+html { -webkit-tap-highlight-color: transparent; }
+
+button, a, [role="button"], label {
+  touch-action: manipulation;
+}
+button, [role="button"] {
+  -webkit-user-select: none;
+  user-select: none;
+}
+button:not(:disabled), a.btn-primary, a.btn-secondary {
+  transition: transform var(--motion-quick) var(--ease-out),
+    background-color var(--motion-quick) ease, border-color var(--motion-quick) ease;
+}
+button:not(:disabled):active, a.btn-primary:active, a.btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/*
+  Shared control looks. Hover only applies to a real hovering pointer, so a
+  tap on a phone never leaves a control stuck in its hover state.
+*/
+.field {
+  background: var(--input-bg);
+  border: 1px solid var(--gold-low);
+  color: var(--fg);
+  transition: border-color var(--motion-quick) ease;
+}
+.field:focus { border-color: var(--gold-high); }
+
+.btn-primary { background: var(--btn); color: var(--btn-fg); }
+.btn-secondary { background: transparent; border: 1px solid var(--gold-mid); color: var(--fg-muted); }
+@media (hover: hover) and (pointer: fine) {
+  .btn-primary:not(:disabled):hover { background: var(--btn-hover); }
+  .btn-secondary:not(:disabled):hover { border-color: var(--gold-high); }
 }
 
 img[alt="xkg"] {

@@ -29,13 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const INPUT_CLASS =
-  "w-full rounded-2xl px-4 py-3 text-base transition-colors focus:outline-hidden";
-
-const INPUT_STYLE: React.CSSProperties = {
-  background: "var(--input-bg)",
-  border: "1px solid var(--gold-low)",
-  color: "var(--fg)",
-};
+  "field w-full rounded-2xl px-4 py-3 text-base focus:outline-hidden";
 
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--card-bg)",
@@ -169,40 +163,36 @@ export default function CapturePage() {
         <div className="w-full stack-2.5">
           <input
             type="text"
+            aria-label="Title"
             placeholder="Title (optional — inferred if blank)"
+            enterKeyHint="next"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             className={INPUT_CLASS}
-            style={INPUT_STYLE}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
+
           />
 
           <textarea
-            placeholder={"Paste anything — URL, article, thread, notes, transcript..."}
+            aria-label="Content to capture"
+            placeholder="Paste anything — URL, article, thread, notes, transcript…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={9}
             className={INPUT_CLASS + " resize-none leading-relaxed"}
-            style={INPUT_STYLE}
-            onFocus={(e) => { e.currentTarget.style.borderColor = "var(--gold-high)"; }}
-            onBlur={(e) => { e.currentTarget.style.borderColor = "var(--gold-low)"; }}
+
           />
 
           <button
             onClick={() => void handleSubmit()}
             disabled={!content.trim() || status === "loading"}
-            className="w-full py-3.5 rounded-2xl font-semibold text-[15px] transition-all disabled:opacity-25 disabled:cursor-not-allowed"
-            style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn-hover)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "var(--btn)"; }}
+            className="btn-primary w-full py-3.5 rounded-2xl font-semibold text-[15px] disabled:opacity-25 disabled:cursor-not-allowed"
           >
             {status === "loading" ? (
               <span className="flex items-center justify-center gap-2">
                 <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
                   style={{ borderColor: "var(--spinner-track)", borderTopColor: "var(--fg)" }} />
-                Extracting insights...
+                Extracting insights…
               </span>
             ) : (
               "Capture"
@@ -210,14 +200,14 @@ export default function CapturePage() {
           </button>
 
           {status === "error" && (
-            <p className="text-red-400 text-xs text-center pt-1">{error}</p>
+            <p role="alert" className="text-xs text-center pt-1" style={{ color: "var(--danger)" }}>{error}</p>
           )}
         </div>
       )}
 
       {/* Result */}
       {status === "done" && result && (
-        <div className="w-full stack-3 animate-in fade-in duration-300">
+        <div className="w-full min-w-0 stack-3 wrap-anywhere">
 
           {/* Title row */}
           <div className="flex items-start justify-between gap-4 pb-1">
@@ -299,10 +289,7 @@ export default function CapturePage() {
           {/* Reset */}
           <button
             onClick={handleReset}
-            className="w-full py-3.5 rounded-2xl font-medium text-sm transition-all"
-            style={{ background: "transparent", border: "1px solid var(--gold-mid)", color: "var(--fg-muted)" }}
-            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--gold-high)"; }}
-            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--gold-mid)"; }}
+            className="btn-secondary w-full py-3.5 rounded-2xl font-medium text-sm"
           >
             Capture another
           </button>
