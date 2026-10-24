@@ -138,9 +138,9 @@ const TAG = /<\/?[a-z!?][^<>"']*(?:(?:"[^"]*"|'[^']*')[^<>"']*)*>/gi;
  */
 export function htmlToText(html: string): string {
   let text = html;
-  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script\b[^>]*>/gi, " ");
-  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style\b[^>]*>/gi, " ");
-  text = text.replace(/<(nav|header|footer|aside|form|noscript|svg|iframe)\b[^>]*>[\s\S]*?<\/\1\b[^>]*>/gi, " ");
+  text = text.replace(/<script\b[^>]*>[\s\S]*?<\/script(?:[\s/][^>]*)?>/gi, " ");
+  text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style(?:[\s/][^>]*)?>/gi, " ");
+  text = text.replace(/<(nav|header|footer|aside|form|noscript|svg|iframe)\b[^>]*>[\s\S]*?<\/\1(?:[\s/][^>]*)?>/gi, " ");
   text = text.replace(/<!--[\s\S]*?--!?>/g, " ");
   text = text.replace(TAG, " "); // any remaining tags, quote-aware
   text = text.replace(/<[^<>]*>/g, " "); // malformed leftovers, e.g. an unbalanced quote
