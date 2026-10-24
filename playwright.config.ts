@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { selectsUiProject } from "./tests/support/selects-ui";
 
 /**
  * Two projects:
@@ -44,7 +45,7 @@ export default defineConfig({
       },
     },
   ],
-  webServer: process.argv.includes("--project=ui")
+  webServer: selectsUiProject(process.argv)
     ? {
         command: `npx next start -p ${UI_PORT}`,
         url: `http://localhost:${UI_PORT}/login`,
