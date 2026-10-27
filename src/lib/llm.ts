@@ -24,6 +24,35 @@ export function defaultModel(provider: LlmProvider): string {
   return MODELS[provider];
 }
 
+export const LLM_PROVIDERS: readonly LlmProvider[] = ["anthropic", "openai", "google"];
+
+/**
+ * Check a key with the provider before saving it, so a typo in Settings
+ * doesn't silently break every later capture. Lists models: free, and it
+ * only needs a valid key. Returns an error message, or null when the key works.
+ * Only a clear rejection (401/403, or Google's 400 for a bad key) blocks the
+ * save; an outage or a network error doesn't stop someone changing their key.
+ */
+export async function verifyLlmKey(provider: LlmProvider, apiKey: string): Promise<string | null> {
+  const name = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" }[provider];
+  let res: Response;
+  try {
+    res = provider === "anthropic"
+      ? await fetch("https://api.anthropic.com/v1/models?limit=1", {
+          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+        })
+      : provider === "openai"
+        ? await fetch("https://api.openai.com/v1/models", {
+            headers: { Authorization: `Bearer ${apiKey}` },
+          })
+        : await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(apiKey)}`);
+  } catch {
+    return null;
+  }
+  const rejected = res.status === 401 || res.status === 403 || (provider === "google" && res.status === 400);
+  return rejected ? `${name} rejected that key. Check it and try again.` : null;
+}
+
 /**
  * Extra output tokens reserved for reasoning at each effort level. Every
  * provider counts reasoning against the same output ceiling as the answer, so

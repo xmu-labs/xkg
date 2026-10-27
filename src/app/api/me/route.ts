@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
-import { ensureLlmColumns, ensureProfileColumns, updateUserLlmSettings, updateUserProfile } from "@/lib/db";
-import { LLM_EFFORTS, defaultModel, validateLlmModel } from "@/lib/llm";
+import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserProfile } from "@/lib/db";
+import { LLM_EFFORTS, LLM_PROVIDERS, defaultModel, validateLlmModel, verifyLlmKey } from "@/lib/llm";
 import type { LlmEffort, LlmProvider } from "@/lib/types";
 import {
   githubAvatarUrl,
@@ -27,6 +27,7 @@ function mePayload(user: {
   api_key: string | null;
   pin_hash: string | null;
   llm_provider: LlmProvider;
+  llm_api_key?: string | null;
   llm_model?: string | null;
   llm_effort?: LlmEffort | null;
 }) {
@@ -38,6 +39,8 @@ function mePayload(user: {
     hasMcpKey: Boolean(user.api_key),
     hasPin: Boolean(user.pin_hash),
     llmProvider: user.llm_provider,
+    // The last four characters only, so Settings can say which key is saved.
+    llmKeyHint: user.llm_api_key && user.llm_api_key.length > 8 ? user.llm_api_key.slice(-4) : null,
     llmModel: user.llm_model ?? null,
     llmEffort: user.llm_effort ?? null,
     defaultModel: defaultModel(user.llm_provider),
@@ -63,7 +66,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     const user = await getSession();
     if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
 
-    let body: { displayName?: unknown; avatarData?: unknown; llmModel?: unknown; llmEffort?: unknown };
+    let body: {
+      displayName?: unknown;
+      avatarData?: unknown;
+      llmProvider?: unknown;
+      llmApiKey?: unknown;
+      llmModel?: unknown;
+      llmEffort?: unknown;
+    };
     try {
       body = await req.json() as typeof body;
     } catch {
@@ -93,9 +103,38 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       }
     }
 
+    // A new key may come with a new provider; a new provider always needs a new
+    // key, since keys don't carry across providers.
+    let llmProvider = user.llm_provider;
+    let llmApiKey: string | null = null;
+    if ("llmProvider" in body) {
+      if (!LLM_PROVIDERS.includes(body.llmProvider as LlmProvider)) {
+        return NextResponse.json({ error: "Provider must be anthropic, openai or google." }, { status: 400 });
+      }
+      llmProvider = body.llmProvider as LlmProvider;
+    }
+    if ("llmApiKey" in body) {
+      if (typeof body.llmApiKey !== "string" || !body.llmApiKey.trim()) {
+        return NextResponse.json({ error: "Paste an API key." }, { status: 400 });
+      }
+      llmApiKey = body.llmApiKey.trim();
+      if (llmApiKey.length > 500 || /\s/.test(llmApiKey)) {
+        return NextResponse.json({ error: "That doesn't look like an API key." }, { status: 400 });
+      }
+    }
+    const providerChanged = llmProvider !== user.llm_provider;
+    if (providerChanged && !llmApiKey) {
+      return NextResponse.json({ error: "Switching provider needs that provider's API key." }, { status: 400 });
+    }
+    if (llmApiKey) {
+      const error = await verifyLlmKey(llmProvider, llmApiKey);
+      if (error) return NextResponse.json({ error }, { status: 400 });
+    }
+
     // Model and effort are saved together: the pair is what the next LLM call uses.
-    const llmChange = "llmModel" in body || "llmEffort" in body;
-    let llmModel = user.llm_model ?? null;
+    // A saved model belongs to the old provider, so switching clears it.
+    const llmChange = "llmModel" in body || "llmEffort" in body || providerChanged;
+    let llmModel = providerChanged ? null : user.llm_model ?? null;
     let llmEffort = user.llm_effort ?? null;
     if ("llmModel" in body) {
       if (body.llmModel === null || body.llmModel === "") {
@@ -119,18 +158,21 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange) {
+    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange && !llmApiKey) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
     if (fields.displayName !== undefined || fields.avatarData !== undefined) {
       await updateUserProfile(user.id, fields);
     }
+    if (llmApiKey) await updateUserLlmKey(user.id, llmProvider, llmApiKey);
     if (llmChange) await updateUserLlmSettings(user.id, llmModel, llmEffort);
     const next = {
       ...user,
       display_name: fields.displayName !== undefined ? fields.displayName : user.display_name,
       avatar_data: fields.avatarData !== undefined ? fields.avatarData : user.avatar_data,
+      llm_provider: llmProvider,
+      llm_api_key: llmApiKey ?? user.llm_api_key,
       llm_model: llmModel,
       llm_effort: llmEffort,
     };

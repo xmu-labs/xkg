@@ -92,12 +92,39 @@ test("Settings saves the model and effort together, only once they change", asyn
   await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("__other__");
   await expect(dialog.getByLabel("Model ID")).toHaveValue(WORST_ME.llmModel);
   await expect(dialog.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
-  await expect(dialog.getByRole("button", { name: "Save model" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Save AI settings" })).toHaveCount(0);
 
   await dialog.getByLabel("Model", { exact: true }).selectOption("gpt-5");
   await expect(dialog.getByLabel("Model ID")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Low" }).tap();
-  await dialog.getByRole("button", { name: "Save model" }).tap();
+  await dialog.getByRole("button", { name: "Save AI settings" }).tap();
   await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
   expect(patched).toEqual({ llmModel: "gpt-5", llmEffort: "low" });
+});
+
+test("Settings switches provider only with that provider's key", async ({ page }) => {
+  await signIn(page);
+  let patched: unknown = null;
+  await page.route("**/api/me", async (r) => {
+    if (r.request().method() === "PATCH") {
+      patched = r.request().postDataJSON();
+      return r.fulfill({ json: { ...WORST_ME, llmProvider: "anthropic", llmKeyHint: "WXYZ", llmModel: null, defaultModel: "claude-haiku-4-5" } });
+    }
+    return r.fulfill({ json: WORST_ME });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Saved key ends in 9xYz.", { exact: false })).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Anthropic" }).tap();
+  // The old provider's model doesn't carry over, and a switch needs a key.
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("");
+  await expect(dialog.getByRole("button", { name: "Save AI settings" })).toBeDisabled();
+
+  await dialog.getByLabel("API key").fill("sk-ant-test-WXYZ");
+  await dialog.getByRole("button", { name: "Save AI settings" }).tap();
+  await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
+  expect(patched).toEqual({ llmProvider: "anthropic", llmApiKey: "sk-ant-test-WXYZ", llmModel: null, llmEffort: "high" });
+  await expect(dialog.getByLabel("API key")).toHaveValue("");
 });

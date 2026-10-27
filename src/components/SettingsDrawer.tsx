@@ -11,7 +11,9 @@ export interface Me {
   hasMcpKey: boolean;
   hasPin: boolean;
   /** Provider of the saved LLM key; absent on older servers. */
-  llmProvider?: "anthropic" | "openai" | "google";
+  llmProvider?: Provider;
+  /** Last four characters of the saved key. */
+  llmKeyHint?: string | null;
   llmModel?: string | null;
   llmEffort?: Effort | null;
   defaultModel?: string;
@@ -19,10 +21,15 @@ export interface Me {
 }
 
 type Effort = "low" | "medium" | "high";
+type Provider = "anthropic" | "openai" | "google";
 
-const PROVIDER_NAMES = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" } as const;
+const PROVIDERS: Record<Provider, { label: string; placeholder: string; keysUrl: string }> = {
+  anthropic: { label: "Anthropic", placeholder: "sk-ant-...", keysUrl: "https://console.anthropic.com/settings/keys" },
+  openai: { label: "OpenAI", placeholder: "sk-...", keysUrl: "https://platform.openai.com/api-keys" },
+  google: { label: "Google", placeholder: "AIza...", keysUrl: "https://aistudio.google.com/app/apikey" },
+};
 
-/** The picker's list. "Other model…" takes any ID the provider serves. */
+/** The picker's list, default first. "Other model…" takes any ID the provider serves. */
 const MODEL_SUGGESTIONS = {
   anthropic: ["claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
   openai: ["gpt-4o-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "o4-mini"],
@@ -186,12 +193,15 @@ export default function SettingsDrawer({
   const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [pinError, setPinError] = useState("");
 
+  const [llmProvider, setLlmProvider] = useState<Provider>("anthropic");
+  const [llmKey, setLlmKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmEffort, setLlmEffort] = useState<Effort | null>(null);
   const [llmStatus, setLlmStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [llmError, setLlmError] = useState("");
   // True when the saved model isn't in the list, or the user picked "Other model…".
   const [customModel, setCustomModel] = useState(false);
+  const keyInputId = useId();
   const modelSelectId = useId();
   const modelInputId = useId();
 
@@ -224,6 +234,7 @@ export default function SettingsDrawer({
     setPinOpen(false);
     setProfileError("");
     setProfileStatus("idle");
+    setLlmKey("");
     setLlmError("");
     setLlmStatus("idle");
     setDeleteOpen(false);
@@ -247,6 +258,7 @@ export default function SettingsDrawer({
 
   const openDrawer = useCallback(() => {
     setDisplayName(me?.displayName ?? "");
+    setLlmProvider(me?.llmProvider ?? "anthropic");
     setLlmModel(me?.llmModel ?? "");
     setCustomModel(isCustomModel(me));
     setLlmEffort(me?.llmEffort ?? null);
@@ -329,8 +341,23 @@ export default function SettingsDrawer({
     }
   }
 
+  const providerChanged = Boolean(me?.llmProvider) && llmProvider !== me?.llmProvider;
   const llmDirty =
-    llmModel.trim() !== (me?.llmModel ?? "") || llmEffort !== (me?.llmEffort ?? null);
+    providerChanged ||
+    llmKey.trim() !== "" ||
+    llmModel.trim() !== (me?.llmModel ?? "") ||
+    llmEffort !== (me?.llmEffort ?? null);
+  // Keys don't carry across providers, so a switch can't be saved without one.
+  const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
+  // Each provider's default is first in its list; the server's is authoritative for the saved one.
+  const providerDefault = providerChanged || !me?.defaultModel ? MODEL_SUGGESTIONS[llmProvider][0] : me.defaultModel;
+
+  function chooseProvider(next: Provider) {
+    setLlmProvider(next);
+    // A model ID belongs to one provider: start the new one on its default.
+    setLlmModel(next === me?.llmProvider ? me?.llmModel ?? "" : "");
+    setCustomModel(next === me?.llmProvider && isCustomModel(me));
+  }
 
   async function saveLlm() {
     setLlmStatus("saving");
@@ -339,13 +366,19 @@ export default function SettingsDrawer({
       const res = await fetch("/api/me", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ llmModel: llmModel.trim() || null, llmEffort }),
+        body: JSON.stringify({
+          ...(providerChanged ? { llmProvider } : {}),
+          ...(llmKey.trim() ? { llmApiKey: llmKey.trim() } : {}),
+          llmModel: llmModel.trim() || null,
+          llmEffort,
+        }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(data.error ?? `HTTP ${res.status}`);
       }
       onMe(await res.json() as Me);
+      setLlmKey("");
       setLlmStatus("saved");
       window.setTimeout(() => setLlmStatus("idle"), 1500);
     } catch (err) {
@@ -785,17 +818,65 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 3. Model */}
+              {/* 3. AI */}
               {me?.llmProvider && (
               <section>
-                <SectionLabel>Model</SectionLabel>
+                <SectionLabel>AI</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
+                  <div>
+                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Provider</p>
+                    <div className="grid grid-cols-3 gap-2" role="group" aria-label="Provider">
+                      {(Object.keys(PROVIDERS) as Provider[]).map((p) => {
+                        const active = llmProvider === p;
+                        return (
+                          <button
+                            key={p}
+                            type="button"
+                            onClick={() => chooseProvider(p)}
+                            aria-pressed={active}
+                            className="rounded-xl py-2 text-sm font-medium"
+                            style={{
+                              background: active ? "var(--gold)" : "transparent",
+                              color: active ? "var(--btn-fg)" : "var(--fg)",
+                              border: `1px solid ${active ? "var(--gold)" : "var(--gold-mid)"}`,
+                            }}
+                          >
+                            {PROVIDERS[p].label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <label htmlFor={keyInputId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
+                      API key
+                    </label>
+                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
+                      {providerChanged
+                        ? `Paste your ${PROVIDERS[llmProvider].label} key to switch. `
+                        : me.llmKeyHint
+                          ? `Saved key ends in ${me.llmKeyHint}. Paste a new one to replace it. `
+                          : "Paste a new key to replace the saved one. "}
+                      <a href={PROVIDERS[llmProvider].keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get a key</a>
+                    </p>
+                    <input
+                      id={keyInputId}
+                      type="password"
+                      value={llmKey}
+                      placeholder={PROVIDERS[llmProvider].placeholder}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      onChange={(e) => setLlmKey(e.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                  </div>
                   <div>
                     <label htmlFor={modelSelectId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
                       Model
                     </label>
                     <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      Runs on your {PROVIDER_NAMES[me.llmProvider]} key. Pick &ldquo;Other model&rdquo; to use any model ID your key can reach.
+                      Pick &ldquo;Other model&rdquo; to use any model ID your key can reach.
                     </p>
                     <select
                       id={modelSelectId}
@@ -812,9 +893,9 @@ export default function SettingsDrawer({
                       }}
                       className={INPUT_CLASS}
                     >
-                      <option value="">Default ({me.defaultModel ?? "provider default"})</option>
-                      {MODEL_SUGGESTIONS[me.llmProvider]
-                        .filter((m) => m !== me.defaultModel)
+                      <option value="">Default ({providerDefault})</option>
+                      {MODEL_SUGGESTIONS[llmProvider]
+                        .filter((m) => m !== providerDefault)
                         .map((m) => <option key={m} value={m}>{m}</option>)}
                       <option value={OTHER_MODEL}>Other model…</option>
                     </select>
@@ -825,7 +906,7 @@ export default function SettingsDrawer({
                           id={modelInputId}
                           type="text"
                           value={llmModel}
-                          placeholder={me.llmProvider === "anthropic" ? "claude-…" : me.llmProvider === "openai" ? "gpt-…" : "gemini-…"}
+                          placeholder={llmProvider === "anthropic" ? "claude-…" : llmProvider === "openai" ? "gpt-…" : "gemini-…"}
                           maxLength={100}
                           autoComplete="off"
                           autoCapitalize="none"
@@ -867,11 +948,11 @@ export default function SettingsDrawer({
                   <button
                     type="button"
                     onClick={() => void saveLlm()}
-                    disabled={llmStatus === "saving" || !llmDirty}
+                    disabled={llmStatus === "saving" || !llmReady}
                     className="text-sm font-medium rounded-xl px-3 py-2 disabled:opacity-30"
                     style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
                   >
-                    {llmStatus === "saving" ? "Saving…" : llmStatus === "saved" ? "Saved" : "Save model"}
+                    {llmStatus === "saving" ? (llmKey.trim() ? "Checking key…" : "Saving…") : llmStatus === "saved" ? "Saved" : "Save AI settings"}
                   </button>
                   )}
                   {llmStatus === "error" && (
