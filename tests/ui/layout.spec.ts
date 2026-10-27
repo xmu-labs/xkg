@@ -88,11 +88,14 @@ test("Settings saves the model and effort together, only once they change", asyn
   await page.goto("/");
   await page.getByRole("button", { name: "Open settings" }).tap();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue(WORST_ME.llmModel);
+  // A model outside the list opens on "Other model…" with its ID in the text field.
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("__other__");
+  await expect(dialog.getByLabel("Model ID")).toHaveValue(WORST_ME.llmModel);
   await expect(dialog.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
   await expect(dialog.getByRole("button", { name: "Save model" })).toHaveCount(0);
 
-  await dialog.getByLabel("Model", { exact: true }).fill("gpt-5");
+  await dialog.getByLabel("Model", { exact: true }).selectOption("gpt-5");
+  await expect(dialog.getByLabel("Model ID")).toHaveCount(0);
   await dialog.getByRole("button", { name: "Low" }).tap();
   await dialog.getByRole("button", { name: "Save model" }).tap();
   await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();

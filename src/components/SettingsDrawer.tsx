@@ -22,12 +22,20 @@ type Effort = "low" | "medium" | "high";
 
 const PROVIDER_NAMES = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" } as const;
 
-/** Suggestions only: any model ID the provider serves can be typed in. */
+/** The picker's list. "Other model…" takes any ID the provider serves. */
 const MODEL_SUGGESTIONS = {
   anthropic: ["claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
   openai: ["gpt-4o-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "o4-mini"],
   google: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
 } as const;
+
+const OTHER_MODEL = "__other__";
+
+function isCustomModel(me: Me | null | undefined): boolean {
+  const saved = me?.llmModel;
+  if (!saved || !me?.llmProvider) return false;
+  return !(MODEL_SUGGESTIONS[me.llmProvider] as readonly string[]).includes(saved);
+}
 
 const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
   { value: null, label: "Default" },
@@ -182,8 +190,10 @@ export default function SettingsDrawer({
   const [llmEffort, setLlmEffort] = useState<Effort | null>(null);
   const [llmStatus, setLlmStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [llmError, setLlmError] = useState("");
+  // True when the saved model isn't in the list, or the user picked "Other model…".
+  const [customModel, setCustomModel] = useState(false);
+  const modelSelectId = useId();
   const modelInputId = useId();
-  const modelListId = useId();
 
   const [signingOut, setSigningOut] = useState(false);
 
@@ -238,6 +248,7 @@ export default function SettingsDrawer({
   const openDrawer = useCallback(() => {
     setDisplayName(me?.displayName ?? "");
     setLlmModel(me?.llmModel ?? "");
+    setCustomModel(isCustomModel(me));
     setLlmEffort(me?.llmEffort ?? null);
     closing.current = false;
     setOpen(true);
@@ -780,28 +791,50 @@ export default function SettingsDrawer({
                 <SectionLabel>Model</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
                   <div>
-                    <label htmlFor={modelInputId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
+                    <label htmlFor={modelSelectId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
                       Model
                     </label>
                     <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      Any {PROVIDER_NAMES[me.llmProvider]} model your key can use. Leave it empty for {me.defaultModel ?? "the default"}.
+                      Runs on your {PROVIDER_NAMES[me.llmProvider]} key. Pick &ldquo;Other model&rdquo; to use any model ID your key can reach.
                     </p>
-                    <input
-                      id={modelInputId}
-                      type="text"
-                      list={modelListId}
-                      value={llmModel}
-                      placeholder={me.defaultModel}
-                      maxLength={100}
-                      autoComplete="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      onChange={(e) => setLlmModel(e.target.value)}
+                    <select
+                      id={modelSelectId}
+                      value={customModel ? OTHER_MODEL : llmModel}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === OTHER_MODEL) {
+                          setCustomModel(true);
+                          setLlmModel("");
+                        } else {
+                          setCustomModel(false);
+                          setLlmModel(value);
+                        }
+                      }}
                       className={INPUT_CLASS}
-                    />
-                    <datalist id={modelListId}>
-                      {MODEL_SUGGESTIONS[me.llmProvider].map((m) => <option key={m} value={m} />)}
-                    </datalist>
+                    >
+                      <option value="">Default ({me.defaultModel ?? "provider default"})</option>
+                      {MODEL_SUGGESTIONS[me.llmProvider]
+                        .filter((m) => m !== me.defaultModel)
+                        .map((m) => <option key={m} value={m}>{m}</option>)}
+                      <option value={OTHER_MODEL}>Other model…</option>
+                    </select>
+                    {customModel && (
+                      <>
+                        <label htmlFor={modelInputId} className="sr-only">Model ID</label>
+                        <input
+                          id={modelInputId}
+                          type="text"
+                          value={llmModel}
+                          placeholder={me.llmProvider === "anthropic" ? "claude-…" : me.llmProvider === "openai" ? "gpt-…" : "gemini-…"}
+                          maxLength={100}
+                          autoComplete="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          onChange={(e) => setLlmModel(e.target.value)}
+                          className={`${INPUT_CLASS} mt-2`}
+                        />
+                      </>
+                    )}
                   </div>
                   <div>
                     <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Reasoning effort</p>
