@@ -43,6 +43,12 @@ describe("captureTrailers", () => {
     const { captureTrailers } = await import("../git-hook.js");
     expect(captureTrailers("Explain the xkg-capture: trailer in docs")).toEqual([]);
   });
+
+  it("ignores an xkg-capture line in the body that prose follows", async () => {
+    const { captureTrailers } = await import("../git-hook.js");
+    const message = "Document trailers\n\nExample:\n\n```\nxkg-capture: 2026-10-01-example.md\n```\n\nThat is how it looks.\n";
+    expect(captureTrailers(message)).toEqual([]);
+  });
 });
 
 describe("installPostCommitHook", () => {
@@ -50,34 +56,40 @@ describe("installPostCommitHook", () => {
   beforeEach(() => { repo = makeRepo(); });
   afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
-  it("creates an executable post-commit hook that runs xkg in the background", async () => {
+  const LINE = 'xkg_sha=$(git rev-parse HEAD); npx -y @xmu-labs/xkg@latest post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg';
+
+  it("creates an executable hook that records the commit sha before going to the background", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
-    const path = installPostCommitHook("k1", repo);
+    const path = installPostCommitHook(repo);
     expect(path).toBe(join(repo, ".git", "hooks", "post-commit"));
-    const script = readFileSync(path, "utf-8");
-    expect(script.startsWith("#!/bin/sh\n")).toBe(true);
-    expect(script).toContain("npx -y @xmu-labs/xkg@latest post-commit --key k1 >/dev/null 2>&1 &");
+    expect(readFileSync(path, "utf-8")).toBe(`#!/bin/sh\n${LINE}\n`);
     expect(statSync(path).mode & 0o111).not.toBe(0);
   });
 
-  it("keeps an existing hook's lines and replaces only its own line on reinstall", async () => {
+  it("keeps an existing shell hook's lines and replaces only its own line, including an old one with a key", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
     const path = join(repo, ".git", "hooks", "post-commit");
-    writeFileSync(path, "#!/bin/sh\necho mine\n");
-    installPostCommitHook("old", repo);
-    installPostCommitHook("new", repo);
-    const lines = readFileSync(path, "utf-8").trimEnd().split("\n");
-    expect(lines[0]).toBe("#!/bin/sh");
-    expect(lines[1]).toBe("echo mine");
-    expect(lines.filter((l) => l.includes("post-commit --key"))).toEqual([
-      "npx -y @xmu-labs/xkg@latest post-commit --key new >/dev/null 2>&1 & # xkg",
-    ]);
+    writeFileSync(path, "#!/bin/bash\necho mine\nnpx -y @xmu-labs/xkg@latest post-commit --key old >/dev/null 2>&1 & # xkg\n");
+    installPostCommitHook(repo);
+    installPostCommitHook(repo);
+    expect(readFileSync(path, "utf-8")).toBe(`#!/bin/bash\necho mine\n${LINE}\n`);
   });
 
-  it("installs where core.hooksPath points", async () => {
+  it("refuses to touch a hook written in another language", async () => {
+    const { installPostCommitHook } = await import("../git-hook.js");
+    const path = join(repo, ".git", "hooks", "post-commit");
+    const python = "#!/usr/bin/env python3\nprint('mine')\n";
+    writeFileSync(path, python);
+    expect(() => installPostCommitHook(repo)).toThrow(/not a shell script/);
+    expect(readFileSync(path, "utf-8")).toBe(python);
+  });
+
+  it("installs where core.hooksPath points, with no credential in the file", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
     git(repo, "config", "core.hooksPath", ".githooks");
-    expect(installPostCommitHook("k", repo)).toBe(join(repo, ".githooks", "post-commit"));
+    const path = installPostCommitHook(repo);
+    expect(path).toBe(join(repo, ".githooks", "post-commit"));
+    expect(readFileSync(path, "utf-8")).not.toMatch(/--key/);
   });
 });
 
@@ -102,8 +114,10 @@ describe("postCommit", () => {
   it("reports each trailer to apply_capture with the commit sha and changed files", async () => {
     const { postCommit } = await import("../git-hook.js");
     const sha = commit(repo, "src/retry.ts", "Retry with backoff\n\nxkg-capture: 2026-10-01-backoff.md\nxkg-capture: 2026-10-02-jitter.md");
+    commit(repo, "src/later.ts", "A later commit\n\nxkg-capture: 2026-10-03-other.md");
 
-    await postCommit("key", repo);
+    // The hook passes the sha it saw, even if HEAD has moved on since
+    await postCommit("key", sha, repo);
 
     expect(calls()).toEqual([
       { name: "apply_capture", arguments: { filename: "2026-10-01-backoff.md", commit_sha: sha, target_file: "src/retry.ts" } },
@@ -113,16 +127,16 @@ describe("postCommit", () => {
 
   it("does nothing for a commit without a trailer", async () => {
     const { postCommit } = await import("../git-hook.js");
-    commit(repo, "a.ts", "Plain commit");
-    await postCommit("key", repo);
+    const sha = commit(repo, "a.ts", "Plain commit");
+    await postCommit("key", sha, repo);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("never throws, so a commit is never disturbed", async () => {
     const { postCommit } = await import("../git-hook.js");
-    commit(repo, "a.ts", "Fix\n\nxkg-capture: c.md");
+    const sha = commit(repo, "a.ts", "Fix\n\nxkg-capture: c.md");
     fetchSpy.mockRejectedValue(new Error("offline"));
-    await expect(postCommit("key", repo)).resolves.toBeUndefined();
-    await expect(postCommit("key", join(repo, "not-a-repo"))).resolves.toBeUndefined();
+    await expect(postCommit("key", sha, repo)).resolves.toBeUndefined();
+    await expect(postCommit("key", "not-a-sha", repo)).resolves.toBeUndefined();
   });
 });
