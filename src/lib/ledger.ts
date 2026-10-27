@@ -18,7 +18,7 @@ const EMPTY = "—";
 
 function cell(value: string | undefined): string {
   if (!value) return EMPTY;
-  return value.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
+  return value.replace(/\s*\n\s*/g, " ").replace(/[\\|]/g, "\\$&");
 }
 
 export function appendLedgerRow(existing: string | null, entry: LedgerEntry): string {
@@ -58,11 +58,25 @@ export function weeklyApplyStats(content: string, today: string, weeks: number):
 function parseRows(content: string): Array<{ date: string; capture: string; commit: string }> {
   const rows = [];
   for (const line of content.split("\n")) {
-    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim());
+    const cells = splitRow(line.trim());
     if (cells.length < 3 || !/^\d{4}-\d{2}-\d{2}$/.test(cells[0]!)) continue;
     rows.push({ date: cells[0]!, capture: cells[1]!, commit: cells[2]! });
   }
   return rows;
+}
+
+/** Splits `| a | b\\|c |` into unescaped, trimmed cells. */
+function splitRow(line: string): string[] {
+  if (!line.startsWith("|")) return [];
+  const cells: string[] = [];
+  let current = "";
+  for (let i = 1; i < line.length; i++) {
+    const ch = line[i]!;
+    if (ch === "\\" && i + 1 < line.length) current += line[++i];
+    else if (ch === "|") { cells.push(current.trim()); current = ""; }
+    else current += ch;
+  }
+  return cells;
 }
 
 /** True when the ledger already has a row for this capture and commit (short and full shas match). */

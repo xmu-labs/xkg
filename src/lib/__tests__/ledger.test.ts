@@ -24,6 +24,25 @@ describe("appendLedgerRow", () => {
     const out = appendLedgerRow(null, { date: "2026-10-27", capture: "c.md", target: "a|b\nc" });
     expect(out.trimEnd().split("\n").pop()).toBe("| 2026-10-27 | c.md | — | a\\|b c |");
   });
+
+  it("escapes backslashes so an escaped pipe can't be faked", () => {
+    const out = appendLedgerRow(null, { date: "2026-10-27", capture: "c.md", target: "a\\|b" });
+    expect(out.trimEnd().split("\n").pop()).toBe("| 2026-10-27 | c.md | — | a\\\\\\|b |");
+  });
+});
+
+describe("ledger round trip", () => {
+  it("reads back a capture name containing pipes and backslashes exactly", () => {
+    const name = "odd\\|name\\";
+    const ledger = appendLedgerRow(null, { date: "2026-10-27", capture: name, commit: "a1b2c3d" });
+    expect(ledgerHasCommit(ledger, name, "a1b2c3d")).toBe(true);
+  });
+
+  it("keeps columns apart when a value ends in a backslash", () => {
+    const ledger = appendLedgerRow(null, { date: "2026-10-27", capture: "c\\", commit: "a1b2c3d", target: "dir\\" });
+    expect(ledgerHasCommit(ledger, "c\\", "a1b2c3d")).toBe(true);
+    expect(weeklyApplyStats(ledger, "2026-10-27", 1)).toEqual([{ weekStart: "2026-10-26", applied: 1, withCommit: 1 }]);
+  });
 });
 
 describe("weeklyApplyStats", () => {
