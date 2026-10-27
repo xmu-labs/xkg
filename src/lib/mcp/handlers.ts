@@ -21,7 +21,7 @@ import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
-import { LEDGER_PATH, appendLedgerRow, weeklyApplyStats } from "@/lib/ledger";
+import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -214,6 +214,14 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
   if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
+
+  // The git post-commit hook and the agent may both report the same commit; count it once
+  if (args.commit_sha && !inboxFile) {
+    const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
+    if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})`;
+    }
+  }
 
   let content = file.content.replace(/^status:\s*inbox$/m, "status: applied");
   if (args.applied_note && inboxFile) {

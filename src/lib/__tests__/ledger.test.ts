@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { appendLedgerRow, weeklyApplyStats } from "../ledger";
+import { appendLedgerRow, weeklyApplyStats, ledgerHasCommit } from "../ledger";
 
 /**
  * APPLIED.md is the apply metric's source of truth: one row per time a
@@ -47,5 +47,19 @@ describe("weeklyApplyStats", () => {
       { weekStart: "2026-10-26", applied: 0, withCommit: 0 },
       { weekStart: "2026-10-19", applied: 0, withCommit: 0 },
     ]);
+  });
+});
+
+describe("ledgerHasCommit", () => {
+  const ledger = HEADER + "| 2026-10-27 | c1.md | a1b2c3d4e5f6 | src/a.ts |\n| 2026-10-27 | c2.md | — | — |\n";
+
+  it("matches the same capture and commit, whether either sha is short or full", () => {
+    expect(ledgerHasCommit(ledger, "c1.md", "a1b2c3d")).toBe(true);
+    expect(ledgerHasCommit(HEADER + "| 2026-10-27 | c1.md | a1b2c3d | — |\n", "c1.md", "a1b2c3d4e5f6")).toBe(true);
+  });
+
+  it("does not match another capture, another commit, or a row without a commit", () => {
+    expect(ledgerHasCommit(ledger, "c2.md", "a1b2c3d")).toBe(false);
+    expect(ledgerHasCommit(ledger, "c1.md", "bbbbbbb")).toBe(false);
   });
 });

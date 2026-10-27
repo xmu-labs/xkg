@@ -132,6 +132,21 @@ describe("apply_capture", () => {
     expect(updateIndexEntry).not.toHaveBeenCalled();
   });
 
+  it("records nothing when this capture and commit are already in the ledger", async () => {
+    // The git post-commit hook and the agent may both report the same commit
+    const ledger = `| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n| 2026-10-27 | 2026-10-01-x.md | ${SHA} | — |\n`;
+    readFile.mockImplementation((_t: string, _r: string, path: string) => {
+      if (path === "applied/2026-10-01-x.md") return { content: CAPTURE.replace("status: inbox", "status: applied"), sha: "s2" };
+      if (path === "APPLIED.md") return { content: ledger, sha: "L1" };
+      return null;
+    });
+
+    const result = await handleApplyCapture(user, { filename: "applied/2026-10-01-x.md", commit_sha: SHA.slice(0, 7) });
+
+    expect(result).toBe("Already recorded: 2026-10-01-x.md (a1b2c3d)");
+    expect(githubPut).not.toHaveBeenCalled();
+  });
+
   it("rejects a commit_sha that is not a hash, without writing", async () => {
     const result = await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: "HEAD" });
     expect(result).toMatch(/commit_sha must be a git commit hash/);

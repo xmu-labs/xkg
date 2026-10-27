@@ -45,13 +45,31 @@ export function weeklyApplyStats(content: string, today: string, weeks: number):
     cursor.setUTCDate(cursor.getUTCDate() - 7);
   }
 
-  for (const line of content.split("\n")) {
-    const row = line.match(/^\|\s*(\d{4}-\d{2}-\d{2})\s*\|(?:[^|\\]|\\.)*\|\s*([^|\s]+)\s*\|/);
-    if (!row) continue;
-    const week = byWeek.get(weekStart(row[1]!));
+  for (const row of parseRows(content)) {
+    const week = byWeek.get(weekStart(row.date));
     if (!week) continue;
     week.applied++;
-    if (row[2] !== EMPTY) week.withCommit++;
+    if (row.commit !== EMPTY) week.withCommit++;
   }
   return stats;
+}
+
+/** Data rows of the ledger table; the header and separator rows have no date and are skipped. */
+function parseRows(content: string): Array<{ date: string; capture: string; commit: string }> {
+  const rows = [];
+  for (const line of content.split("\n")) {
+    const cells = line.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim());
+    if (cells.length < 3 || !/^\d{4}-\d{2}-\d{2}$/.test(cells[0]!)) continue;
+    rows.push({ date: cells[0]!, capture: cells[1]!, commit: cells[2]! });
+  }
+  return rows;
+}
+
+/** True when the ledger already has a row for this capture and commit (short and full shas match). */
+export function ledgerHasCommit(content: string, capture: string, commit: string): boolean {
+  const sha = commit.toLowerCase();
+  return parseRows(content).some((r) => {
+    const rowSha = r.commit.toLowerCase();
+    return r.capture === capture && r.commit !== EMPTY && (rowSha.startsWith(sha) || sha.startsWith(rowSha));
+  });
 }
