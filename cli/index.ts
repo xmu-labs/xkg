@@ -95,7 +95,7 @@ function printHelp(): void {
     xkg serve-mcp --key KEY                                    Start the MCP server for your AI worker
     xkg setup-hooks --key KEY                                  Install inbox count hook (fast)
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
-    xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolCall)
+    xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
     xkg config set agent "claude -p"                           Set which AI worker kos drives
     xkg kos --key KEY [--plan FILE]                            Implement a plan in an isolated worktree
