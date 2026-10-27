@@ -314,7 +314,8 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `briefing` | Get project-specific recommendations |
 | `generate_plan` | Turn selected captures into an implementation plan |
 | `list_plans` | List or read saved plans |
-| `apply_capture` | Mark a capture as applied |
+| `apply_capture` | Mark a capture as applied, with the commit that applied it |
+| `apply_stats` | Captures applied per week, and how many came with a commit |
 | `archive_capture` | Archive a capture |
 | `delete_capture` | Delete a capture |
 | `apply_to_context` | Get file-level suggestions for the current task |
@@ -336,6 +337,7 @@ npx -y @xmu-labs/xkg@latest <command>
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
+| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent) |
 | `config set agent "claude -p"` | Set which assistant `kos` should drive |
 | `kos --key YOUR_API_KEY` | Implement the latest plan in an isolated worktree |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |

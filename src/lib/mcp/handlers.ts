@@ -196,7 +196,7 @@ export async function handleReadCapture(user: User, args: { filename: string }):
 
 /** Appended wherever xkg suggests a capture, so the agent closes the loop after committing. */
 export const APPLY_HINT =
-  "After you commit the change, call `apply_capture` with this filename and the commit sha (`git rev-parse HEAD`) so xkg records that it was applied.";
+  "When you commit a change that applies a capture, add the trailer `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename and the commit sha (`git rev-parse HEAD`). xkg counts each capture and commit once.";
 
 /**
  * Records that a capture was applied. The first time, it moves the capture from

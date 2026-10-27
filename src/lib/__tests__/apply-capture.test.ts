@@ -176,6 +176,7 @@ describe("apply_to_context", () => {
     expect(result).toContain("Change src/a.ts.");
     expect(result).toContain("inbox/2026-10-01-x.md");
     expect(result).toMatch(/apply_capture[\s\S]*commit sha/);
+    expect(result).toContain("xkg-capture: <filename>");
   });
 });
 
