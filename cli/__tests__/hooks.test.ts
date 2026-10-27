@@ -74,25 +74,45 @@ describe("setupHooks", () => {
     expect(cmd).not.toContain("--briefing");
   });
 
-  it("also installs PreToolCall hook when vault option is true", async () => {
+  it("also installs a PreToolUse hook on file edits when vault option is true", async () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("vault-key", { silent: true, vault: true });
     const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as {
-      hooks: { SessionStart: unknown; PreToolCall: Array<{ hooks: Array<{ command: string }> }> };
+      hooks: { SessionStart: unknown; PreToolUse: Array<{ matcher?: string; hooks: Array<{ command: string }> }> };
     };
-    expect(settings.hooks.PreToolCall).toBeDefined();
-    const cmd = settings.hooks.PreToolCall[0]?.hooks[0]?.command ?? "";
+    expect(settings.hooks.PreToolUse).toBeDefined();
+    expect(settings.hooks.PreToolUse[0]?.matcher).toBe("Edit|Write|MultiEdit");
+    const cmd = settings.hooks.PreToolUse[0]?.hooks[0]?.command ?? "";
     expect(cmd).toContain("vault-check");
     expect(cmd).toContain("vault-key");
+    expect(settings.hooks).not.toHaveProperty("PreToolCall");
   });
 
-  it("does NOT install PreToolCall hook when vault option is false", async () => {
+  it("does NOT install a vault hook when vault option is false", async () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("no-vault-key", { silent: true, vault: false });
     const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as {
       hooks: Record<string, unknown>;
     };
+    expect(settings.hooks["PreToolUse"]).toBeUndefined();
     expect(settings.hooks["PreToolCall"]).toBeUndefined();
+  });
+
+  it("moves a vault hook from the invalid PreToolCall key to PreToolUse, keeping other hooks", async () => {
+    const current = "npx -y @xmu-labs/xkg@latest inbox-check --key k";
+    const other = "echo unrelated";
+    writeSettings({
+      hooks: {
+        SessionStart: [{ hooks: [{ type: "command", command: current }] }],
+        PreToolCall: [{ hooks: [{ type: "command", command: "npx -y @xmu-labs/xkg@latest vault-check --key k" }, { type: "command", command: other }] }],
+      },
+    });
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("k", { silent: true, skipIfExists: true });
+    const settings = readSettings();
+    expect(commands(settings, "SessionStart")).toEqual([current]);
+    expect(commands(settings, "PreToolUse")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
+    expect(commands(settings, "PreToolCall")).toEqual([other]);
   });
 
   it("replaces an existing xkg hook rather than duplicating it", async () => {
@@ -124,7 +144,7 @@ describe("setupHooks", () => {
     setupHooks("k", { silent: true, vault: true });
     const settings = readSettings();
     expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k"]);
-    expect(commands(settings, "PreToolCall")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
+    expect(commands(settings, "PreToolUse")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
   });
 
   it("skipIfExists: migrates mnemos-capture hooks to xkg, keeping --briefing", async () => {
@@ -139,7 +159,8 @@ describe("setupHooks", () => {
     setupPreToolHook("k", { silent: true, skipIfExists: true });
     const settings = readSettings();
     expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k --briefing"]);
-    expect(commands(settings, "PreToolCall")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
+    expect(commands(settings, "PreToolUse")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
+    expect(settings.hooks).not.toHaveProperty("PreToolCall");
   });
 
   it("skipIfExists: leaves a current xkg hook and unrelated hooks alone", async () => {
@@ -261,6 +282,7 @@ One insight.`));
     const output = await captureStdout(() => inboxCheck("key", { briefing: true }));
     expect(output).toContain("generate_plan");
     expect(output).toContain("inbox/a.md");
+    expect(output).toContain("apply_capture");
   });
 
   it("does NOT append generate_plan prompt when all suggestions have applyNow=false", async () => {
@@ -338,7 +360,7 @@ describe("vaultCheck", () => {
     );
   }
 
-  it("outputs vault match when fetch returns a high-score match", async () => {
+  it("returns a vault match to the agent as PreToolUse additionalContext", async () => {
     fetchSpy.mockReturnValue(makeMcpResponse(
       "xkg vault match (score: 87%):\n\n**2026-05-01-error-ctx**\nCore idea here.\n- Key takeaway\n\nApply it? Run: `apply_capture` with filename: `inbox/2026-05-01-error-ctx.md`",
     ));
@@ -367,7 +389,9 @@ describe("vaultCheck", () => {
 
     Object.defineProperty(process, "stdin", { value: origStdin, writable: true, configurable: true });
 
-    expect(output).toContain("vault match");
+    const parsed = JSON.parse(output) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
+    expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("vault match");
   });
 
   it("outputs nothing when vault_scan returns empty", async () => {

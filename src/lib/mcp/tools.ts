@@ -63,11 +63,12 @@ export const TOOLS = [
   },
   {
     name: "apply_capture",
-    description: "Mark a capture as applied. Records how and where the knowledge was used. Moves from inbox/ to applied/, updates status, index, and triggers rule re-synthesis.",
+    description: "Mark a capture as applied. Call it right after you commit a change that applies a capture, with the commit sha. Records how and where the knowledge was used. The first time, moves the capture from inbox/ to applied/, updates status and index, and triggers rule re-synthesis; calling it for an already-applied capture adds another application log entry.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        filename: { type: "string", description: "Filename in inbox (e.g. '2026-04-02-some-slug.md')" },
+        filename: { type: "string", description: "Capture filename (e.g. '2026-04-02-some-slug.md'); an 'inbox/' or 'applied/' prefix is accepted" },
+        commit_sha: { type: "string", description: "Sha of the commit that applied the capture (from `git rev-parse HEAD`). Links the insight to the code change it caused." },
         applied_note: { type: "string", description: "Brief note on how/where the capture was applied (e.g. 'Added an error handling rule to project guidance')" },
         target_file: { type: "string", description: "File path where the knowledge was applied (e.g. 'docs/conventions.md', 'src/utils/pricing.ts')" },
         outcome: { type: "string", description: "What changed as a result (e.g. 'Reduced error rate by rewriting retry logic per capture advice')" },

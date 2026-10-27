@@ -193,14 +193,29 @@ export async function handleReadCapture(user: User, args: { filename: string }):
   return file.content;
 }
 
-export async function handleApplyCapture(user: User, args: { filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string }): Promise<string> {
+/** Appended wherever xkg suggests a capture, so the agent closes the loop after committing. */
+export const APPLY_HINT =
+  "After you commit the change, call `apply_capture` with this filename and the commit sha (`git rev-parse HEAD`) so xkg records that it was applied.";
+
+/**
+ * Records that a capture was applied. The first time, it moves the capture from
+ * inbox/ to applied/. Applying an already-applied capture adds another entry to
+ * its application log, so each commit it drives is counted.
+ */
+export async function handleApplyCapture(user: User, args: { filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string; commit_sha?: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  const inboxPath = `inbox/${args.filename}`;
-  const file = await readFile(user.github_token, user.github_repo, inboxPath);
-  if (!file) return `File not found: ${inboxPath}. It may have already been processed.`;
+  if (args.commit_sha !== undefined && !/^[0-9a-f]{7,40}$/i.test(args.commit_sha)) {
+    return `commit_sha must be a git commit hash (7 to 40 hex characters), got: ${args.commit_sha}`;
+  }
+  const filename = args.filename.replace(/^(?:inbox|applied)\//, "");
+  const inboxPath = `inbox/${filename}`;
+  const appliedPath = `applied/${filename}`;
+  const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
+  const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
+  if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
 
   let content = file.content.replace(/^status:\s*inbox$/m, "status: applied");
-  if (args.applied_note) {
+  if (args.applied_note && inboxFile) {
     content = content.replace(
       /## Applied to\n[\s\S]*?(?=\n##|$)/,
       `## Applied to\n${args.applied_note}`,
@@ -210,22 +225,34 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   // Add application log
   const today = new Date().toISOString().split("T")[0];
   const logLines = [`- **Applied:** ${today}`];
+  if (args.commit_sha) logLines.push(`- **Commit:** ${args.commit_sha}`);
   if (args.target_file) logLines.push(`- **Target:** ${args.target_file}`);
   if (args.applied_note) logLines.push(`- **Note:** ${args.applied_note}`);
   if (args.plan_file) logLines.push(`- **Plan:** ${args.plan_file}`);
   logLines.push(`- **Outcome:** ${args.outcome ?? "_pending_"}`);
 
-  // Insert application log before "Links to memory" or at the end
-  const appLogSection = `\n## Application log\n${logLines.join("\n")}\n`;
-  if (content.includes("## Links to memory")) {
-    content = content.replace("## Links to memory", `${appLogSection}\n## Links to memory`);
+  if (content.includes("## Application log\n")) {
+    // Applied before: add this entry at the end of the existing log
+    content = content.replace(/(## Application log\n[\s\S]*?)\n*(?=\n## |$)/, `$1\n\n${logLines.join("\n")}\n`);
   } else {
-    content = content.trimEnd() + `\n${appLogSection}`;
+    // Insert application log before "Links to memory" or at the end
+    const appLogSection = `\n## Application log\n${logLines.join("\n")}\n`;
+    if (content.includes("## Links to memory")) {
+      content = content.replace("## Links to memory", `${appLogSection}\n## Links to memory`);
+    } else {
+      content = content.trimEnd() + `\n${appLogSection}`;
+    }
   }
 
-  await githubPut(user.github_token, user.github_repo, `applied/${args.filename}`, content, `apply: ${args.filename}`);
-  await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${args.filename} from inbox`);
-  await updateIndexEntry(user.github_token, user.github_repo, args.filename, "apply");
+  const commitRef = args.commit_sha ? ` (${args.commit_sha.slice(0, 7)})` : "";
+  if (!inboxFile) {
+    await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
+    return `Applied again: ${appliedPath}${commitRef}`;
+  }
+
+  await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
+  await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
+  await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -244,7 +271,7 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
     }
   }
 
-  return `Applied: ${args.filename} → applied/${args.filename}`;
+  return `Applied: ${filename} → ${appliedPath}${commitRef}`;
 }
 
 export async function handleArchiveCapture(user: User, args: { filename: string }): Promise<string> {
@@ -410,15 +437,22 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
   const contents = await Promise.all(
     ranked.map(async (r) => {
       const file = await readFile(user.github_token, user.github_repo!, r.filename);
-      return file?.content ?? null;
+      return file ? { filename: r.filename, content: file.content } : null;
     }),
   );
-  const validContents = contents.filter((c): c is string => c !== null);
+  const validContents = contents.filter((c): c is { filename: string; content: string } => c !== null);
 
   if (validContents.length === 0) return "Could not read relevant captures.";
 
-  // Generate application suggestions
-  return generateApplicationSuggestions(user.llm_api_key, taskContext, validContents, llmSettings(user));
+  // Generate application suggestions; the filename lets the agent apply_capture the one it used
+  const suggestions = await generateApplicationSuggestions(
+    user.llm_api_key,
+    taskContext,
+    validContents.map((c) => `File: ${c.filename}\n${c.content}`),
+    llmSettings(user),
+  );
+  const considered = validContents.map((c) => `\`${c.filename}\``).join(", ");
+  return `${suggestions}\n\n---\nCaptures considered: ${considered}\n${APPLY_HINT}`;
 }
 
 export async function handleGeneratePlan(
@@ -549,7 +583,7 @@ export async function handleVaultScan(
 ${coreIdea}
 ${firstTakeaway}
 
-Apply it? Run: \`apply_capture\` with filename: \`${basename}\``;
+If you apply it, filename: \`${basename}\`. ${APPLY_HINT}`;
 }
 
 export async function handleCurate(

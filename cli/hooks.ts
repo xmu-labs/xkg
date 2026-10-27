@@ -8,7 +8,7 @@ const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Settings = Record<string, any>;
-type HookGroup = { hooks?: HookEntry[] };
+type HookGroup = { matcher?: string; hooks?: HookEntry[] };
 type HookEntry = { type: string; command: string };
 
 /** The npm package new hooks run. Releases also publish it as `mnemos-capture`. */
@@ -120,7 +120,11 @@ export function setupHooks(
   // skipIfExists (serve-mcp auto-install): preserve user-configured hooks but
   // silently migrate hooks that pin a version or use the old package name.
   if (existingCmd && opts.skipIfExists) {
-    if (isCurrentHook(existingCmd)) return;
+    if (isCurrentHook(existingCmd)) {
+      // A vault hook left under the old PreToolCall key never ran; move it.
+      if (findVaultHook(hooks.PreToolCall ?? [])) setupPreToolHook(apiKey, { silent: opts.silent, skipIfExists: true });
+      return;
+    }
     // Migration: preserve the existing --briefing flag when upgrading to @latest
     opts = { ...opts, briefing: existingCmd.includes("--briefing") };
   }
@@ -154,37 +158,17 @@ export function setupHooks(
     }
   }
 
-  if (opts.vault) {
+  if (opts.vault || findVaultHook(hooks.PreToolCall ?? [])) {
     setupPreToolHook(apiKey, { silent: opts.silent, skipIfExists: opts.skipIfExists });
   }
 }
 
-export function setupPreToolHook(
-  apiKey: string,
-  opts: { silent?: boolean; skipIfExists?: boolean } = {},
-): void {
-  const settings = readSettings();
-  const hooks = settings.hooks ?? {};
-  const preToolCall: HookGroup[] = hooks.PreToolCall ?? [];
+/** Tools whose edits trigger a vault scan. Also the PreToolUse matcher. */
+const EDITING_TOOLS = ["Edit", "Write", "MultiEdit"];
 
-  let existingCmd: string | null = null;
-  for (const group of preToolCall) {
-    for (const h of group.hooks ?? []) {
-      if (typeof h.command === "string" && isXkgPreToolHook(h.command)) {
-        existingCmd = h.command;
-        break;
-      }
-    }
-    if (existingCmd) break;
-  }
-
-  if (existingCmd && opts.skipIfExists) {
-    if (isCurrentHook(existingCmd)) return;
-  }
-
-  const command = `npx -y ${PACKAGE}@latest vault-check --key ${apiKey}`;
-
-  const filtered = preToolCall
+/** Removes xkg vault hooks from one hook event's groups, dropping groups left empty. */
+function withoutVaultHook(groups: HookGroup[]): HookGroup[] {
+  return groups
     .map((group: HookGroup) => ({
       ...group,
       hooks: (group.hooks ?? []).filter(
@@ -192,14 +176,50 @@ export function setupPreToolHook(
       ),
     }))
     .filter((group: HookGroup) => (group.hooks ?? []).length > 0);
+}
 
-  filtered.push({ hooks: [{ type: "command", command }] });
+function findVaultHook(groups: HookGroup[]): string | null {
+  for (const group of groups) {
+    for (const h of group.hooks ?? []) {
+      if (typeof h.command === "string" && isXkgPreToolHook(h.command)) return h.command;
+    }
+  }
+  return null;
+}
 
-  settings.hooks = { ...hooks, PreToolCall: filtered };
+/**
+ * Installs the vault hook on PreToolUse for file edits.
+ *
+ * Earlier versions wrote it under `PreToolCall`, which Claude Code has no such
+ * event for, so it never ran. Any hook left there is moved to PreToolUse.
+ */
+export function setupPreToolHook(
+  apiKey: string,
+  opts: { silent?: boolean; skipIfExists?: boolean } = {},
+): void {
+  const settings = readSettings();
+  const hooks = settings.hooks ?? {};
+  const preToolUse: HookGroup[] = hooks.PreToolUse ?? [];
+  const legacy: HookGroup[] = hooks.PreToolCall ?? [];
+
+  const existingCmd = findVaultHook(preToolUse);
+  if (existingCmd && opts.skipIfExists && isCurrentHook(existingCmd) && !findVaultHook(legacy)) return;
+
+  const command = `npx -y ${PACKAGE}@latest vault-check --key ${apiKey}`;
+
+  const filtered = withoutVaultHook(preToolUse);
+  filtered.push({ matcher: EDITING_TOOLS.join("|"), hooks: [{ type: "command", command }] });
+
+  const next: Settings = { ...hooks, PreToolUse: filtered };
+  const legacyLeft = withoutVaultHook(legacy);
+  if (legacyLeft.length > 0) next.PreToolCall = legacyLeft;
+  else delete next.PreToolCall;
+
+  settings.hooks = next;
   writeSettings(settings);
 
   if (!opts.silent) {
-    console.log("xkg vault hook installed (PreToolCall).");
+    console.log("xkg vault hook installed (PreToolUse).");
     console.log("Your knowledge vault will surface relevant captures as you edit files.");
   }
 }
@@ -277,8 +297,7 @@ export async function vaultCheck(apiKey: string): Promise<void> {
     }
 
     // Only act on file-editing tool calls
-    const editingTools = ["Edit", "Write", "MultiEdit"];
-    if (!hookData.tool_name || !editingTools.includes(hookData.tool_name)) return;
+    if (!hookData.tool_name || !EDITING_TOOLS.includes(hookData.tool_name)) return;
 
     const filePath = (hookData.tool_input?.["file_path"] as string | undefined) ??
                      (hookData.tool_input?.["path"] as string | undefined);
@@ -299,7 +318,11 @@ export async function vaultCheck(apiKey: string): Promise<void> {
     const filenameMatches = text.match(/(?:inbox|applied|archived)\/[\w-]+\.md/g) ?? [];
     if (filenameMatches.length > 0) appendSessionSurfaced(filenameMatches);
 
-    process.stdout.write(text.trim() + "\n");
+    // Plain stdout from a PreToolUse hook only reaches the debug log; the agent
+    // reads it only as additionalContext.
+    process.stdout.write(JSON.stringify({
+      hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: text.trim() },
+    }) + "\n");
   } catch {
     // Silent fail — never interrupt a tool call
   }
@@ -336,7 +359,8 @@ export async function inboxCheck(
         const filenames = applyNow.map((s) => `'${s.filename}'`).join(", ");
         process.stdout.write(
           `\n---\nxkg: ${applyNow.length} insight${applyNow.length === 1 ? "" : "s"} ready to apply now.\n` +
-          `Run generate_plan with selected_captures: [${filenames}] to get a full implementation plan.\n`,
+          `Run generate_plan with selected_captures: [${filenames}] to get a full implementation plan.\n` +
+          `After you commit a change that applies one, call apply_capture with its filename and the commit sha (git rev-parse HEAD) so xkg records it.\n`,
         );
       }
       return;
