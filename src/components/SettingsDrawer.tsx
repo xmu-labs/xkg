@@ -31,7 +31,7 @@ function isCustomModel(me: Me | null | undefined): boolean {
 }
 
 const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
-  { value: null, label: "Default" },
+  { value: null, label: "Auto" },
   { value: "low", label: "Low" },
   { value: "medium", label: "Medium" },
   { value: "high", label: "High" },
@@ -338,6 +338,10 @@ export default function SettingsDrawer({
   const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
   // Each provider's default is first in its list; the server's is authoritative for the saved one.
   const providerDefault = providerChanged || !me?.defaultModel ? PROVIDERS[llmProvider].models[0] : me.defaultModel;
+
+  // Native adapters and OpenRouter take an effort setting; the other
+  // OpenAI-compatible providers leave reasoning to each model.
+  const effortApplies = !PROVIDERS[llmProvider].baseUrl || llmProvider === "openrouter";
 
   function chooseProvider(next: Provider) {
     setLlmProvider(next);
@@ -805,11 +809,11 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 3. AI */}
+              {/* 3. AI model */}
               {me?.llmProvider && (
               <section>
-                <SectionLabel>AI</SectionLabel>
-                <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
+                <SectionLabel>AI model</SectionLabel>
+                <div className="rounded-2xl p-4 stack-5" style={CARD_STYLE}>
                   <div>
                     <label htmlFor={providerSelectId} className="card-title block mb-2" style={{ color: "var(--fg)" }}>
                       Provider
@@ -824,43 +828,52 @@ export default function SettingsDrawer({
                         <option key={p} value={p}>{PROVIDERS[p].label}</option>
                       ))}
                     </select>
-                    {llmProvider === "openrouter" && (
-                      <p className="text-xs leading-relaxed mt-2" style={{ color: "var(--fg-muted)" }}>
-                        One key for hundreds of models: Llama, Qwen, Kimi, Claude, GPT and more.
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <label htmlFor={keyInputId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
-                      API key
-                    </label>
-                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      {providerChanged
-                        ? `Paste your ${PROVIDERS[llmProvider].label} key to switch. `
-                        : me.llmKeyHint
-                          ? `Saved key ends in ${me.llmKeyHint}. Paste a new one to replace it. `
-                          : "Paste a new key to replace the saved one. "}
-                      <a href={PROVIDERS[llmProvider].keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get a key</a>
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {llmProvider === "openrouter"
+                        ? "One key, hundreds of models."
+                        : "You pay your provider directly."}
                     </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3 mb-2">
+                      <label htmlFor={keyInputId} className="card-title" style={{ color: "var(--fg)" }}>
+                        API key
+                      </label>
+                      <a
+                        href={PROVIDERS[llmProvider].keysUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium shrink-0"
+                        style={{ color: "var(--gold)" }}
+                      >
+                        Get a key ↗
+                      </a>
+                    </div>
                     <input
                       id={keyInputId}
                       type="password"
                       value={llmKey}
-                      placeholder={PROVIDERS[llmProvider].placeholder}
+                      placeholder={!providerChanged && me.llmKeyHint ? `•••• ${me.llmKeyHint}` : PROVIDERS[llmProvider].placeholder}
                       autoComplete="off"
                       autoCapitalize="none"
                       spellCheck={false}
                       onChange={(e) => setLlmKey(e.target.value)}
                       className={INPUT_CLASS}
                     />
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {providerChanged
+                        ? `Paste your ${PROVIDERS[llmProvider].label} key to switch.`
+                        : me.llmKeyHint
+                          ? "Saved and encrypted. Paste a new key to replace it."
+                          : "Paste a new key to replace the saved one."}
+                    </p>
                   </div>
+
                   <div>
-                    <label htmlFor={modelSelectId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
+                    <label htmlFor={modelSelectId} className="card-title block mb-2" style={{ color: "var(--fg)" }}>
                       Model
                     </label>
-                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      Pick &ldquo;Other model&rdquo; to use any model ID your key can reach.
-                    </p>
                     <select
                       id={modelSelectId}
                       value={customModel ? OTHER_MODEL : llmModel}
@@ -876,7 +889,7 @@ export default function SettingsDrawer({
                       }}
                       className={INPUT_CLASS}
                     >
-                      <option value="">Default ({providerDefault})</option>
+                      <option value="">Recommended</option>
                       {PROVIDERS[llmProvider].models
                         .filter((m) => m !== providerDefault)
                         .map((m) => <option key={m} value={m}>{m}</option>)}
@@ -899,15 +912,20 @@ export default function SettingsDrawer({
                         />
                       </>
                     )}
-                  </div>
-                  <div>
-                    <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Reasoning effort</p>
-                    <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      {PROVIDERS[llmProvider].baseUrl && llmProvider !== "openrouter"
-                        ? `${PROVIDERS[llmProvider].label} sets reasoning per model, so this only applies on Anthropic, OpenAI, Gemini and OpenRouter.`
-                        : "Higher effort thinks longer before writing insights. It's slower and costs more on your key. Models that can't reason ignore it."}
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {customModel ? (
+                        <>Any model ID your key can reach.</>
+                      ) : llmModel ? (
+                        <>Runs every capture on this model.</>
+                      ) : (
+                        <>Fast and low-cost: <span className="font-medium break-all" style={{ color: "var(--fg)" }}>{providerDefault}</span></>
+                      )}
                     </p>
-                    <div className="grid grid-cols-4 gap-2" role="group" aria-label="Reasoning effort">
+                  </div>
+
+                  <div>
+                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Reasoning effort</p>
+                    <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Reasoning effort">
                       {EFFORT_OPTIONS.map(({ value, label }) => {
                         const active = llmEffort === value;
                         return (
@@ -916,7 +934,8 @@ export default function SettingsDrawer({
                             type="button"
                             onClick={() => setLlmEffort(value)}
                             aria-pressed={active}
-                            className="rounded-xl py-2 text-sm font-medium"
+                            disabled={!effortApplies}
+                            className="rounded-xl px-1 py-2 text-[13px] font-medium disabled:opacity-40"
                             style={{
                               background: active ? "var(--gold)" : "transparent",
                               color: active ? "var(--btn-fg)" : "var(--fg)",
@@ -928,20 +947,28 @@ export default function SettingsDrawer({
                         );
                       })}
                     </div>
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {effortApplies
+                        ? "More thinking, sharper insights. Slower, and costs more."
+                        : `${PROVIDERS[llmProvider].label} models set their own reasoning.`}
+                    </p>
                   </div>
+
                   {(llmStatus !== "idle" || llmDirty) && (
-                  <button
-                    type="button"
-                    onClick={() => void saveLlm()}
-                    disabled={llmStatus === "saving" || !llmReady}
-                    className="text-sm font-medium rounded-xl px-3 py-2 disabled:opacity-30"
-                    style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
-                  >
-                    {llmStatus === "saving" ? (llmKey.trim() ? "Checking key…" : "Saving…") : llmStatus === "saved" ? "Saved" : "Save AI settings"}
-                  </button>
-                  )}
-                  {llmStatus === "error" && (
-                    <p className="text-xs" style={{ color: "var(--danger)" }}>{llmError}</p>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => void saveLlm()}
+                      disabled={llmStatus === "saving" || !llmReady}
+                      className="w-full text-sm font-medium rounded-xl px-3 py-2.5 disabled:opacity-30"
+                      style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
+                    >
+                      {llmStatus === "saving" ? (llmKey.trim() ? "Checking key…" : "Saving…") : llmStatus === "saved" ? "Saved" : "Save AI settings"}
+                    </button>
+                    {llmStatus === "error" && (
+                      <p role="alert" className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--danger)" }}>{llmError}</p>
+                    )}
+                  </div>
                   )}
                 </div>
               </section>

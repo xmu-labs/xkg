@@ -120,7 +120,7 @@ export default function OnboardPage() {
         {/* Step 1: Provider + API key */}
         <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
           <label htmlFor="provider" className="eyebrow" style={{ color: "var(--gold)" }}>
-            LLM provider
+            AI provider
           </label>
           <select
             id="provider"
@@ -133,18 +133,33 @@ export default function OnboardPage() {
             ))}
           </select>
 
-          <label className="eyebrow pt-1 block" style={{ color: "var(--gold)" }}>
-            {providerInfo.label} API key
-          </label>
+          <div className="flex items-baseline justify-between gap-3 pt-1">
+            <label htmlFor="api-key" className="eyebrow" style={{ color: "var(--gold)" }}>
+              API key
+            </label>
+            <a
+              href={providerInfo.keysUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-medium shrink-0"
+              style={{ color: "var(--gold)" }}
+            >
+              Get a key ↗
+            </a>
+          </div>
           <input
+            id="api-key"
             type="password"
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
             placeholder={providerInfo.placeholder}
-            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden font-mono"
+            autoComplete="off"
+            autoCapitalize="none"
+            spellCheck={false}
+            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden"
           />
-          <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
-            {provider === "openrouter" ? "One key for hundreds of models. " : ""}<a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get a {providerInfo.label} key</a>. You pay your provider directly, and you can change provider or model later in Settings.
+          <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+            {provider === "openrouter" ? "One key, hundreds of models. " : ""}You pay your provider directly. Change provider or model anytime in Settings.
           </p>
         </div>
 
@@ -191,7 +206,7 @@ export default function OnboardPage() {
             type="password"
             value={pin}
             onChange={(e) => setPin(e.target.value)}
-            placeholder={`Quick unlock PIN (min ${MIN_PIN_LENGTH} characters)`}
+            placeholder={`At least ${MIN_PIN_LENGTH} characters`}
             minLength={MIN_PIN_LENGTH}
             className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden"
           />

@@ -115,7 +115,7 @@ test("Settings switches provider only with that provider's key", async ({ page }
   await page.goto("/");
   await page.getByRole("button", { name: "Open settings" }).tap();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Saved key ends in 9xYz.", { exact: false })).toBeVisible();
+  await expect(dialog.getByLabel("API key")).toHaveAttribute("placeholder", "•••• 9xYz");
 
   await dialog.getByLabel("Provider").selectOption("anthropic");
   // The old provider's model doesn't carry over, and a switch needs a key.
