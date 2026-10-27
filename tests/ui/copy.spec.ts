@@ -9,8 +9,21 @@ test("the capture screen leads with the tagline and says how it works", async ({
   await signIn(page);
   await page.goto("/");
   await expect(page.getByText(TAGLINE, { exact: true })).toBeVisible();
-  await expect(page.getByText(/saves the core idea and where to use it to your GitHub/)).toBeVisible();
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", TAGLINE);
+});
+
+test("the capture screen shows the loop: learn, apply, track", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/");
+  const steps = page.getByRole("list", { name: "How xkg works" }).getByRole("listitem");
+  await expect(steps).toHaveCount(3);
+  await expect(steps.nth(0)).toContainText("Learn");
+  await expect(steps.nth(0)).toContainText("your GitHub");
+  await expect(steps.nth(1)).toContainText("Apply");
+  await expect(steps.nth(1)).toContainText("any MCP tool");
+  await expect(steps.nth(2)).toContainText("Track");
+  await expect(steps.nth(2)).toContainText("commit");
+  await expect(page.getByText(/your AI tools read it from there/)).toHaveCount(0);
 });
 
 test("login uses the same tagline", async ({ page }) => {

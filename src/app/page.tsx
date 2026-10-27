@@ -30,6 +30,13 @@ const TYPE_LABELS: Record<string, string> = {
   book: "Book",
 };
 
+/** The loop under the composer: what happens to a capture after you save it. */
+const LOOP_STEPS = [
+  ["Learn", "Paste a link or your notes. xkg saves the idea to your GitHub, with where it fits your code."],
+  ["Apply", "Claude Code, Cursor or any MCP tool pulls it in while it works in your repo."],
+  ["Track", "Each insight your AI applies links to the commit that used it."],
+] as const;
+
 /** A field inside the composer: borderless, the composer card draws the edge. */
 const CAPTURE_FAILED = "Couldn't capture that. Try again in a moment.";
 
@@ -195,9 +202,14 @@ export default function CapturePage() {
             className={COMPOSER_FIELD + " resize-none leading-relaxed"}
           />
           </div>
-          <p className="text-xs leading-relaxed px-1" style={{ color: "var(--fg-muted)" }}>
-            Paste a link or a note. xkg saves the core idea and where to use it to your GitHub, and your AI tools read it from there.
-          </p>
+          <ol aria-label="How xkg works" className="stack-1.5 px-1">
+            {LOOP_STEPS.map(([step, text]) => (
+              <li key={step} className="grid grid-cols-[3.25rem_1fr] gap-2 text-xs leading-relaxed">
+                <span className="eyebrow leading-relaxed" style={{ color: "var(--gold)" }}>{step}</span>
+                <span style={{ color: "var(--fg-muted)" }}>{text}</span>
+              </li>
+            ))}
+          </ol>
 
           <div className="capture-bar">
           <button
