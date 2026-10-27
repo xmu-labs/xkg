@@ -18,7 +18,7 @@ test("the capture screen shows the loop: learn, apply, track", async ({ page }) 
   const steps = page.getByRole("list", { name: "How xkg works" }).getByRole("listitem");
   await expect(steps).toHaveCount(3);
   await expect(steps.nth(0)).toContainText("Learn");
-  await expect(steps.nth(0)).toContainText("any outside knowledge");
+  await expect(steps.nth(0)).toContainText("anything you want your AI to know");
   await expect(steps.nth(0)).toContainText("your GitHub");
   await expect(page.getByLabel("Content to capture")).toHaveAttribute("placeholder", /^Paste anything/);
   await expect(steps.nth(1)).toContainText("Apply");
