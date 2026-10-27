@@ -32,7 +32,7 @@ const TYPE_LABELS: Record<string, string> = {
 
 /** The loop under the composer: what happens to a capture after you save it. */
 const LOOP_STEPS = [
-  ["Learn", "Paste a link or your notes. xkg saves the idea to your GitHub, with where it fits your code."],
+  ["Learn", "Paste any outside knowledge: articles, docs, transcripts, roadmaps, notes. xkg saves the core idea to your GitHub, with where it fits your code."],
   ["Apply", "Claude Code, Cursor or any MCP tool pulls it in while it works in your repo."],
   ["Track", "Each insight your AI applies links to the commit that used it."],
 ] as const;
@@ -194,7 +194,7 @@ export default function CapturePage() {
 
           <textarea
             aria-label="Content to capture"
-            placeholder="Paste a link, an article or your notes…"
+            placeholder="Paste anything: a link, a doc, a transcript, your notes…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
