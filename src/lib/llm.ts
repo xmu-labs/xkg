@@ -4,53 +4,49 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { LLM_PROVIDERS, PROVIDERS } from "./providers";
 import type { ExtractedCapture, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, BriefingSuggestion, BriefingOutput, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
 // ── Config ──
 
 const MAX_TOKENS = 800;
 
-/** Default model per provider for xkg's server-side extraction/briefing/plan work.
- *  Tuned for low cost — these are fast, cheap models. BYOK: the user's key, the user's bill.
- *  A user can replace it with any model their provider serves (Settings → Model). */
-const MODELS: Record<LlmProvider, string> = {
-  anthropic: "claude-haiku-4-5",
-  openai: "gpt-4o-mini",
-  google: "gemini-2.0-flash",
-};
-
-/** The model xkg uses for a provider when the user has not picked one. */
+/** The model xkg uses for a provider when the user has not picked one: the
+ *  first in its list, chosen for low cost. BYOK: the user's key, the user's bill.
+ *  A user can replace it with any model their provider serves (Settings → AI). */
 export function defaultModel(provider: LlmProvider): string {
-  return MODELS[provider];
+  return PROVIDERS[provider].models[0];
 }
 
-export const LLM_PROVIDERS: readonly LlmProvider[] = ["anthropic", "openai", "google"];
+export { LLM_PROVIDERS };
 
 /**
  * Check a key with the provider before saving it, so a typo in Settings
- * doesn't silently break every later capture. Lists models: free, and it
- * only needs a valid key. Returns an error message, or null when the key works.
- * Only a clear rejection (401/403, or Google's 400 for a bad key) blocks the
- * save; an outage or a network error doesn't stop someone changing their key.
+ * doesn't silently break every later capture. Lists models (or, for
+ * OpenRouter, reads the key's own record): free, and it only needs a valid
+ * key. Returns an error message, or null when the key works. Only a clear
+ * rejection (401/403, or Google's 400 for a bad key) blocks the save; an
+ * outage or a network error doesn't stop someone changing their key.
  */
 export async function verifyLlmKey(provider: LlmProvider, apiKey: string): Promise<string | null> {
-  const name = { anthropic: "Anthropic", openai: "OpenAI", google: "Google" }[provider];
+  const info = PROVIDERS[provider];
   let res: Response;
   try {
-    res = provider === "anthropic"
-      ? await fetch("https://api.anthropic.com/v1/models?limit=1", {
-          headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-        })
-      : provider === "openai"
-        ? await fetch("https://api.openai.com/v1/models", {
-            headers: { Authorization: `Bearer ${apiKey}` },
-          })
-        : await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(apiKey)}`);
+    if (provider === "anthropic") {
+      res = await fetch("https://api.anthropic.com/v1/models?limit=1", {
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      });
+    } else if (provider === "google") {
+      res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${encodeURIComponent(apiKey)}`);
+    } else {
+      const url = info.verifyUrl ?? `${info.baseUrl ?? "https://api.openai.com/v1"}/models`;
+      res = await fetch(url, { headers: { Authorization: `Bearer ${apiKey}` } });
+    }
   } catch {
     return null;
   }
   const rejected = res.status === 401 || res.status === 403 || (provider === "google" && res.status === 400);
-  return rejected ? `${name} rejected that key. Check it and try again.` : null;
+  return rejected ? `${info.label} rejected that key. Check it and try again.` : null;
 }
 
 /**
@@ -112,10 +108,10 @@ interface ResolvedLlm {
 
 /** Normalize an LlmConfig: blank model → provider default, unknown effort → none. */
 export function resolveLlm(llm: LlmConfig): ResolvedLlm {
-  if (typeof llm === "string") return { provider: llm, model: MODELS[llm], effort: null };
+  if (typeof llm === "string") return { provider: llm, model: defaultModel(llm), effort: null };
   const model = llm.model?.trim();
   const effort = llm.effort && llm.effort in REASONING_TOKENS ? llm.effort : null;
-  return { provider: llm.provider, model: model || MODELS[llm.provider], effort };
+  return { provider: llm.provider, model: model || defaultModel(llm.provider), effort };
 }
 
 interface LlmCallOptions {
@@ -136,8 +132,11 @@ async function callLlm(opts: LlmCallOptions): Promise<string> {
       return callOpenAI(opts, llm);
     case "google":
       return callGoogle(opts, llm);
-    default:
-      throw new Error(`[llm] Unsupported provider: ${llm.provider as string}`);
+    default: {
+      const baseUrl = PROVIDERS[llm.provider]?.baseUrl;
+      if (!baseUrl) throw new Error(`[llm] Unsupported provider: ${llm.provider as string}`);
+      return callOpenAICompatible(opts, llm, baseUrl);
+    }
   }
 }
 
@@ -205,6 +204,38 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   return data.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * OpenRouter, xAI, DeepSeek, Mistral and Groq: the OpenAI chat-completions API
+ * at another URL. OpenRouter takes one reasoning parameter for every model it
+ * routes to; the others either reason on their own or don't, and some reject
+ * an effort they don't support, so they get headroom but no effort parameter.
+ */
+async function callOpenAICompatible(opts: LlmCallOptions, llm: ResolvedLlm, baseUrl: string): Promise<string> {
+  const res = await fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${opts.apiKey}`,
+    },
+    body: JSON.stringify({
+      model: llm.model,
+      // A ceiling, not a spend: room for reasoning models to think and still answer.
+      max_tokens: opts.maxTokens + REASONING_TOKENS[llm.effort ?? "medium"],
+      ...(llm.provider === "openrouter" && llm.effort ? { reasoning: { effort: llm.effort } } : {}),
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`[llm:${llm.provider}] HTTP ${res.status} — ${await res.text()}`);
+  }
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+  // Some open models (Qwen3, R1 distills) put their reasoning inline.
+  return (data.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>\s*/g, "");
 }
 
 /** Gemini 2.5 and later can think; earlier models reject a thinking config. */

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 
 export interface Me {
   githubUsername: string;
@@ -21,27 +22,12 @@ export interface Me {
 }
 
 type Effort = "low" | "medium" | "high";
-type Provider = "anthropic" | "openai" | "google";
-
-const PROVIDERS: Record<Provider, { label: string; placeholder: string; keysUrl: string }> = {
-  anthropic: { label: "Anthropic", placeholder: "sk-ant-...", keysUrl: "https://console.anthropic.com/settings/keys" },
-  openai: { label: "OpenAI", placeholder: "sk-...", keysUrl: "https://platform.openai.com/api-keys" },
-  google: { label: "Google", placeholder: "AIza...", keysUrl: "https://aistudio.google.com/app/apikey" },
-};
-
-/** The picker's list, default first. "Other model…" takes any ID the provider serves. */
-const MODEL_SUGGESTIONS = {
-  anthropic: ["claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
-  openai: ["gpt-4o-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "o4-mini"],
-  google: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
-} as const;
-
 const OTHER_MODEL = "__other__";
 
 function isCustomModel(me: Me | null | undefined): boolean {
   const saved = me?.llmModel;
   if (!saved || !me?.llmProvider) return false;
-  return !(MODEL_SUGGESTIONS[me.llmProvider] as readonly string[]).includes(saved);
+  return !(PROVIDERS[me.llmProvider].models as readonly string[]).includes(saved);
 }
 
 const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
@@ -201,6 +187,7 @@ export default function SettingsDrawer({
   const [llmError, setLlmError] = useState("");
   // True when the saved model isn't in the list, or the user picked "Other model…".
   const [customModel, setCustomModel] = useState(false);
+  const providerSelectId = useId();
   const keyInputId = useId();
   const modelSelectId = useId();
   const modelInputId = useId();
@@ -350,7 +337,7 @@ export default function SettingsDrawer({
   // Keys don't carry across providers, so a switch can't be saved without one.
   const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
   // Each provider's default is first in its list; the server's is authoritative for the saved one.
-  const providerDefault = providerChanged || !me?.defaultModel ? MODEL_SUGGESTIONS[llmProvider][0] : me.defaultModel;
+  const providerDefault = providerChanged || !me?.defaultModel ? PROVIDERS[llmProvider].models[0] : me.defaultModel;
 
   function chooseProvider(next: Provider) {
     setLlmProvider(next);
@@ -824,28 +811,24 @@ export default function SettingsDrawer({
                 <SectionLabel>AI</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
                   <div>
-                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Provider</p>
-                    <div className="grid grid-cols-3 gap-2" role="group" aria-label="Provider">
-                      {(Object.keys(PROVIDERS) as Provider[]).map((p) => {
-                        const active = llmProvider === p;
-                        return (
-                          <button
-                            key={p}
-                            type="button"
-                            onClick={() => chooseProvider(p)}
-                            aria-pressed={active}
-                            className="rounded-xl py-2 text-sm font-medium"
-                            style={{
-                              background: active ? "var(--gold)" : "transparent",
-                              color: active ? "var(--btn-fg)" : "var(--fg)",
-                              border: `1px solid ${active ? "var(--gold)" : "var(--gold-mid)"}`,
-                            }}
-                          >
-                            {PROVIDERS[p].label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                    <label htmlFor={providerSelectId} className="card-title block mb-2" style={{ color: "var(--fg)" }}>
+                      Provider
+                    </label>
+                    <select
+                      id={providerSelectId}
+                      value={llmProvider}
+                      onChange={(e) => chooseProvider(e.target.value as Provider)}
+                      className={INPUT_CLASS}
+                    >
+                      {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+                        <option key={p} value={p}>{PROVIDERS[p].label}</option>
+                      ))}
+                    </select>
+                    {llmProvider === "openrouter" && (
+                      <p className="text-xs leading-relaxed mt-2" style={{ color: "var(--fg-muted)" }}>
+                        One key for hundreds of models: Llama, Qwen, Kimi, Claude, GPT and more.
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label htmlFor={keyInputId} className="card-title block mb-1" style={{ color: "var(--fg)" }}>
@@ -894,7 +877,7 @@ export default function SettingsDrawer({
                       className={INPUT_CLASS}
                     >
                       <option value="">Default ({providerDefault})</option>
-                      {MODEL_SUGGESTIONS[llmProvider]
+                      {PROVIDERS[llmProvider].models
                         .filter((m) => m !== providerDefault)
                         .map((m) => <option key={m} value={m}>{m}</option>)}
                       <option value={OTHER_MODEL}>Other model…</option>
@@ -906,7 +889,7 @@ export default function SettingsDrawer({
                           id={modelInputId}
                           type="text"
                           value={llmModel}
-                          placeholder={llmProvider === "anthropic" ? "claude-…" : llmProvider === "openai" ? "gpt-…" : "gemini-…"}
+                          placeholder={`e.g. ${PROVIDERS[llmProvider].models.at(-1)}`}
                           maxLength={100}
                           autoComplete="off"
                           autoCapitalize="none"
@@ -920,7 +903,9 @@ export default function SettingsDrawer({
                   <div>
                     <p className="card-title mb-1" style={{ color: "var(--fg)" }}>Reasoning effort</p>
                     <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                      Higher effort thinks longer before writing insights. It&apos;s slower and costs more on your key. Models that can&apos;t reason ignore it.
+                      {PROVIDERS[llmProvider].baseUrl && llmProvider !== "openrouter"
+                        ? `${PROVIDERS[llmProvider].label} sets reasoning per model, so this only applies on Anthropic, OpenAI, Gemini and OpenRouter.`
+                        : "Higher effort thinks longer before writing insights. It's slower and costs more on your key. Models that can't reason ignore it."}
                     </p>
                     <div className="grid grid-cols-4 gap-2" role="group" aria-label="Reasoning effort">
                       {EFFORT_OPTIONS.map(({ value, label }) => {

@@ -117,7 +117,7 @@ test("Settings switches provider only with that provider's key", async ({ page }
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Saved key ends in 9xYz.", { exact: false })).toBeVisible();
 
-  await dialog.getByRole("button", { name: "Anthropic" }).tap();
+  await dialog.getByLabel("Provider").selectOption("anthropic");
   // The old provider's model doesn't carry over, and a switch needs a key.
   await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("");
   await expect(dialog.getByRole("button", { name: "Save AI settings" })).toBeDisabled();

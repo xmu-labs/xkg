@@ -109,7 +109,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     let llmApiKey: string | null = null;
     if ("llmProvider" in body) {
       if (!LLM_PROVIDERS.includes(body.llmProvider as LlmProvider)) {
-        return NextResponse.json({ error: "Provider must be anthropic, openai or google." }, { status: 400 });
+        return NextResponse.json({ error: `Provider must be one of: ${LLM_PROVIDERS.join(", ")}.` }, { status: 400 });
       }
       llmProvider = body.llmProvider as LlmProvider;
     }

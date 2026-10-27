@@ -169,3 +169,48 @@ describe("OpenAI and Google reasoning", () => {
     expect(config.maxOutputTokens).toBe(3000);
   });
 });
+
+describe("OpenAI-compatible providers", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  function lastCall(): [string, Record<string, unknown>, Record<string, string>] {
+    const [url, init] = fetchSpy.mock.calls.at(-1) as [string, RequestInit];
+    return [url, JSON.parse(init.body as string), init.headers as Record<string, string>];
+  }
+
+  it("sends OpenRouter its unified reasoning parameter", async () => {
+    fetchSpy.mockResolvedValue(Response.json({ choices: [{ message: { content: "ok" } }] }));
+    await generatePlan("sk-or-k", CAPTURES, "ctx", undefined, { provider: "openrouter", model: "qwen/qwen3-235b-a22b", effort: "high" });
+    const [url, body, headers] = lastCall();
+    expect(url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(headers.Authorization).toBe("Bearer sk-or-k");
+    expect(body.model).toBe("qwen/qwen3-235b-a22b");
+    expect(body.reasoning).toEqual({ effort: "high" });
+    expect(body.max_tokens).toBe(3000 + REASONING_TOKENS.high);
+  });
+
+  it("uses each provider's default model and base URL, with no effort parameter", async () => {
+    fetchSpy.mockImplementation(async () => Response.json({ choices: [{ message: { content: "ok" } }] }));
+    for (const [provider, url, model] of [
+      ["xai", "https://api.x.ai/v1/chat/completions", "grok-3-mini"],
+      ["deepseek", "https://api.deepseek.com/chat/completions", "deepseek-chat"],
+      ["mistral", "https://api.mistral.ai/v1/chat/completions", "mistral-small-latest"],
+      ["groq", "https://api.groq.com/openai/v1/chat/completions", "llama-3.3-70b-versatile"],
+    ] as const) {
+      await generatePlan("k", CAPTURES, "ctx", undefined, { provider, effort: "low" });
+      const [calledUrl, body] = lastCall();
+      expect(calledUrl).toBe(url);
+      expect(body.model).toBe(model);
+      expect(body.reasoning).toBeUndefined();
+      expect(body.reasoning_effort).toBeUndefined();
+    }
+  });
+
+  it("drops inline <think> reasoning from the answer", async () => {
+    fetchSpy.mockResolvedValue(Response.json({ choices: [{ message: { content: "<think>hmm\nmaybe</think>\n# Plan" } }] }));
+    const out = await generatePlan("k", CAPTURES, "ctx", undefined, { provider: "groq", model: "qwen/qwen3-32b" });
+    expect(out).toBe("# Plan");
+  });
+});

@@ -85,7 +85,7 @@ describe("PATCH /api/me — provider and key", () => {
   });
 
   it("rejects an unknown provider", async () => {
-    expect((await patch({ llmProvider: "mistral", llmApiKey: "k" })).status).toBe(400);
+    expect((await patch({ llmProvider: "acme-llm", llmApiKey: "k" })).status).toBe(400);
   });
 
   it("never returns the key itself", async () => {
@@ -104,7 +104,10 @@ describe("verifyLlmKey", () => {
     spy.mockResolvedValueOnce(new Response("", { status: 503 }));
     expect(await real("anthropic", "ok")).toBeNull();
     spy.mockResolvedValueOnce(new Response("", { status: 400 }));
-    expect(await real("google", "bad")).toMatch(/Google rejected/);
+    expect(await real("google", "bad")).toMatch(/Google Gemini rejected/);
+    spy.mockResolvedValueOnce(new Response("", { status: 401 }));
+    expect(await real("openrouter", "bad")).toMatch(/OpenRouter rejected/);
+    expect(spy.mock.calls.at(-1)?.[0]).toBe("https://openrouter.ai/api/v1/key");
     spy.mockRestore();
   });
 });

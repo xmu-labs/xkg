@@ -6,34 +6,12 @@ const MIN_PIN_LENGTH = 6;
 import { useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
+import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 
 
 const CARD_STYLE: React.CSSProperties = {
   background: "var(--card-bg)",
   border: "1px solid var(--gold-faint)",
-};
-
-type Provider = "anthropic" | "openai" | "google";
-
-const PROVIDERS: Record<Provider, { label: string; placeholder: string; keysUrl: string; blurb: string }> = {
-  anthropic: {
-    label: "Anthropic",
-    placeholder: "sk-ant-...",
-    keysUrl: "https://console.anthropic.com/settings/keys",
-    blurb: "Powers Claude extraction.",
-  },
-  openai: {
-    label: "OpenAI",
-    placeholder: "sk-...",
-    keysUrl: "https://platform.openai.com/api-keys",
-    blurb: "Powers GPT extraction.",
-  },
-  google: {
-    label: "Google",
-    placeholder: "AIza...",
-    keysUrl: "https://aistudio.google.com/app/apikey",
-    blurb: "Powers Gemini extraction.",
-  },
 };
 
 export default function OnboardPage() {
@@ -141,29 +119,19 @@ export default function OnboardPage() {
 
         {/* Step 1: Provider + API key */}
         <div className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
-          <label className="eyebrow" style={{ color: "var(--gold)" }}>
+          <label htmlFor="provider" className="eyebrow" style={{ color: "var(--gold)" }}>
             LLM provider
           </label>
-          <div className="grid grid-cols-3 gap-1.5">
-            {(Object.keys(PROVIDERS) as Provider[]).map((p) => {
-              const selected = provider === p;
-              return (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setProvider(p)}
-                  className="rounded-xl py-2 text-xs font-medium transition-colors"
-                  style={{
-                    background: selected ? "var(--btn)" : "var(--input-bg)",
-                    color: selected ? "var(--btn-fg)" : "var(--fg-muted)",
-                    border: `1px solid ${selected ? "var(--btn)" : "var(--gold-low)"}`,
-                  }}
-                >
-                  {PROVIDERS[p].label}
-                </button>
-              );
-            })}
-          </div>
+          <select
+            id="provider"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value as Provider)}
+            className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden"
+          >
+            {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+              <option key={p} value={p}>{PROVIDERS[p].label}</option>
+            ))}
+          </select>
 
           <label className="eyebrow pt-1 block" style={{ color: "var(--gold)" }}>
             {providerInfo.label} API key
@@ -176,7 +144,7 @@ export default function OnboardPage() {
             className="field w-full rounded-xl px-3 py-2.5 text-base focus:outline-hidden font-mono"
           />
           <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
-            {providerInfo.blurb} <a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get yours here</a>. You pay your provider directly.
+            {provider === "openrouter" ? "One key for hundreds of models. " : ""}<a href={providerInfo.keysUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--gold)", textDecoration: "underline" }}>Get a {providerInfo.label} key</a>. You pay your provider directly, and you can change provider or model later in Settings.
           </p>
         </div>
 
