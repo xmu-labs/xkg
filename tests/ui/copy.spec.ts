@@ -3,6 +3,7 @@ import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
 // Framing and copy (2026-10-24 review): say what xkg does, and show the next step.
 
 const TAGLINE = "Learn it once. Your AI applies it.";
+const HELPER = "Paste anything you want your AI to know. Then use it in Claude Code, Cursor, or any AI coding agent.";
 const FILE_URL = "https://github.com/ola/xkg-knowledge/blob/main/inbox/" + WORST_CAPTURE.filename;
 
 test("the capture screen leads with the tagline and says how it works", async ({ page }) => {
@@ -12,20 +13,12 @@ test("the capture screen leads with the tagline and says how it works", async ({
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", TAGLINE);
 });
 
-test("the capture screen shows the loop: learn, apply, track", async ({ page }) => {
+test("the capture screen says what to paste and where to use it, in one line", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  const steps = page.getByRole("list", { name: "How xkg works" }).getByRole("listitem");
-  await expect(steps).toHaveCount(3);
-  await expect(steps.nth(0)).toContainText("Learn");
-  await expect(steps.nth(0)).toContainText("anything you want your AI to know");
-  await expect(steps.nth(0)).toContainText("your GitHub");
+  await expect(page.getByText(HELPER, { exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "How xkg works" })).toHaveCount(0);
   await expect(page.getByLabel("Content to capture")).toHaveAttribute("placeholder", /^Paste anything/);
-  await expect(steps.nth(1)).toContainText("Apply");
-  await expect(steps.nth(1)).toContainText("any MCP tool");
-  await expect(steps.nth(2)).toContainText("Track");
-  await expect(steps.nth(2)).toContainText("commit");
-  await expect(page.getByText(/your AI tools read it from there/)).toHaveCount(0);
 });
 
 test("login uses the same tagline", async ({ page }) => {
