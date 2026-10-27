@@ -21,6 +21,7 @@ import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
+import { LEDGER_PATH, appendLedgerRow, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -245,14 +246,26 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   }
 
   const commitRef = args.commit_sha ? ` (${args.commit_sha.slice(0, 7)})` : "";
+  const recordInLedger = async (): Promise<string> => {
+    try {
+      const ledger = await readFile(user.github_token, user.github_repo!, LEDGER_PATH);
+      const row = { date: today!, capture: filename, commit: args.commit_sha, target: args.target_file };
+      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, appendLedgerRow(ledger?.content ?? null, row), `ledger: ${filename}${commitRef}`, ledger?.sha);
+      return "";
+    } catch {
+      return ` (not counted in ${LEDGER_PATH}: the ledger write failed)`;
+    }
+  };
+
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
-    return `Applied again: ${appliedPath}${commitRef}`;
+    return `Applied again: ${appliedPath}${commitRef}${await recordInLedger()}`;
   }
 
   await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
+  const ledgerNote = await recordInLedger();
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -271,7 +284,22 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
     }
   }
 
-  return `Applied: ${filename} → ${appliedPath}${commitRef}`;
+  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}`;
+}
+
+/** The apply metric: captures applied per week, and how many came with a commit. */
+export async function handleApplyStats(user: User, args: { weeks?: number }): Promise<string> {
+  if (!user.github_repo) return "Knowledge repo not configured.";
+  const weeks = Math.min(Math.max(Math.trunc(args.weeks ?? 4), 1), 52);
+  const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
+  if (!ledger) return `No captures applied yet. Each apply_capture call adds a row to ${LEDGER_PATH}.`;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const stats = weeklyApplyStats(ledger.content, today, weeks);
+  const applied = stats.reduce((n, w) => n + w.applied, 0);
+  const withCommit = stats.reduce((n, w) => n + w.withCommit, 0);
+  const lines = stats.map((w) => `- Week of ${w.weekStart}: ${w.applied} applied, ${w.withCommit} with a commit`);
+  return `Captures applied, last ${weeks} week${weeks === 1 ? "" : "s"} (weeks start on Monday):\n${lines.join("\n")}\n\nTotal: ${applied} applied, ${withCommit} with a commit.`;
 }
 
 export async function handleArchiveCapture(user: User, args: { filename: string }): Promise<string> {
@@ -683,6 +711,7 @@ export const HANDLERS: Record<ToolName, ToolHandler> = {
   search_captures: handleSearch as ToolHandler,
   read_capture: handleReadCapture as ToolHandler,
   apply_capture: handleApplyCapture as ToolHandler,
+  apply_stats: handleApplyStats as ToolHandler,
   archive_capture: handleArchiveCapture as ToolHandler,
   delete_capture: handleDeleteCapture as ToolHandler,
   recall: handleRecall as ToolHandler,
