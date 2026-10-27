@@ -34,6 +34,7 @@ vi.mock("../llm", () => ({
   paginate: (i: unknown[]) => ({ items: i, total: i.length, offset: 0, limit: 10, hasMore: false }),
   pageFooter: () => "",
   matchIndexRows: (r: unknown[]) => r,
+  llmSettings: (u: { llm_provider: string }) => ({ provider: u.llm_provider }),
 }));
 vi.mock("../github", () => ({
   githubGet: vi.fn(), githubPut: vi.fn(), githubDelete: vi.fn(),

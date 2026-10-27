@@ -3,7 +3,7 @@ import crypto from "crypto";
 import { getSession } from "@/lib/session";
 import { updateUserRepo, updateUserPin, updateUserApiKey, updateUserLlmKey } from "@/lib/db";
 import { hashPin, validatePin } from "@/lib/pin";
-import type { LlmProvider } from "@/lib/types";
+import { isLlmProvider, type LlmProvider } from "@/lib/providers";
 
 interface GithubRepoResponse {
   full_name: string;
@@ -162,7 +162,7 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Repo name, PIN, and an LLM API key are required" }, { status: 400 });
   }
 
-  if (!["anthropic", "openai", "google"].includes(provider)) {
+  if (!isLlmProvider(provider)) {
     return NextResponse.json({ error: `Unsupported provider: ${provider}` }, { status: 400 });
   }
 

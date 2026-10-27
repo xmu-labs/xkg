@@ -1,7 +1,7 @@
 import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
 import { isLegacyPinHash, wrapLegacyHash } from "./pin";
-import type { LlmProvider } from "./types";
+import type { LlmEffort, LlmProvider } from "./types";
 
 export type { LlmProvider };
 
@@ -15,6 +15,10 @@ export interface User {
   api_key: string | null;
   llm_provider: LlmProvider;
   llm_api_key: string | null;
+  /** Model override; null = xkg's default for llm_provider. */
+  llm_model?: string | null;
+  /** Reasoning effort; null = the model's own default. */
+  llm_effort?: LlmEffort | null;
   display_name: string | null;
   avatar_data: string | null;
   /** Bumped to revoke every outstanding session and OAuth token for this user. */
@@ -58,6 +62,8 @@ export async function initDb(): Promise<void> {
       api_key TEXT UNIQUE,
       llm_provider TEXT DEFAULT 'anthropic',
       llm_api_key TEXT,
+      llm_model TEXT,
+      llm_effort TEXT,
       display_name TEXT,
       avatar_data TEXT,
       token_version INTEGER NOT NULL DEFAULT 0,
@@ -69,6 +75,8 @@ export async function initDb(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
 
   // Refresh tokens are tracked so they can be single-use with reuse detection
   // (OAuth 2.1 for public clients). Only the jti is stored, never the token.
@@ -300,6 +308,25 @@ export async function updateUserApiKey(userId: number, apiKey: string): Promise<
 export async function updateUserLlmKey(userId: number, provider: LlmProvider, apiKey: string): Promise<void> {
   const stored = encrypt(apiKey);
   await sql`UPDATE users SET llm_provider = ${provider}, llm_api_key = ${stored} WHERE id = ${userId}`;
+}
+
+let llmColumnsReady = false;
+
+/** Same lazy migration as ensureProfileColumns, for deployments that predate model choice. */
+export async function ensureLlmColumns(): Promise<void> {
+  if (llmColumnsReady) return;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
+  llmColumnsReady = true;
+}
+
+export async function updateUserLlmSettings(
+  userId: number,
+  model: string | null,
+  effort: LlmEffort | null,
+): Promise<void> {
+  await ensureLlmColumns();
+  await sql`UPDATE users SET llm_model = ${model}, llm_effort = ${effort} WHERE id = ${userId}`;
 }
 
 export async function getUserByUsername(username: string): Promise<User | null> {

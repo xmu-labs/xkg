@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME } from "./fixtures";
 
 // M3 (XKG-11): one composer, a reachable Capture button, quieter Settings.
 
@@ -73,4 +73,58 @@ test("the PIN fields stay folded behind one row until asked for", async ({ page 
   await dialog.getByPlaceholder("New PIN", { exact: true }).fill("654321");
   await dialog.getByPlaceholder("Confirm new PIN").fill("654321");
   await expect(dialog.getByRole("button", { name: "Update PIN" })).toBeVisible();
+});
+
+test("Settings saves the model and effort together, only once they change", async ({ page }) => {
+  await signIn(page);
+  let patched: unknown = null;
+  await page.route("**/api/me", async (r) => {
+    if (r.request().method() === "PATCH") {
+      patched = r.request().postDataJSON();
+      return r.fulfill({ json: { ...WORST_ME, llmModel: "gpt-5", llmEffort: "low" } });
+    }
+    return r.fulfill({ json: WORST_ME });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const dialog = page.getByRole("dialog");
+  // A model outside the list opens on "Other model…" with its ID in the text field.
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("__other__");
+  await expect(dialog.getByLabel("Model ID")).toHaveValue(WORST_ME.llmModel);
+  await expect(dialog.getByRole("button", { name: "High" })).toHaveAttribute("aria-pressed", "true");
+  await expect(dialog.getByRole("button", { name: "Save AI settings" })).toHaveCount(0);
+
+  await dialog.getByLabel("Model", { exact: true }).selectOption("gpt-5");
+  await expect(dialog.getByLabel("Model ID")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Low" }).tap();
+  await dialog.getByRole("button", { name: "Save AI settings" }).tap();
+  await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
+  expect(patched).toEqual({ llmModel: "gpt-5", llmEffort: "low" });
+});
+
+test("Settings switches provider only with that provider's key", async ({ page }) => {
+  await signIn(page);
+  let patched: unknown = null;
+  await page.route("**/api/me", async (r) => {
+    if (r.request().method() === "PATCH") {
+      patched = r.request().postDataJSON();
+      return r.fulfill({ json: { ...WORST_ME, llmProvider: "anthropic", llmKeyHint: "WXYZ", llmModel: null, defaultModel: "claude-haiku-4-5" } });
+    }
+    return r.fulfill({ json: WORST_ME });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByLabel("API key")).toHaveAttribute("placeholder", "•••• 9xYz");
+
+  await dialog.getByLabel("Provider").selectOption("anthropic");
+  // The old provider's model doesn't carry over, and a switch needs a key.
+  await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("");
+  await expect(dialog.getByRole("button", { name: "Save AI settings" })).toBeDisabled();
+
+  await dialog.getByLabel("API key").fill("sk-ant-test-WXYZ");
+  await dialog.getByRole("button", { name: "Save AI settings" }).tap();
+  await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
+  expect(patched).toEqual({ llmProvider: "anthropic", llmApiKey: "sk-ant-test-WXYZ", llmModel: null, llmEffort: "high" });
+  await expect(dialog.getByLabel("API key")).toHaveValue("");
 });

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 
 export interface Me {
   githubUsername: string;
@@ -10,8 +11,31 @@ export interface Me {
   hasCustomAvatar: boolean;
   hasMcpKey: boolean;
   hasPin: boolean;
+  /** Provider of the saved LLM key; absent on older servers. */
+  llmProvider?: Provider;
+  /** Last four characters of the saved key. */
+  llmKeyHint?: string | null;
+  llmModel?: string | null;
+  llmEffort?: Effort | null;
+  defaultModel?: string;
   version: string;
 }
+
+type Effort = "low" | "medium" | "high";
+const OTHER_MODEL = "__other__";
+
+function isCustomModel(me: Me | null | undefined): boolean {
+  const saved = me?.llmModel;
+  if (!saved || !me?.llmProvider) return false;
+  return !(PROVIDERS[me.llmProvider].models as readonly string[]).includes(saved);
+}
+
+const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
+  { value: null, label: "Auto" },
+  { value: "low", label: "Low" },
+  { value: "medium", label: "Medium" },
+  { value: "high", label: "High" },
+];
 
 type Theme = "light" | "dark";
 
@@ -155,6 +179,19 @@ export default function SettingsDrawer({
   const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [pinError, setPinError] = useState("");
 
+  const [llmProvider, setLlmProvider] = useState<Provider>("anthropic");
+  const [llmKey, setLlmKey] = useState("");
+  const [llmModel, setLlmModel] = useState("");
+  const [llmEffort, setLlmEffort] = useState<Effort | null>(null);
+  const [llmStatus, setLlmStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [llmError, setLlmError] = useState("");
+  // True when the saved model isn't in the list, or the user picked "Other model…".
+  const [customModel, setCustomModel] = useState(false);
+  const providerSelectId = useId();
+  const keyInputId = useId();
+  const modelSelectId = useId();
+  const modelInputId = useId();
+
   const [signingOut, setSigningOut] = useState(false);
 
   const deleteInputId = useId();
@@ -184,6 +221,9 @@ export default function SettingsDrawer({
     setPinOpen(false);
     setProfileError("");
     setProfileStatus("idle");
+    setLlmKey("");
+    setLlmError("");
+    setLlmStatus("idle");
     setDeleteOpen(false);
     setDeleteConfirm("");
     setDeleteStatus("idle");
@@ -205,6 +245,10 @@ export default function SettingsDrawer({
 
   const openDrawer = useCallback(() => {
     setDisplayName(me?.displayName ?? "");
+    setLlmProvider(me?.llmProvider ?? "anthropic");
+    setLlmModel(me?.llmModel ?? "");
+    setCustomModel(isCustomModel(me));
+    setLlmEffort(me?.llmEffort ?? null);
     closing.current = false;
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
@@ -281,6 +325,56 @@ export default function SettingsDrawer({
     } catch (err) {
       setProfileError(err instanceof Error ? err.message : "Could not save name");
       setProfileStatus("error");
+    }
+  }
+
+  const providerChanged = Boolean(me?.llmProvider) && llmProvider !== me?.llmProvider;
+  const llmDirty =
+    providerChanged ||
+    llmKey.trim() !== "" ||
+    llmModel.trim() !== (me?.llmModel ?? "") ||
+    llmEffort !== (me?.llmEffort ?? null);
+  // Keys don't carry across providers, so a switch can't be saved without one.
+  const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
+  // Each provider's default is first in its list; the server's is authoritative for the saved one.
+  const providerDefault = providerChanged || !me?.defaultModel ? PROVIDERS[llmProvider].models[0] : me.defaultModel;
+
+  // Native adapters and OpenRouter take an effort setting; the other
+  // OpenAI-compatible providers leave reasoning to each model.
+  const effortApplies = !PROVIDERS[llmProvider].baseUrl || llmProvider === "openrouter";
+
+  function chooseProvider(next: Provider) {
+    setLlmProvider(next);
+    // A model ID belongs to one provider: start the new one on its default.
+    setLlmModel(next === me?.llmProvider ? me?.llmModel ?? "" : "");
+    setCustomModel(next === me?.llmProvider && isCustomModel(me));
+  }
+
+  async function saveLlm() {
+    setLlmStatus("saving");
+    setLlmError("");
+    try {
+      const res = await fetch("/api/me", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(providerChanged ? { llmProvider } : {}),
+          ...(llmKey.trim() ? { llmApiKey: llmKey.trim() } : {}),
+          llmModel: llmModel.trim() || null,
+          llmEffort,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      onMe(await res.json() as Me);
+      setLlmKey("");
+      setLlmStatus("saved");
+      window.setTimeout(() => setLlmStatus("idle"), 1500);
+    } catch (err) {
+      setLlmError(err instanceof Error ? err.message : "Could not save model");
+      setLlmStatus("error");
     }
   }
 
@@ -715,7 +809,172 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 3. System */}
+              {/* 3. AI model */}
+              {me?.llmProvider && (
+              <section>
+                <SectionLabel>AI model</SectionLabel>
+                <div className="rounded-2xl p-4 stack-5" style={CARD_STYLE}>
+                  <div>
+                    <label htmlFor={providerSelectId} className="card-title block mb-2" style={{ color: "var(--fg)" }}>
+                      Provider
+                    </label>
+                    <select
+                      id={providerSelectId}
+                      value={llmProvider}
+                      onChange={(e) => chooseProvider(e.target.value as Provider)}
+                      className={INPUT_CLASS}
+                    >
+                      {(Object.keys(PROVIDERS) as Provider[]).map((p) => (
+                        <option key={p} value={p}>{PROVIDERS[p].label}</option>
+                      ))}
+                    </select>
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {llmProvider === "openrouter"
+                        ? "One key, hundreds of models."
+                        : "You pay your provider directly."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <div className="flex items-baseline justify-between gap-3 mb-2">
+                      <label htmlFor={keyInputId} className="card-title" style={{ color: "var(--fg)" }}>
+                        API key
+                      </label>
+                      <a
+                        href={PROVIDERS[llmProvider].keysUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-medium shrink-0"
+                        style={{ color: "var(--gold)" }}
+                      >
+                        Get a key ↗
+                      </a>
+                    </div>
+                    <input
+                      id={keyInputId}
+                      type="password"
+                      value={llmKey}
+                      placeholder={!providerChanged && me.llmKeyHint ? `•••• ${me.llmKeyHint}` : PROVIDERS[llmProvider].placeholder}
+                      autoComplete="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      onChange={(e) => setLlmKey(e.target.value)}
+                      className={INPUT_CLASS}
+                    />
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {providerChanged
+                        ? `Paste your ${PROVIDERS[llmProvider].label} key to switch.`
+                        : me.llmKeyHint
+                          ? "Saved and encrypted. Paste a new key to replace it."
+                          : "Paste a new key to replace the saved one."}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label htmlFor={modelSelectId} className="card-title block mb-2" style={{ color: "var(--fg)" }}>
+                      Model
+                    </label>
+                    <select
+                      id={modelSelectId}
+                      value={customModel ? OTHER_MODEL : llmModel}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === OTHER_MODEL) {
+                          setCustomModel(true);
+                          setLlmModel("");
+                        } else {
+                          setCustomModel(false);
+                          setLlmModel(value);
+                        }
+                      }}
+                      className={INPUT_CLASS}
+                    >
+                      <option value="">Recommended</option>
+                      {PROVIDERS[llmProvider].models
+                        .filter((m) => m !== providerDefault)
+                        .map((m) => <option key={m} value={m}>{m}</option>)}
+                      <option value={OTHER_MODEL}>Other model…</option>
+                    </select>
+                    {customModel && (
+                      <>
+                        <label htmlFor={modelInputId} className="sr-only">Model ID</label>
+                        <input
+                          id={modelInputId}
+                          type="text"
+                          value={llmModel}
+                          placeholder={`e.g. ${PROVIDERS[llmProvider].models.at(-1)}`}
+                          maxLength={100}
+                          autoComplete="off"
+                          autoCapitalize="none"
+                          spellCheck={false}
+                          onChange={(e) => setLlmModel(e.target.value)}
+                          className={`${INPUT_CLASS} mt-2`}
+                        />
+                      </>
+                    )}
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {customModel ? (
+                        <>Any model ID your key can reach.</>
+                      ) : llmModel ? (
+                        <>Runs every capture on this model.</>
+                      ) : (
+                        <>Fast and low-cost: <span className="font-medium break-all" style={{ color: "var(--fg)" }}>{providerDefault}</span></>
+                      )}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Reasoning effort</p>
+                    <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Reasoning effort">
+                      {EFFORT_OPTIONS.map(({ value, label }) => {
+                        const active = llmEffort === value;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setLlmEffort(value)}
+                            aria-pressed={active}
+                            disabled={!effortApplies}
+                            className="rounded-xl px-1 py-2 text-[13px] font-medium disabled:opacity-40"
+                            style={{
+                              background: active ? "var(--gold)" : "transparent",
+                              color: active ? "var(--btn-fg)" : "var(--fg)",
+                              border: `1px solid ${active ? "var(--gold)" : "var(--gold-mid)"}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {effortApplies
+                        ? "More thinking, sharper insights. Slower, and costs more."
+                        : `${PROVIDERS[llmProvider].label} models set their own reasoning.`}
+                    </p>
+                  </div>
+
+                  {(llmStatus !== "idle" || llmDirty) && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => void saveLlm()}
+                      disabled={llmStatus === "saving" || !llmReady}
+                      className="w-full text-sm font-medium rounded-xl px-3 py-2.5 disabled:opacity-30"
+                      style={{ background: "var(--btn)", color: "var(--btn-fg)" }}
+                    >
+                      {llmStatus === "saving" ? (llmKey.trim() ? "Checking key…" : "Saving…") : llmStatus === "saved" ? "Saved" : "Save AI settings"}
+                    </button>
+                    {llmStatus === "error" && (
+                      <p role="alert" className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--danger)" }}>{llmError}</p>
+                    )}
+                  </div>
+                  )}
+                </div>
+              </section>
+              )}
+
+              {/* 4. System */}
               <section>
                 <SectionLabel>System</SectionLabel>
                 <div className="rounded-2xl p-4 stack-4" style={CARD_STYLE}>
@@ -766,7 +1025,7 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 4. Session */}
+              {/* 5. Session */}
               <section>
                 <SectionLabel>Session</SectionLabel>
                 <div className="rounded-2xl p-4" style={CARD_STYLE}>
@@ -782,7 +1041,7 @@ export default function SettingsDrawer({
                 </div>
               </section>
 
-              {/* 5. Delete account */}
+              {/* 6. Delete account */}
               <section>
                 <SectionLabel>Delete account</SectionLabel>
                 <div className="rounded-2xl p-4" style={CARD_STYLE}>

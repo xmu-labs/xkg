@@ -1,8 +1,20 @@
 /** Status of a capture in the knowledge repo. */
 export type CaptureStatus = "inbox" | "applied" | "archived";
 
-/** LLM provider the user has configured (BYOK — bring your own key). */
-export type LlmProvider = "anthropic" | "openai" | "google";
+/** LLM provider the user has configured (BYOK — bring your own key). See lib/providers. */
+export type { LlmProvider } from "./providers";
+import type { LlmProvider } from "./providers";
+
+/** How hard the model reasons before answering. Absent = the model's own default. */
+export type LlmEffort = "low" | "medium" | "high";
+
+/** A user's LLM choice: provider (from their key), plus optional model and effort. */
+export interface LlmSettings {
+  provider: LlmProvider;
+  /** Any model the provider serves; null/blank = xkg's default for the provider. */
+  model?: string | null;
+  effort?: LlmEffort | null;
+}
 
 /** How the capture was originally submitted. */
 export type SourceType = "url" | "note" | "paste";

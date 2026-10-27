@@ -12,6 +12,11 @@ export const WORST_ME = {
   hasCustomAvatar: true,
   hasMcpKey: true,
   hasPin: true,
+  llmProvider: "openai" as const,
+  llmKeyHint: "9xYz",
+  llmModel: "ft:gpt-4o-mini-2024-07-18:northwind-industries-holdings:retrieval-eval-harness:9xYzAbCd",
+  llmEffort: "high" as const,
+  defaultModel: "gpt-4o-mini",
   version: "1.6.1",
 };
 
