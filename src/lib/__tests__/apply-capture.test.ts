@@ -189,14 +189,16 @@ describe("apply_capture counts on the server", () => {
     expect(recordApplyEvent).toHaveBeenCalledTimes(1);
   });
 
-  it("records nothing when the capture and commit were already recorded", async () => {
+  it("passes a repeat report to the server, so the agent and reason can join a commit the hook reported first", async () => {
     readFile.mockImplementation((_t: string, _r: string, path: string) => {
       if (path === "applied/2026-10-01-x.md") return { content: CAPTURE, sha: "s2" };
       if (path === "APPLIED.md") return { content: `| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n| 2026-10-01 | 2026-10-01-x.md | ${SHA} | — |\n`, sha: "l1" };
       return null;
     });
-    await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA });
-    expect(recordApplyEvent).not.toHaveBeenCalled();
+    const result = await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA, applied_note: "Why" }, { harness: "codex" });
+    expect(result).toBe("Already recorded: 2026-10-01-x.md (a1b2c3d)");
+    expect(githubPut).not.toHaveBeenCalled();
+    expect(recordApplyEvent).toHaveBeenCalledWith({ userId: 1, filename: "2026-10-01-x.md", commit: SHA, harness: "codex", hasWhy: true });
   });
 
   it("keeps the apply when the server count fails, and says it wasn't counted", async () => {

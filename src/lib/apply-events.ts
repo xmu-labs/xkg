@@ -32,12 +32,19 @@ export function commitKey(sha: string | undefined): string | null {
 
 export type ApplyEvent = { userId: number; filename: string; commit?: string; harness: string; hasWhy: boolean };
 
-/** Counts one application. The same capture and commit is counted once. */
+/**
+ * Counts one application. The same capture and commit is counted once, but a
+ * repeat report can fill in what the first one lacked: the git hook often
+ * reports a commit before the agent does, so the agent's name replaces
+ * "unknown" or "xkg-git-hook", and a reason given in any report sticks.
+ */
 export async function recordApplyEvent(event: ApplyEvent): Promise<void> {
   await sql`
     INSERT INTO apply_events (user_id, capture_key, commit7, harness, has_why)
     VALUES (${event.userId}, ${captureKey(event.filename)}, ${commitKey(event.commit)}, ${event.harness.slice(0, HARNESS_MAX)}, ${event.hasWhy})
-    ON CONFLICT DO NOTHING
+    ON CONFLICT (user_id, capture_key, commit7) DO UPDATE SET
+      has_why = apply_events.has_why OR EXCLUDED.has_why,
+      harness = CASE WHEN apply_events.harness IN ('unknown', 'xkg-git-hook') THEN EXCLUDED.harness ELSE apply_events.harness END
   `;
 }
 

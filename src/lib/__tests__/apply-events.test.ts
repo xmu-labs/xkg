@@ -59,12 +59,22 @@ describe("commitKey", () => {
 });
 
 describe("recordApplyEvent", () => {
-  it("inserts one row and ignores a duplicate of the same capture and commit", async () => {
+  it("inserts one row per capture and commit", async () => {
     await recordApplyEvent({ userId: 7, filename: "inbox/2026-01-01-idea.md", commit: "a1b2c3d4e5f6", harness: "codex", hasWhy: true });
 
     expect(queries).toHaveLength(1);
-    expect(queries[0]!.text).toMatch(/^INSERT INTO apply_events .* ON CONFLICT DO NOTHING$/);
+    expect(queries[0]!.text).toMatch(/^INSERT INTO apply_events .* ON CONFLICT /);
     expect(queries[0]!.values).toEqual([7, captureKey("2026-01-01-idea.md"), "a1b2c3d", "codex", true]);
+  });
+
+  it("lets a repeat report add the agent and the reason without counting the commit twice", async () => {
+    await recordApplyEvent({ userId: 7, filename: "a.md", commit: "a1b2c3d", harness: "codex", hasWhy: true });
+    const text = queries[0]!.text;
+    expect(text).toMatch(/ON CONFLICT \(user_id, capture_key, commit7\) DO UPDATE SET/);
+    // A reason given in any report sticks
+    expect(text).toContain("has_why = apply_events.has_why OR EXCLUDED.has_why");
+    // A named agent replaces "unknown" or the git hook, never another agent
+    expect(text).toMatch(/harness = CASE WHEN apply_events\.harness IN \('unknown', 'xkg-git-hook'\) THEN EXCLUDED\.harness ELSE apply_events\.harness END/);
   });
 
   it("stores no capture name or reason text", async () => {

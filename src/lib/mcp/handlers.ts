@@ -235,11 +235,24 @@ export async function handleApplyCapture(
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
   if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
 
-  // The git post-commit hook and the agent may both report the same commit; count it once
+  // The server's count, for the apply metric across users. The repo stays the record.
+  // Safe to repeat: the same capture and commit is counted once.
+  const recordEvent = async (): Promise<string> => {
+    try {
+      await recordApplyEvent({ userId: user.id, filename, commit: args.commit_sha, harness: ctx.harness ?? "unknown", hasWhy: Boolean(note) });
+      return "";
+    } catch (err) {
+      console.error(`apply_events insert failed for user ${user.id}:`, err instanceof Error ? err.message : err);
+      return " (not counted on the server)";
+    }
+  };
+
+  // The git post-commit hook and the agent may both report the same commit; count it once.
+  // The server still hears the repeat, so the agent's name and reason join the hook's report.
   if (args.commit_sha && !inboxFile) {
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
-      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})`;
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}`;
     }
   }
 
@@ -282,16 +295,6 @@ export async function handleApplyCapture(
       return "";
     } catch {
       return ` (not counted in ${LEDGER_PATH}: the ledger write failed)`;
-    }
-  };
-  // The server's count, for the apply metric across users. The repo stays the record.
-  const recordEvent = async (): Promise<string> => {
-    try {
-      await recordApplyEvent({ userId: user.id, filename, commit: args.commit_sha, harness: ctx.harness ?? "unknown", hasWhy: Boolean(note) });
-      return "";
-    } catch (err) {
-      console.error(`apply_events insert failed for user ${user.id}:`, err instanceof Error ? err.message : err);
-      return " (not counted on the server)";
     }
   };
 
