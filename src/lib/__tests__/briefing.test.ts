@@ -73,6 +73,15 @@ describe("briefingCandidate", () => {
     expect(c.keyPoints).toEqual([]);
   });
 
+  // Regression: ISSUE-001 — a capture saved with Windows line endings lost its main idea and key points
+  // Found by /qa on 2026-10-28
+  it("reads a capture saved with Windows line endings", () => {
+    const c = briefingCandidate("inbox/a.md", 0.5, "why", capture("T", "Core.", ["one", "two"]).replace(/\n/g, "\r\n"));
+    expect(c.title).toBe("T");
+    expect(c.coreIdea).toBe("Core.");
+    expect(c.keyPoints).toEqual(["one", "two"]);
+  });
+
   it("cuts long text so the briefing stays small in the agent's context", () => {
     const c = briefingCandidate("inbox/a.md", 0.5, "why", capture("T", "x".repeat(1000), ["y".repeat(500)]));
     expect(c.coreIdea.length).toBeLessThanOrEqual(400);

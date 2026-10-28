@@ -51,7 +51,9 @@ export function selectRanked(ranked: unknown, indexContent: string): RelevanceRe
 }
 
 /** Reads the parts of a capture the agent needs to judge it. The capture's own "Applied to" guess is left out. */
-export function briefingCandidate(filename: string, score: number, reason: string, content: string): BriefingCandidate {
+export function briefingCandidate(filename: string, score: number, reason: string, raw: string): BriefingCandidate {
+  // Captures edited on Windows can come back with CRLF line endings
+  const content = raw.replace(/\r\n/g, "\n");
   const title = content.match(/^# (.+)$/m)?.[1]?.trim() || (filename.split("/").pop() ?? filename).replace(/\.md$/, "");
   const keyPoints = section(content, "Key takeaways")
     .split("\n")
