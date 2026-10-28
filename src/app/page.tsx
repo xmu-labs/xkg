@@ -187,7 +187,7 @@ export default function CapturePage() {
 
           <textarea
             aria-label="Content to capture"
-            placeholder="Paste a link, an article or your notes…"
+            placeholder="Paste anything: a link, a doc, a transcript, or notes…"
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -195,9 +195,6 @@ export default function CapturePage() {
             className={COMPOSER_FIELD + " resize-none leading-relaxed"}
           />
           </div>
-          <p className="text-xs leading-relaxed px-1" style={{ color: "var(--fg-muted)" }}>
-            Paste a link or a note. xkg saves the core idea and where to use it to your GitHub, and your AI tools read it from there.
-          </p>
 
           <div className="capture-bar">
           <button

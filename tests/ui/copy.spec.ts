@@ -9,8 +9,14 @@ test("the capture screen leads with the tagline and says how it works", async ({
   await signIn(page);
   await page.goto("/");
   await expect(page.getByText(TAGLINE, { exact: true })).toBeVisible();
-  await expect(page.getByText(/saves the core idea and where to use it to your GitHub/)).toBeVisible();
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", TAGLINE);
+});
+
+test("the capture screen has no helper line under the composer", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/");
+  await expect(page.getByText(/Paste a link or a note|Paste anything you want your AI to know/)).toHaveCount(0);
+  await expect(page.getByLabel("Content to capture")).toHaveAttribute("placeholder", /^Paste anything/);
 });
 
 test("login uses the same tagline", async ({ page }) => {
