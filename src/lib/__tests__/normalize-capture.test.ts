@@ -54,7 +54,8 @@ describe("normalizeCapture", () => {
       coreIdea: "A genuine core idea.", takeaways: ["one", "two"],
       quotes: ["q"], tags: ["x", "y"], appliedTo: null, lowConfidence: false,
     };
-    expect(normalizeCapture(good)).toEqual(good);
+    // claims are only kept when checked against a source; with none there are none.
+    expect(normalizeCapture(good)).toEqual({ ...good, claims: [] });
   });
 
   it("falls back to a valid ContentType when the model invents one", () => {
