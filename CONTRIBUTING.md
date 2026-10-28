@@ -81,6 +81,10 @@ that pattern rather than adding logic inside a route.
 an HTML error page, and the client's `res.json()` then fails with a cryptic browser-engine error.
 `req.json()` belongs inside its own try/catch — enforced by `route-json-guards.test.ts`.
 
+**Agent instructions live in `src/lib/mcp/instructions.ts`.** Every connected agent gets that text in
+its system prompt, so keep it short and name only real tools and CLI commands. `mcp-instructions.test.ts`
+checks both; update it in the same PR as the text.
+
 **Tag errors with their source.** `[capture] ...`, `[auth] ...`. An error string with no origin turns
 every future fix into a guess. Trace the request and response before assuming what caused an error.
 

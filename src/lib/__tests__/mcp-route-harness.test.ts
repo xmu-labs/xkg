@@ -65,6 +65,13 @@ describe("MCP route passes the agent's name to tool handlers", () => {
     expect(applyCapture).toHaveBeenCalledWith({ id: 7 }, { filename: "a.md" }, { harness: "unknown" });
   });
 
+  it("sends the agent xkg's instructions on initialize", async () => {
+    const { SERVER_INSTRUCTIONS } = await import("@/lib/mcp/instructions");
+    const init = await POST(rpc({ jsonrpc: "2.0", id: 1, method: "initialize", params: { clientInfo: { name: "codex-mcp-client" } } }));
+    const body = (await init.json()) as { result: { instructions?: string } };
+    expect(body.result.instructions).toBe(SERVER_INSTRUCTIONS);
+  });
+
   it("passes unknown for another user's session", async () => {
     await POST(rpc(callApply, { "mcp-session-id": issueMcpSessionId(8, "claude-code") }));
     expect(applyCapture).toHaveBeenCalledWith({ id: 7 }, { filename: "a.md" }, { harness: "unknown" });

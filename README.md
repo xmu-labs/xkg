@@ -128,6 +128,8 @@ npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 
 Register that command in the tool you use.
 
+When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. There's nothing to paste into `AGENTS.md` or rules files.
+
 #### Cursor
 
 Add this to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (all projects):
@@ -271,7 +273,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    xkg-capture: 2026-10-28-alert-ownership.md
    ```
 
-   With the git hook installed in that repo, xkg records it after each commit:
+   With the git hook installed in that repo, xkg records it after each commit. Your agent offers to set it up the first time it connects, or run:
 
    ```bash
    npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
