@@ -43,3 +43,14 @@ describe("MCP capture keeps the checked source", () => {
     expect(markdown).toContain("[s1] Alerts without a named owner get ignored.");
   });
 });
+
+describe("MCP capture has its own Links to memory section before the source text", () => {
+  it("so auto-linking edits that section, never a heading inside the stored source", async () => {
+    githubPut.mockClear();
+    await handleCapture(user, { content: "x" });
+    const markdown = githubPut.mock.calls[0]![3] as string;
+    const links = markdown.indexOf("## Links to memory\n_none yet_");
+    expect(links).toBeGreaterThan(-1);
+    expect(links).toBeLessThan(markdown.indexOf("<summary>Source text"));
+  });
+});

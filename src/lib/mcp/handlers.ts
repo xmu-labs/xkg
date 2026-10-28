@@ -79,6 +79,11 @@ export async function handleCapture(user: User, args: { content: string; title?:
     capture.appliedTo ?? "_not immediately obvious_",
     ``,
     ...(evidence ? [evidence] : []),
+    // Before the source text, so auto-linking edits this section and never a
+    // heading that happens to appear inside the stored source.
+    `## Links to memory`,
+    `_none yet_`,
+    ``,
     renderSourceSection(capture),
   ].join("\n");
 

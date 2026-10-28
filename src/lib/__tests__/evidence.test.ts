@@ -278,3 +278,30 @@ describe("quote display", () => {
     expect(renderEvidenceSection(capture)).toContain('> "one continues" (s1)');
   });
 });
+
+describe("review fixes", () => {
+  it("caps a supplied title so it can't bloat the request", () => {
+    const src = buildSource("body", { title: "t".repeat(5000) });
+    expect(src.title!.length).toBeLessThanOrEqual(300);
+  });
+
+  it("keeps claim paths pointing at the right takeaway when blank takeaways are dropped", () => {
+    const src = buildSource("Assertion A holds.\n\nAssertion B holds.");
+    const ev = (segmentId: string, exactQuote: string) => ({
+      sourceId: src.sourceId, sourceVersionId: src.sourceVersionId, segmentId, exactQuote,
+    });
+    const c = normalizeCapture({
+      coreIdea: "Both hold.",
+      takeaways: ["", "Assertion A holds.", "Assertion B holds."],
+      claims: [
+        { outputPath: "/takeaways/1", text: "Assertion A holds.", kind: "source_assertion", evidence: [ev("s1", "Assertion A")] },
+        { outputPath: "/takeaways/2", text: "Assertion B holds.", kind: "source_assertion", evidence: [ev("s2", "Assertion B")] },
+      ],
+    }, src);
+    expect(c.takeaways).toEqual(["Assertion A holds.", "Assertion B holds."]);
+    expect(c.claims!.map((x) => [x.outputPath, x.text, x.evidence[0]!.segmentId])).toEqual([
+      ["/takeaways/0", "Assertion A holds.", "s1"],
+      ["/takeaways/1", "Assertion B holds.", "s2"],
+    ]);
+  });
+});

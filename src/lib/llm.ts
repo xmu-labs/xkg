@@ -590,7 +590,12 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
 
   const slug = str(raw.slug);
   const coreIdea = str(raw.coreIdea);
-  const takeaways = strArray(raw.takeaways);
+  // Blank or non-string takeaways are dropped, which shifts indices; claims
+  // cite the model's original indices, so check them against those and remap.
+  const rawTakeaways = (Array.isArray(raw.takeaways) ? raw.takeaways : []).map(str);
+  const takeaways = rawTakeaways.filter((t): t is string => t !== null);
+  const newIndex = new Map<number, number>();
+  rawTakeaways.forEach((t, i) => { if (t !== null) newIndex.set(i, newIndex.size); });
   const rawType = str(raw.inferredType);
   const inferredType = CONTENT_TYPES.includes(rawType as ContentType)
     ? (rawType as ContentType)
@@ -613,7 +618,12 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
     tags: strArray(raw.tags),
     appliedTo: str(raw.appliedTo),
     lowConfidence: coreIdea === null || raw.lowConfidence === true,
-    claims: source ? checkClaims(raw.claims, { coreIdea, takeaways }, source) : [],
+    claims: source
+      ? checkClaims(raw.claims, { coreIdea, takeaways: rawTakeaways }, source).map((c) => {
+          const m = /^\/takeaways\/(\d+)$/.exec(c.outputPath);
+          return m ? { ...c, outputPath: `/takeaways/${newIndex.get(Number(m[1]))}` } : c;
+        })
+      : [],
     ...(source ? { source } : {}),
   };
 }

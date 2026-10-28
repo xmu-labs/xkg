@@ -15,6 +15,9 @@ import type { Claim, ClaimEvidence, ExtractedCapture, SourceSegment, SourceSnaps
 /** Longest segment sent to the model. Fetched pages arrive as one long line. */
 const MAX_SEGMENT_CHARS = 600;
 
+/** Longest title sent as metadata; the content cap doesn't cover it. */
+const MAX_TITLE_CHARS = 300;
+
 function sha256(text: string): string {
   return createHash("sha256").update(text).digest("hex");
 }
@@ -62,6 +65,7 @@ export function buildSource(
   opts: { title?: string; url?: string; maxChars?: number } = {},
 ): SourceSnapshot {
   const max = opts.maxChars ?? Infinity;
+  const title = opts.title?.trim().slice(0, MAX_TITLE_CHARS);
   const truncated = content.length > max;
   const segments: SourceSegment[] = segmentText(truncated ? content.slice(0, max) : content)
     .map((text, i) => ({ segmentId: `s${i + 1}`, text }));
@@ -71,7 +75,7 @@ export function buildSource(
     sourceId: `src-${(opts.url ? sha256(opts.url) : hash).slice(0, 12)}`,
     sourceVersionId: `v-${hash.slice(0, 12)}`,
     sha256: hash,
-    ...(opts.title ? { title: opts.title } : {}),
+    ...(title ? { title } : {}),
     ...(opts.url ? { url: opts.url } : {}),
     truncated,
     segments,
@@ -97,6 +101,9 @@ export function claimId(sourceVersionId: string, text: string): string {
   return `c-${sha256(`${sourceVersionId}\n${text}`).slice(0, 12)}`;
 }
 
+/** The fields claims point at. A null takeaway is one the app dropped. */
+type ClaimFields = { coreIdea: string | null; takeaways: Array<string | null> };
+
 const squash = (s: string) => s.replace(/\s+/g, " ").trim();
 
 function asRecord(v: unknown): Record<string, unknown> | null {
@@ -104,7 +111,7 @@ function asRecord(v: unknown): Record<string, unknown> | null {
 }
 
 /** The output field a claim path points at, or null if there is none. */
-function fieldText(path: string, fields: { coreIdea: string | null; takeaways: string[] }): string | null {
+function fieldText(path: string, fields: ClaimFields): string | null {
   if (path === "/coreIdea") return fields.coreIdea;
   const m = /^\/takeaways\/(\d+)$/.exec(path);
   return m ? (fields.takeaways[Number(m[1])] ?? null) : null;
@@ -119,7 +126,7 @@ function fieldText(path: string, fields: { coreIdea: string | null; takeaways: s
  */
 export function checkClaims(
   raw: unknown,
-  fields: { coreIdea: string | null; takeaways: string[] },
+  fields: ClaimFields,
   source: SourceSnapshot,
 ): Claim[] {
   if (!Array.isArray(raw)) return [];
