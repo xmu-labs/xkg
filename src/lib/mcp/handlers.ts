@@ -21,6 +21,7 @@ import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
+import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -195,7 +196,7 @@ export async function handleReadCapture(user: User, args: { filename: string }):
 
 /** Appended wherever xkg suggests a capture, so the agent closes the loop after committing. */
 export const APPLY_HINT =
-  "After you commit the change, call `apply_capture` with this filename and the commit sha (`git rev-parse HEAD`) so xkg records that it was applied.";
+  "When you commit a change that applies a capture, add the trailer `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename and the commit sha (`git rev-parse HEAD`). xkg counts each capture and commit once.";
 
 /**
  * Records that a capture was applied. The first time, it moves the capture from
@@ -213,6 +214,14 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
   if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
+
+  // The git post-commit hook and the agent may both report the same commit; count it once
+  if (args.commit_sha && !inboxFile) {
+    const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
+    if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})`;
+    }
+  }
 
   let content = file.content.replace(/^status:\s*inbox$/m, "status: applied");
   if (args.applied_note && inboxFile) {
@@ -245,14 +254,26 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   }
 
   const commitRef = args.commit_sha ? ` (${args.commit_sha.slice(0, 7)})` : "";
+  const recordInLedger = async (): Promise<string> => {
+    try {
+      const ledger = await readFile(user.github_token, user.github_repo!, LEDGER_PATH);
+      const row = { date: today!, capture: filename, commit: args.commit_sha, target: args.target_file };
+      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, appendLedgerRow(ledger?.content ?? null, row), `ledger: ${filename}${commitRef}`, ledger?.sha);
+      return "";
+    } catch {
+      return ` (not counted in ${LEDGER_PATH}: the ledger write failed)`;
+    }
+  };
+
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
-    return `Applied again: ${appliedPath}${commitRef}`;
+    return `Applied again: ${appliedPath}${commitRef}${await recordInLedger()}`;
   }
 
   await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
+  const ledgerNote = await recordInLedger();
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -271,7 +292,22 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
     }
   }
 
-  return `Applied: ${filename} → ${appliedPath}${commitRef}`;
+  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}`;
+}
+
+/** The apply metric: captures applied per week, and how many came with a commit. */
+export async function handleApplyStats(user: User, args: { weeks?: number }): Promise<string> {
+  if (!user.github_repo) return "Knowledge repo not configured.";
+  const weeks = Math.min(Math.max(Math.trunc(args.weeks ?? 4), 1), 52);
+  const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
+  if (!ledger) return `No captures applied yet. Each apply_capture call adds a row to ${LEDGER_PATH}.`;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const stats = weeklyApplyStats(ledger.content, today, weeks);
+  const applied = stats.reduce((n, w) => n + w.applied, 0);
+  const withCommit = stats.reduce((n, w) => n + w.withCommit, 0);
+  const lines = stats.map((w) => `- Week of ${w.weekStart}: ${w.applied} applied, ${w.withCommit} with a commit`);
+  return `Captures applied, last ${weeks} week${weeks === 1 ? "" : "s"} (weeks start on Monday):\n${lines.join("\n")}\n\nTotal: ${applied} applied, ${withCommit} with a commit.`;
 }
 
 export async function handleArchiveCapture(user: User, args: { filename: string }): Promise<string> {
@@ -683,6 +719,7 @@ export const HANDLERS: Record<ToolName, ToolHandler> = {
   search_captures: handleSearch as ToolHandler,
   read_capture: handleReadCapture as ToolHandler,
   apply_capture: handleApplyCapture as ToolHandler,
+  apply_stats: handleApplyStats as ToolHandler,
   archive_capture: handleArchiveCapture as ToolHandler,
   delete_capture: handleDeleteCapture as ToolHandler,
   recall: handleRecall as ToolHandler,

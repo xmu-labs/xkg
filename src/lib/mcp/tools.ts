@@ -78,6 +78,16 @@ export const TOOLS = [
     },
   },
   {
+    name: "apply_stats",
+    description: "Show how many captures were applied per week, and how many of those came with a commit. Reads the APPLIED.md ledger that apply_capture writes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        weeks: { type: "number", description: "How many recent weeks to show (1 to 52, default 4)" },
+      },
+    },
+  },
+  {
     name: "archive_capture",
     description: "Archive a capture — reviewed but not actionable now. Moves from inbox/ to archived/ and updates the index.",
     inputSchema: {
