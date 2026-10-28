@@ -19,6 +19,7 @@ import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
+import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
@@ -46,7 +47,9 @@ export async function handleCapture(user: User, args: { content: string; title?:
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
 
-  // Build compact Markdown for MCP (no raw capture section)
+  // Compact Markdown for MCP: no raw capture section, but the checked source
+  // text is kept so the evidence quotes can be re-checked later.
+  const evidence = renderEvidenceSection(capture);
   const markdown = [
     `---`,
     `date: ${date}`,
@@ -56,6 +59,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
     `tags: ${capture.tags.join(", ")}`,
     `status: inbox`,
     `lowConfidence: ${capture.lowConfidence}`,
+    ...sourceFrontmatter(capture),
     `---`,
     ``,
     `# ${capture.inferredTitle}`,
@@ -74,6 +78,13 @@ export async function handleCapture(user: User, args: { content: string; title?:
     `## Applied to`,
     capture.appliedTo ?? "_not immediately obvious_",
     ``,
+    ...(evidence ? [evidence] : []),
+    // Before the source text, so auto-linking edits this section and never a
+    // heading that happens to appear inside the stored source.
+    `## Links to memory`,
+    `_none yet_`,
+    ``,
+    renderSourceSection(capture),
   ].join("\n");
 
   await githubPut(user.github_token, user.github_repo, `inbox/${filename}`, markdown, `capture: add ${filename}`);

@@ -45,6 +45,49 @@ export interface ExtractedCapture {
   appliedTo: string | null;
   lowConfidence: boolean;
   source_type?: SourceType;
+  /** Claims whose evidence the app checked against `source` (see lib/evidence). */
+  claims?: Claim[];
+  /** The exact text the extraction ran on and the claims were checked against. */
+  source?: SourceSnapshot;
+}
+
+/** One numbered piece of source text the model can cite. */
+export interface SourceSegment {
+  segmentId: string;
+  text: string;
+}
+
+/** A source as sent to extraction: app-generated ids, metadata and segments. */
+export interface SourceSnapshot {
+  /** Stable per source: from the URL when there is one, else from the text. */
+  sourceId: string;
+  /** Changes whenever the text changes: derived from `sha256`. */
+  sourceVersionId: string;
+  /** sha256 (hex) of the segment texts joined by a blank line. */
+  sha256: string;
+  title?: string;
+  url?: string;
+  truncated: boolean;
+  segments: SourceSegment[];
+}
+
+/** An exact excerpt from a segment that supports a claim. */
+export interface ClaimEvidence {
+  sourceId: string;
+  sourceVersionId: string;
+  segmentId: string;
+  exactQuote: string;
+}
+
+/** A coreIdea or takeaway with evidence the app verified in the source. */
+export interface Claim {
+  /** Stable: derived from the source version and the claim text. */
+  id: string;
+  /** "/coreIdea" or "/takeaways/<n>". */
+  outputPath: string;
+  text: string;
+  kind: "source_assertion";
+  evidence: ClaimEvidence[];
 }
 
 /** A related capture identified by the auto-linking system. */

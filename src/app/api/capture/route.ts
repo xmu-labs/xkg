@@ -86,17 +86,16 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   // fabricated insights or a timeout-driven "Load failed"). Best-effort: on any
   // failure we fall back to URL-only mode and pass the raw URL string through.
   let llmContent = content;
-  if (sourceType === "url") {
-    const fetched = await fetchSourceContent(content.trim());
-    if (fetched) {
-      llmContent = `Source URL: ${content.trim()}\n\n${fetched}`;
-    }
+  const sourceUrl = sourceType === "url" ? content.trim() : undefined;
+  if (sourceUrl) {
+    const fetched = await fetchSourceContent(sourceUrl);
+    if (fetched) llmContent = fetched;
   }
 
   // Extract insights via LLM
   let capture;
   try {
-    capture = await extractCapture(user.llm_api_key, llmContent, title, llmSettings(user));
+    capture = await extractCapture(user.llm_api_key, llmContent, title, llmSettings(user), { url: sourceUrl });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     return NextResponse.json({ error: message }, { status: 502 });

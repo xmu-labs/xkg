@@ -267,7 +267,8 @@ export async function fetchSourceContent(url: string): Promise<string | null> {
     const text = htmlToText(html);
     if (text.length < MIN_USABLE_CHARS) return null;
 
-    return text.slice(0, MAX_INPUT_CHARS);
+    // One char over the limit, so extraction can tell the page was cut.
+    return text.slice(0, MAX_INPUT_CHARS + 1);
   } catch {
     return null; // timeout / abort / DNS failure / network error
   } finally {
