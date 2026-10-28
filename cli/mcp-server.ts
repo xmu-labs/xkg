@@ -25,26 +25,8 @@ function rpcError(id: JsonRpcMessage["id"], message: string): void {
   sendMessage({ jsonrpc: "2.0", id, error: { code: -32603, message } });
 }
 
-async function proxyToHosted(apiKey: string, msg: JsonRpcMessage): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(HOSTED_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(msg),
-    });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : "unknown error";
-    rpcError(msg.id, `Could not reach xkg at ${HOSTED_URL}: ${detail}`);
-    return;
-  }
-
-  const body = await res.text().catch(() => "");
-  const result = interpretResponse(res.status, res.headers.get("content-type"), body);
-
+async function proxyToHosted(hosted: ReturnType<typeof createHostedSession>, msg: JsonRpcMessage): Promise<void> {
+  const result = await hosted.send(msg);
   if ("error" in result) {
     rpcError(msg.id, result.error);
     return;
@@ -83,6 +65,48 @@ export function interpretResponse(
   } catch {
     return { error: `xkg returned malformed JSON (HTTP ${status}).` };
   }
+}
+
+type HostedReply = { data: Record<string, unknown> } | { error: string };
+
+/**
+ * The connection to the hosted server. It keeps the Mcp-Session-Id that
+ * `initialize` returns and sends it on every later call, so the server knows
+ * which agent is calling. When the session expires (404), it replays the
+ * client's `initialize` for a new one and retries the call once.
+ */
+export function createHostedSession(apiKey: string, url: string, fetchFn: typeof fetch = fetch) {
+  let sessionId: string | null = null;
+  let initializeMsg: JsonRpcMessage | null = null;
+
+  async function post(msg: JsonRpcMessage): Promise<HostedReply & { status?: number }> {
+    const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+    if (sessionId && msg.method !== "initialize") headers["Mcp-Session-Id"] = sessionId;
+    let res: Response;
+    try {
+      res = await fetchFn(url, { method: "POST", headers, body: JSON.stringify(msg) });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : "unknown error";
+      return { error: `Could not reach xkg at ${url}: ${detail}` };
+    }
+    if (msg.method === "initialize") sessionId = res.headers.get("mcp-session-id") ?? sessionId;
+    const body = await res.text().catch(() => "");
+    return { ...interpretResponse(res.status, res.headers.get("content-type"), body), status: res.status };
+  }
+
+  return {
+    async send(msg: JsonRpcMessage): Promise<HostedReply> {
+      if (msg.method === "initialize") initializeMsg = msg;
+      const hadSession = sessionId !== null && msg.method !== "initialize";
+      let { status, ...reply } = await post(msg);
+      if (status === 404 && hadSession && initializeMsg) {
+        sessionId = null;
+        await post(initializeMsg);
+        ({ status, ...reply } = await post(msg));
+      }
+      return reply;
+    },
+  };
 }
 
 /** Track a proxied request so shutdown can await it. */
@@ -125,6 +149,7 @@ export async function serveMcp(): Promise<void> {
 
   process.stderr.write("xkg MCP server starting (proxying to hosted instance)...\n");
 
+  const hosted = createHostedSession(apiKey, HOSTED_URL);
   let buffer = "";
   process.stdin.setEncoding("utf-8");
 
@@ -144,7 +169,7 @@ export async function serveMcp(): Promise<void> {
         // Handle notifications/initialized locally (no response needed)
         if (msg.method === "notifications/initialized") continue;
 
-        track(proxyToHosted(apiKey, msg));
+        track(proxyToHosted(hosted, msg));
       } catch {
         process.stderr.write(`Failed to parse: ${line}\n`);
       }

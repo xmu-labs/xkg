@@ -1,7 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { execFileSync } from "child_process";
-import { callMcp } from "./hooks.js";
+import { callMcp, initializeMcp } from "./hooks.js";
+import { getCurrentVersion } from "./version-check.js";
 
 /**
  * Links commits to the captures they apply, with any coding agent or none.
@@ -13,6 +14,8 @@ import { callMcp } from "./hooks.js";
 
 const PACKAGE = "@xmu-labs/xkg";
 const MARKER = "# xkg";
+/** The MCP client name the hook's reports carry, so the server counts them by agent. */
+export const HOOK_CLIENT = "xkg-git-hook";
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -34,12 +37,14 @@ export function captureTrailers(message: string): string[] {
  * Installs or updates xkg's line in the repo's post-commit hook and returns the hook's path.
  * The line holds no credential (the hooks directory may be tracked); the key comes from
  * `xkg config` at run time. It reads the sha before going to the background, so a quick
- * next commit can't be reported in its place.
+ * next commit can't be reported in its place. It runs the CLI version that installed it, so
+ * a new release reaches a repo only when the hook is installed again.
  */
-export function installPostCommitHook(cwd: string = process.cwd()): string {
+export function installPostCommitHook(cwd: string = process.cwd(), version: string = getCurrentVersion()): string {
   const hooksDir = resolve(cwd, git(cwd, "rev-parse", "--git-path", "hooks"));
   const path = join(hooksDir, "post-commit");
-  const line = `xkg_sha=$(git rev-parse HEAD); npx -y ${PACKAGE}@latest post-commit --sha "$xkg_sha" >/dev/null 2>&1 & ${MARKER}`;
+  const pin = version === "0.0.0" ? "latest" : version;
+  const line = `xkg_sha=$(git rev-parse HEAD); npx -y ${PACKAGE}@${pin} post-commit --sha "$xkg_sha" >/dev/null 2>&1 & ${MARKER}`;
 
   const existing = existsSync(path) ? readFileSync(path, "utf-8") : "#!/bin/sh\n";
   if (!/^#!\s*\S*\b(?:env\s+)?(?:sh|bash|zsh|dash|ksh)\b/.test(existing.split("\n")[0] ?? "")) {
@@ -64,10 +69,29 @@ export async function postCommit(apiKey: string, sha: string, cwd: string = proc
     const files = git(cwd, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full).split("\n").filter(Boolean);
     const target = files.slice(0, 5).join(", ") + (files.length > 5 ? ` and ${files.length - 5} more` : "");
 
+    // One session for all of this commit's reports. Without one they still count, as "unknown".
+    const session = await initializeMcp(apiKey, HOOK_CLIENT, 10000)
+      .then((res) => (res.ok ? res.headers.get("mcp-session-id") : null))
+      .catch(() => null);
     for (const filename of trailers) {
-      await callMcp(apiKey, "apply_capture", { filename, commit_sha: full, target_file: target }, 10000).catch(() => null);
+      await callMcp(apiKey, "apply_capture", { filename, commit_sha: full, target_file: target }, 10000, session).catch(() => null);
     }
   } catch {
     // Never disturb a commit
   }
+}
+
+/** Checks that the hook can reach xkg with this key. Reports no capture. */
+export async function checkHookConnection(apiKey: string): Promise<{ ok: true } | { ok: false; reason: string }> {
+  let res: Response;
+  try {
+    res = await initializeMcp(apiKey, HOOK_CLIENT, 10000);
+  } catch (err) {
+    return { ok: false, reason: `Could not reach xkg: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (res.status === 401) {
+    return { ok: false, reason: `xkg rejected the API key (HTTP 401). Run setup-git-hook again with a current key.` };
+  }
+  if (!res.ok) return { ok: false, reason: `xkg answered HTTP ${res.status}.` };
+  return { ok: true };
 }
