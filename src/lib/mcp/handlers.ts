@@ -17,6 +17,7 @@
 import type { User } from "@/lib/db";
 import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
+import { recordApplyEvent } from "@/lib/apply-events";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
@@ -209,36 +210,57 @@ export async function handleReadCapture(user: User, args: { filename: string }):
 export const APPLY_HINT =
   "When you commit a change that applies a capture, add the trailer `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename and the commit sha (`git rev-parse HEAD`). xkg counts each capture and commit once.";
 
+/** Longest reason kept from applied_note: one line, so it can't add sections to the capture. */
+const NOTE_MAX = 200;
+
 /**
  * Records that a capture was applied. The first time, it moves the capture from
  * inbox/ to applied/. Applying an already-applied capture adds another entry to
  * its application log, so each commit it drives is counted.
  */
-export async function handleApplyCapture(user: User, args: { filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string; commit_sha?: string }): Promise<string> {
+export async function handleApplyCapture(
+  user: User,
+  args: { filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string; commit_sha?: string },
+  ctx: ToolContext = {},
+): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
   if (args.commit_sha !== undefined && !/^[0-9a-f]{7,40}$/i.test(args.commit_sha)) {
     return `commit_sha must be a git commit hash (7 to 40 hex characters), got: ${args.commit_sha}`;
   }
   const filename = args.filename.replace(/^(?:inbox|applied)\//, "");
+  const note = args.applied_note?.replace(/\s+/g, " ").trim().slice(0, NOTE_MAX) || undefined;
   const inboxPath = `inbox/${filename}`;
   const appliedPath = `applied/${filename}`;
   const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
   if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
 
-  // The git post-commit hook and the agent may both report the same commit; count it once
+  // The server's count, for the apply metric across users. The repo stays the record.
+  // Safe to repeat: the same capture and commit is counted once.
+  const recordEvent = async (): Promise<string> => {
+    try {
+      await recordApplyEvent({ userId: user.id, filename, commit: args.commit_sha, harness: ctx.harness ?? "unknown", hasWhy: Boolean(note) });
+      return "";
+    } catch (err) {
+      console.error(`apply_events insert failed for user ${user.id}:`, err instanceof Error ? err.message : err);
+      return " (not counted on the server)";
+    }
+  };
+
+  // The git post-commit hook and the agent may both report the same commit; count it once.
+  // The server still hears the repeat, so the agent's name and reason join the hook's report.
   if (args.commit_sha && !inboxFile) {
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
-      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})`;
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}`;
     }
   }
 
   let content = file.content.replace(/^status:\s*inbox$/m, "status: applied");
-  if (args.applied_note && inboxFile) {
+  if (note && inboxFile) {
     content = content.replace(
       /## Applied to\n[\s\S]*?(?=\n##|$)/,
-      `## Applied to\n${args.applied_note}`,
+      `## Applied to\n${note}`,
     );
   }
 
@@ -247,7 +269,7 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
   const logLines = [`- **Applied:** ${today}`];
   if (args.commit_sha) logLines.push(`- **Commit:** ${args.commit_sha}`);
   if (args.target_file) logLines.push(`- **Target:** ${args.target_file}`);
-  if (args.applied_note) logLines.push(`- **Note:** ${args.applied_note}`);
+  if (note) logLines.push(`- **Note:** ${note}`);
   if (args.plan_file) logLines.push(`- **Plan:** ${args.plan_file}`);
   logLines.push(`- **Outcome:** ${args.outcome ?? "_pending_"}`);
 
@@ -278,13 +300,13 @@ export async function handleApplyCapture(user: User, args: { filename: string; a
 
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
-    return `Applied again: ${appliedPath}${commitRef}${await recordInLedger()}`;
+    return `Applied again: ${appliedPath}${commitRef}${await recordInLedger()}${await recordEvent()}`;
   }
 
   await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
-  const ledgerNote = await recordInLedger();
+  const ledgerNote = (await recordInLedger()) + (await recordEvent());
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -722,7 +744,10 @@ export async function handleCurate(
  * declares. That mirrors what the previous switch did with a per-case cast;
  * it is not validation, and remains the natural place to add it.
  */
-export type ToolHandler = (user: User, args: never) => Promise<string>;
+/** Request details a handler may use; today only the agent's name, for apply counts. */
+export type ToolContext = { harness?: string };
+
+export type ToolHandler = (user: User, args: never, ctx: ToolContext) => Promise<string>;
 
 export const HANDLERS: Record<ToolName, ToolHandler> = {
   capture: handleCapture as ToolHandler,

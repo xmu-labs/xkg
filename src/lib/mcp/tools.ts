@@ -69,7 +69,7 @@ export const TOOLS = [
       properties: {
         filename: { type: "string", description: "Capture filename (e.g. '2026-04-02-some-slug.md'); an 'inbox/' or 'applied/' prefix is accepted" },
         commit_sha: { type: "string", description: "Sha of the commit that applied the capture (from `git rev-parse HEAD`). Links the insight to the code change it caused." },
-        applied_note: { type: "string", description: "Brief note on how/where the capture was applied (e.g. 'Added an error handling rule to project guidance')" },
+        applied_note: { type: "string", description: "Why this capture applied here and what you did, in one line of up to 200 characters (e.g. 'Retries hid a timeout bug, so added the capture's backoff rule to the API client')" },
         target_file: { type: "string", description: "File path where the knowledge was applied (e.g. 'docs/conventions.md', 'src/utils/pricing.ts')" },
         outcome: { type: "string", description: "What changed as a result (e.g. 'Reduced error rate by rewriting retry logic per capture advice')" },
         plan_file: { type: "string", description: "Optional plan filename that drove this application (e.g. 'plans/2026-06-04-plan-slug.md') — creates an audit trail linking captures to plans" },

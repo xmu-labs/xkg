@@ -41,6 +41,8 @@ vi.mock("../github", () => ({
 vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
+const recordApplyEvent = vi.fn();
+vi.mock("../apply-events", () => ({ recordApplyEvent: (...a: unknown[]) => recordApplyEvent(...a) }));
 
 const { handleApplyCapture, handleApplyToContext, handleApplyStats } = await import("../mcp/handlers");
 
@@ -55,6 +57,7 @@ beforeEach(() => {
   githubPut.mockReset();
   githubDelete.mockReset();
   updateIndexEntry.mockReset();
+  recordApplyEvent.mockReset();
 });
 
 function writtenContent(): string {
@@ -163,6 +166,62 @@ describe("apply_capture", () => {
   });
 });
 
+describe("apply_capture counts on the server", () => {
+  const inbox = (_t: string, _r: string, path: string) =>
+    path === "inbox/2026-10-01-x.md" ? { content: CAPTURE, sha: "s1" } : null;
+
+  it("records an event with the agent from the session and whether a reason was given", async () => {
+    readFile.mockImplementation(inbox);
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA, applied_note: "Retries now back off" }, { harness: "codex" });
+    expect(recordApplyEvent).toHaveBeenCalledWith({ userId: 1, filename: "2026-10-01-x.md", commit: SHA, harness: "codex", hasWhy: true });
+  });
+
+  it("records 'unknown' when the call came with no agent", async () => {
+    readFile.mockImplementation(inbox);
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md" });
+    expect(recordApplyEvent).toHaveBeenCalledWith(expect.objectContaining({ harness: "unknown", hasWhy: false }));
+  });
+
+  it("records a repeat application too", async () => {
+    readFile.mockImplementation((_t: string, _r: string, path: string) =>
+      path === "applied/2026-10-01-x.md" ? { content: CAPTURE.replace("inbox", "applied"), sha: "s2" } : null);
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA });
+    expect(recordApplyEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes a repeat report to the server, so the agent and reason can join a commit the hook reported first", async () => {
+    readFile.mockImplementation((_t: string, _r: string, path: string) => {
+      if (path === "applied/2026-10-01-x.md") return { content: CAPTURE, sha: "s2" };
+      if (path === "APPLIED.md") return { content: `| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n| 2026-10-01 | 2026-10-01-x.md | ${SHA} | — |\n`, sha: "l1" };
+      return null;
+    });
+    const result = await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA, applied_note: "Why" }, { harness: "codex" });
+    expect(result).toBe("Already recorded: 2026-10-01-x.md (a1b2c3d)");
+    expect(githubPut).not.toHaveBeenCalled();
+    expect(recordApplyEvent).toHaveBeenCalledWith({ userId: 1, filename: "2026-10-01-x.md", commit: SHA, harness: "codex", hasWhy: true });
+  });
+
+  it("keeps the apply when the server count fails, and says it wasn't counted", async () => {
+    readFile.mockImplementation(inbox);
+    recordApplyEvent.mockRejectedValue(new Error("db down"));
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const result = await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA });
+    expect(githubPut.mock.calls[0]?.[2]).toBe("applied/2026-10-01-x.md");
+    expect(result).toContain("not counted on the server");
+    expect(spy).toHaveBeenCalled();
+    expect(String(spy.mock.calls[0])).not.toContain("2026-10-01-x");
+    spy.mockRestore();
+  });
+
+  it("keeps the reason to one line of at most 200 characters", async () => {
+    readFile.mockImplementation(inbox);
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md", applied_note: `line one\n## Injected heading\n${"x".repeat(300)}` });
+    const note = writtenContent().match(/- \*\*Note:\*\* (.*)/)?.[1] ?? "";
+    expect(note.length).toBeLessThanOrEqual(200);
+    expect(writtenContent()).not.toContain("\n## Injected heading");
+  });
+});
+
 describe("apply_to_context", () => {
   it("names the captures it used and asks the agent to apply_capture after committing", async () => {
     readFile.mockImplementation((_t: string, _r: string, path: string) =>
@@ -201,5 +260,16 @@ describe("apply_stats", () => {
     readFile.mockResolvedValue(null);
     const result = await handleApplyStats(user, {});
     expect(result).toMatch(/No captures applied yet/);
+  });
+});
+
+describe("apply_capture tool schema", () => {
+  it("asks the agent for the reason in applied_note, in one short line", async () => {
+    const { TOOLS } = await import("../mcp/tools");
+    const tool = TOOLS.find((t) => t.name === "apply_capture")!;
+    const note = (tool.inputSchema.properties as Record<string, { description: string }>).applied_note!.description;
+    expect(note).toMatch(/why/i);
+    expect(note).toMatch(/one line/i);
+    expect(note).toMatch(/200/);
   });
 });
