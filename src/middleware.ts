@@ -12,6 +12,8 @@ const PUBLIC_PATHS = [
   "/api/auth/github",
   "/api/auth/callback",
   "/api/init-db",
+  // Operator endpoints check the x-admin-secret header themselves.
+  "/api/admin",
   "/api/mcp",
   // OAuth 2.1 for MCP remote connectors. These endpoints manage their own auth
   // (bearer tokens, PKCE, or a login redirect from the authorize page), so they

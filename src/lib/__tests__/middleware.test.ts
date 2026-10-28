@@ -21,6 +21,12 @@ describe("middleware", () => {
     expect(res.status).toBe(200);
   });
 
+  it("lets admin API calls reach the route, which checks the admin secret itself", () => {
+    const res = visit("/api/admin/apply-stats");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
   it("still sends a signed-out visitor on a private page to /login", () => {
     expect(visit("/").headers.get("location")).toBe(`${APP}/login`);
   });

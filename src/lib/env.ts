@@ -28,7 +28,7 @@ export const env = {
   get sessionSecret(): string {
     return required("SESSION_SECRET");
   },
-  /** Secret for the one-time /api/init-db endpoint. */
+  /** Secret for the operator endpoints: /api/init-db and /api/admin/*. */
   get adminSecret(): string {
     return required("ADMIN_SECRET");
   },

@@ -145,6 +145,23 @@ export async function initDb(): Promise<void> {
     )
   `;
 
+  // One row per application of a capture, counts only (see apply-events.ts).
+  // The unique index makes a repeated report of the same capture and commit
+  // count once; rows without a commit are never duplicates of each other.
+  await sql`
+    CREATE TABLE IF NOT EXISTS apply_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      capture_key TEXT NOT NULL,
+      commit7 TEXT,
+      harness TEXT NOT NULL,
+      has_why BOOLEAN NOT NULL DEFAULT FALSE,
+      applied_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS apply_events_once ON apply_events (user_id, capture_key, commit7)`;
+  await sql`CREATE INDEX IF NOT EXISTS apply_events_applied_at ON apply_events (applied_at)`;
+
   await upgradeLegacyData();
 }
 
@@ -412,6 +429,7 @@ export async function deleteUserData(userId: number, username: string): Promise<
     DELETE FROM login_attempts
     WHERE identifier IN (${`user:${userId}`}, ${username.toLowerCase()})
   `;
+  await sql`DELETE FROM apply_events WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 
