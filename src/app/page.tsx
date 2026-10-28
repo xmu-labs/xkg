@@ -195,9 +195,6 @@ export default function CapturePage() {
             className={COMPOSER_FIELD + " resize-none leading-relaxed"}
           />
           </div>
-          <p className="text-xs leading-relaxed px-1" style={{ color: "var(--fg-muted)" }}>
-            Paste anything you want your AI to know. Then use it in Claude Code, Cursor, or any AI coding agent.
-          </p>
 
           <div className="capture-bar">
           <button

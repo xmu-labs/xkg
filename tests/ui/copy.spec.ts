@@ -3,7 +3,6 @@ import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
 // Framing and copy (2026-10-24 review): say what xkg does, and show the next step.
 
 const TAGLINE = "Learn it once. Your AI applies it.";
-const HELPER = "Paste anything you want your AI to know. Then use it in Claude Code, Cursor, or any AI coding agent.";
 const FILE_URL = "https://github.com/ola/xkg-knowledge/blob/main/inbox/" + WORST_CAPTURE.filename;
 
 test("the capture screen leads with the tagline and says how it works", async ({ page }) => {
@@ -13,11 +12,10 @@ test("the capture screen leads with the tagline and says how it works", async ({
   await expect(page.locator('meta[name="description"]')).toHaveAttribute("content", TAGLINE);
 });
 
-test("the capture screen says what to paste and where to use it, in one line", async ({ page }) => {
+test("the capture screen has no helper line under the composer", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await expect(page.getByText(HELPER, { exact: true })).toBeVisible();
-  await expect(page.getByRole("list", { name: "How xkg works" })).toHaveCount(0);
+  await expect(page.getByText(/Paste a link or a note|Paste anything you want your AI to know/)).toHaveCount(0);
   await expect(page.getByLabel("Content to capture")).toHaveAttribute("placeholder", /^Paste anything/);
 });
 
