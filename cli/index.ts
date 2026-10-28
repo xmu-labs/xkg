@@ -47,6 +47,42 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "setup-git-hook") {
+    const { installPostCommitHook } = await import("./git-hook.js");
+    const { readConfig, setConfigField } = await import("./config.js");
+    const keyIdx = args.indexOf("--key");
+    const keyArg = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
+    // The hook file may be tracked in git, so the key lives in ~/.xkg/config.json instead
+    if (keyArg) setConfigField("key", keyArg);
+    if (!readConfig().key) {
+      console.error("Usage: npx @xmu-labs/xkg setup-git-hook --key YOUR_API_KEY (run inside the repo)");
+      process.exit(1);
+    }
+    try {
+      const path = installPostCommitHook();
+      console.log(`xkg git hook installed: ${path}`);
+      console.log("Commits with an `xkg-capture: <filename>` trailer are now recorded as applied.");
+    } catch (err) {
+      console.error(err instanceof Error && err.message.includes("not a shell script")
+        ? err.message
+        : "Not a git repository. Run this inside the repo you code in.");
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (command === "post-commit") {
+    const { postCommit } = await import("./git-hook.js");
+    const { readConfig } = await import("./config.js");
+    const keyIdx = args.indexOf("--key");
+    const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
+    const shaIdx = args.indexOf("--sha");
+    const sha = shaIdx !== -1 ? args[shaIdx + 1] : "HEAD";
+    if (!apiKey || !sha) process.exit(0); // silent fail in hook context
+    await postCommit(apiKey, sha);
+    return;
+  }
+
   if (command === "config") {
     const { runConfigCommand } = await import("./config.js");
     runConfigCommand(args.slice(1));
@@ -97,6 +133,7 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
+    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer (any agent)
     xkg config set agent "claude -p"                           Set which AI worker kos drives
     xkg kos --key KEY [--plan FILE]                            Implement a plan in an isolated worktree
     xkg help                                                   Show this help
@@ -108,6 +145,7 @@ function printHelp(): void {
     generate_plan     — Turn selected captures into a full implementation plan
     list_plans        — List or read saved implementation plans
     vault_scan        — Scan all captures for relevance to current activity
+    apply_stats       — Captures applied per week, and how many came with a commit
     curate            — Validate URLs and flag stale captures
 
   kos — implement plans with your own AI worker (model-agnostic):

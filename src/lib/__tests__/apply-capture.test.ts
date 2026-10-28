@@ -42,7 +42,7 @@ vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
 
-const { handleApplyCapture, handleApplyToContext } = await import("../mcp/handlers");
+const { handleApplyCapture, handleApplyToContext, handleApplyStats } = await import("../mcp/handlers");
 
 const llmUser = { id: 1, github_token: "t", github_repo: "o/r", llm_api_key: "k" } as unknown as User;
 // No LLM key, so the best-effort re-synthesis is skipped
@@ -61,6 +61,10 @@ function writtenContent(): string {
   return githubPut.mock.calls[0]?.[3] as string;
 }
 
+function ledgerWrite(): unknown[] | undefined {
+  return githubPut.mock.calls.find((c) => c[2] === "APPLIED.md");
+}
+
 describe("apply_capture", () => {
   it("moves an inbox capture to applied/ and logs the commit sha", async () => {
     readFile.mockImplementation((_t: string, _r: string, path: string) =>
@@ -75,6 +79,37 @@ describe("apply_capture", () => {
     expect(writtenContent()).toMatch(/## Application log\n[\s\S]*\n## Links to memory/);
     expect(githubDelete).toHaveBeenCalledWith("t", "o/r", "inbox/2026-10-01-x.md", "s1", expect.any(String));
     expect(updateIndexEntry).toHaveBeenCalledWith("t", "o/r", "2026-10-01-x.md", "apply");
+  });
+
+  it("adds a row to the APPLIED.md ledger, creating it on first use", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
+    readFile.mockImplementation((_t: string, _r: string, path: string) =>
+      path === "inbox/2026-10-01-x.md" ? { content: CAPTURE, sha: "s1" } : null);
+
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA, target_file: "src/a.ts" });
+    vi.useRealTimers();
+
+    const call = ledgerWrite();
+    expect(call?.[3]).toMatch(/\| 2026-10-27 \| 2026-10-01-x\.md \| a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \| src\/a\.ts \|\n$/);
+    expect(call?.[5]).toBeUndefined();
+  });
+
+  it("appends to an existing ledger on a repeat application, passing its sha", async () => {
+    const applied = CAPTURE.replace("status: inbox", "status: applied");
+    const ledger = "# Applied captures\n\n| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n| 2026-10-20 | 2026-10-01-x.md | 1111111 | — |\n";
+    readFile.mockImplementation((_t: string, _r: string, path: string) => {
+      if (path === "applied/2026-10-01-x.md") return { content: applied, sha: "s2" };
+      if (path === "APPLIED.md") return { content: ledger, sha: "L1" };
+      return null;
+    });
+
+    await handleApplyCapture(user, { filename: "2026-10-01-x.md", commit_sha: SHA });
+
+    const call = ledgerWrite();
+    expect(call?.[3]).toContain("| 2026-10-20 | 2026-10-01-x.md | 1111111 | — |\n|");
+    expect(call?.[3]).toMatch(/\| 2026-10-01-x\.md \| a1b2c3d4e5f60718293a4b5c6d7e8f9012345678 \| — \|\n$/);
+    expect(call?.[5]).toBe("L1");
   });
 
   it("adds another log entry when an applied capture is applied again", async () => {
@@ -95,6 +130,21 @@ describe("apply_capture", () => {
     expect(content).toMatch(new RegExp(`- \\*\\*Commit:\\*\\* ${SHA}[\\s\\S]*\\n## Links to memory`));
     expect(githubDelete).not.toHaveBeenCalled();
     expect(updateIndexEntry).not.toHaveBeenCalled();
+  });
+
+  it("records nothing when this capture and commit are already in the ledger", async () => {
+    // The git post-commit hook and the agent may both report the same commit
+    const ledger = `| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n| 2026-10-27 | 2026-10-01-x.md | ${SHA} | — |\n`;
+    readFile.mockImplementation((_t: string, _r: string, path: string) => {
+      if (path === "applied/2026-10-01-x.md") return { content: CAPTURE.replace("status: inbox", "status: applied"), sha: "s2" };
+      if (path === "APPLIED.md") return { content: ledger, sha: "L1" };
+      return null;
+    });
+
+    const result = await handleApplyCapture(user, { filename: "applied/2026-10-01-x.md", commit_sha: SHA.slice(0, 7) });
+
+    expect(result).toBe("Already recorded: 2026-10-01-x.md (a1b2c3d)");
+    expect(githubPut).not.toHaveBeenCalled();
   });
 
   it("rejects a commit_sha that is not a hash, without writing", async () => {
@@ -126,5 +176,30 @@ describe("apply_to_context", () => {
     expect(result).toContain("Change src/a.ts.");
     expect(result).toContain("inbox/2026-10-01-x.md");
     expect(result).toMatch(/apply_capture[\s\S]*commit sha/);
+    expect(result).toContain("xkg-capture: <filename>");
+  });
+});
+
+describe("apply_stats", () => {
+  it("reports applications and commits per week from the ledger", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-27T12:00:00Z"));
+    const ledger = "| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n" +
+      "| 2026-10-27 | a.md | a1b2c3d | — |\n| 2026-10-26 | b.md | — | — |\n| 2026-10-20 | c.md | ccccccc | — |\n";
+    readFile.mockImplementation((_t: string, _r: string, path: string) =>
+      path === "APPLIED.md" ? { content: ledger, sha: "L" } : null);
+
+    const result = await handleApplyStats(user, { weeks: 2 });
+    vi.useRealTimers();
+
+    expect(result).toContain("Week of 2026-10-26: 2 applied, 1 with a commit");
+    expect(result).toContain("Week of 2026-10-19: 1 applied, 1 with a commit");
+    expect(result).toContain("Total: 3 applied, 2 with a commit");
+  });
+
+  it("says nothing has been applied yet when there is no ledger", async () => {
+    readFile.mockResolvedValue(null);
+    const result = await handleApplyStats(user, {});
+    expect(result).toMatch(/No captures applied yet/);
   });
 });

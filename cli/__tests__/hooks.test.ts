@@ -283,6 +283,7 @@ One insight.`));
     expect(output).toContain("generate_plan");
     expect(output).toContain("inbox/a.md");
     expect(output).toContain("apply_capture");
+    expect(output).toContain("xkg-capture: inbox/a.md");
   });
 
   it("does NOT append generate_plan prompt when all suggestions have applyNow=false", async () => {

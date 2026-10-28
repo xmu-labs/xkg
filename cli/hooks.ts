@@ -360,7 +360,8 @@ export async function inboxCheck(
         process.stdout.write(
           `\n---\nxkg: ${applyNow.length} insight${applyNow.length === 1 ? "" : "s"} ready to apply now.\n` +
           `Run generate_plan with selected_captures: [${filenames}] to get a full implementation plan.\n` +
-          `After you commit a change that applies one, call apply_capture with its filename and the commit sha (git rev-parse HEAD) so xkg records it.\n`,
+          `When you commit a change that applies one, add a trailer per capture to the commit message (e.g. xkg-capture: ${applyNow[0]!.filename}), ` +
+          `then call apply_capture with its filename and the commit sha (git rev-parse HEAD). xkg counts each capture and commit once.\n`,
         );
       }
       return;
