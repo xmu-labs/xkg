@@ -26,7 +26,6 @@ vi.mock("../llm", () => ({
   formatDate: () => "2026-01-01",
   buildIndexRow: () => "row",
   rankByRelevance: () => [],
-  composeBriefing: () => "",
   generateApplicationSuggestions: () => "",
   generatePlan: () => "",
   curateSingle: () => ({}),

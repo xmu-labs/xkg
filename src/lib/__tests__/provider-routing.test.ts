@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-// Anthropic path is covered by composeBriefing.test.ts / generatePlan.test.ts
-// (which mock @anthropic-ai/sdk). Here we verify the OpenAI and Google REST
+// Anthropic path is covered by generatePlan.test.ts
+// (which mocks @anthropic-ai/sdk). Here we verify the OpenAI and Google REST
 // paths in the provider adapter by mocking fetch and calling a public function.
 const mockCreate = vi.hoisted(() => vi.fn());
 vi.mock("@anthropic-ai/sdk", () => ({

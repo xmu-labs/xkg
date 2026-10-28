@@ -21,8 +21,9 @@ import { recordApplyEvent } from "@/lib/apply-events";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
-import { extractCapture, formatDate, buildIndexRow, rankByRelevance, composeBriefing, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
+import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
+import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
@@ -444,18 +445,16 @@ export async function handleBriefing(user: User, args: { project_context: string
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
   if (!existing) return "No captures yet. Build your knowledge base with the capture tool first.";
 
-  // 1. Find relevant captures (top 7 to give the briefing more candidates for the 0.7 threshold)
-  const ranked = await rankByRelevance(user.llm_api_key, args.project_context, existing.content, 7, llmSettings(user));
+  // 1. Rank captures against the project (the only LLM call: xkg can't see the code,
+  //    so the agent decides where each candidate applies)
+  const ranked = await rankByRelevance(user.llm_api_key, args.project_context, existing.content, 5, llmSettings(user));
 
-  // 2. Read relevant capture contents in parallel, keeping filename + score for the briefing prompt
-  const relevantCaptures = await Promise.all(
-    ranked.map(async (r) => {
+  // 2. Read the candidates in parallel, skipping any that can no longer be read
+  const candidates = await Promise.all(
+    selectRanked(ranked, existing.content).map(async (r) => {
       const file = await readFile(user.github_token, user.github_repo!, r.filename);
-      return file ? { content: file.content, filename: r.filename, score: r.score } : null;
+      return file ? briefingCandidate(r.filename, r.score, r.reason, file.content) : null;
     }),
-  );
-  const validCaptures = relevantCaptures.filter(
-    (c): c is { content: string; filename: string; score: number } => c !== null,
   );
 
   // 3. Read rules (if requested)
@@ -465,23 +464,7 @@ export async function handleBriefing(user: User, args: { project_context: string
     rules = rulesFile?.content ?? "";
   }
 
-  // 4. Read recent inbox
-  const inboxRes = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
-  const recentInbox: string[] = [];
-  if (inboxRes.ok && inboxRes.data) {
-    const mdFiles = inboxRes.data.filter((f) => f.name.endsWith(".md")).slice(-3);
-    const inboxContents = await Promise.all(
-      mdFiles.map(async (f) => {
-        const file = await readFile(user.github_token, user.github_repo!, `inbox/${f.name}`);
-        return file?.content ?? null;
-      }),
-    );
-    recentInbox.push(...inboxContents.filter((c): c is string => c !== null));
-  }
-
-  // 5. Compose briefing via LLM — return the full text (JSON block + Markdown narrative)
-  const briefingOutput = await composeBriefing(user.llm_api_key, args.project_context, validCaptures, rules, recentInbox, llmSettings(user));
-  return briefingOutput.text;
+  return formatBriefing(candidates.filter((c): c is BriefingCandidate => c !== null), rules);
 }
 
 export async function handleApplyToContext(user: User, args: { task: string; stack?: string; files?: string[]; code_snippet?: string }): Promise<string> {

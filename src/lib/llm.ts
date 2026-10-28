@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { LLM_PROVIDERS, PROVIDERS } from "./providers";
 import { buildSource, buildExtractionInput, checkClaims, sourceFrontmatter, renderEvidenceSection, renderSourceSection, sourceText } from "./evidence";
-import type { ExtractedCapture, SourceSnapshot, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, BriefingSuggestion, BriefingOutput, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
+import type { ExtractedCapture, SourceSnapshot, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
 // ── Config ──
 
@@ -826,78 +826,6 @@ ${captureContents.map((c, i) => `--- Capture ${i + 1} ---\n${c}`).join("\n\n")}`
   } catch {
     return { topic, rules: [] };
   }
-}
-
-// ── Agent briefing ──
-
-const BRIEFING_PROMPT = `You compose structured knowledge briefings for AI agents starting a work session. Given PROJECT CONTEXT, ranked captures (with scores and filenames), synthesized rules, and recent inbox items, produce a two-part response.
-
-PART 1 — JSON suggestions block (must come first, before any Markdown):
-Output a JSON array wrapped in \`\`\`json...\`\`\` fences. Each item represents a capture to surface:
-{"filename":"path/to/file.md","why":"one sentence — how this specifically relates to the current branch/task","benefit":"one sentence — what applying this concretely achieves","where":"specific file or module (e.g. src/api/capture/route.ts, docs/conventions.md)","applyNow":true}
-
-applyNow rules:
-- true if capture score >= 0.70 AND insight is directly actionable for the current work
-- false if score is 0.30–0.69 (relevant but not urgent)
-Return [] if no captures qualify.
-
-PART 2 — Markdown briefing (immediately after the JSON block):
-## Relevant Rules
-## Apply Now (N insights)
-## Knowledge Vault (relevant but not urgent)
-## Suggested Next Step
-
-RULES:
-- JSON must be valid — no trailing commas, no comments, no extra text before the opening \`\`\`json
-- "why" must reference specifics from the supplied project context (branch name, recent commit messages)
-- "where" must name a specific file or module — never "the codebase" or "your project"
-- "benefit" must be concrete — not "improves code quality"
-- Markdown briefing: concise, ≤ 400 words — agents need signal, not essays
-- If a section has nothing to say, write "None applicable." — don't omit the heading`;
-
-/** Compose a session-start briefing for an agent. */
-export async function composeBriefing(
-  apiKey: string,
-  projectContext: string,
-  relevantCaptures: Array<{ content: string; filename: string; score: number }>,
-  rules: string,
-  recentInbox: string[],
-  llm: LlmConfig = "anthropic",
-): Promise<BriefingOutput> {
-  const userMessage = `PROJECT CONTEXT:
-${projectContext}
-
-RANKED CAPTURES (with relevance scores):
-${relevantCaptures.length > 0
-    ? relevantCaptures.map((c, i) => `--- Capture ${i + 1} (score: ${c.score.toFixed(2)}, file: ${c.filename}) ---\n${c.content}`).join("\n\n")
-    : "None found."}
-
-SYNTHESIZED RULES:
-${rules || "No rules generated yet."}
-
-RECENT INBOX (unreviewed):
-${recentInbox.length > 0 ? recentInbox.map((c, i) => `--- Recent ${i + 1} ---\n${c}`).join("\n\n") : "Inbox is empty."}`;
-
-  const rawText = (await callLlm({
-    llm,
-    apiKey,
-    system: BRIEFING_PROMPT,
-    user: userMessage,
-    maxTokens: 1500,
-  })) || "Briefing could not be generated.";
-
-  // Parse JSON suggestions block from the response
-  const jsonMatch = rawText.match(/```json\n([\s\S]*?)\n```/);
-  let suggestions: BriefingSuggestion[] = [];
-  if (jsonMatch?.[1]) {
-    try {
-      suggestions = JSON.parse(jsonMatch[1]) as BriefingSuggestion[];
-    } catch {
-      suggestions = [];
-    }
-  }
-
-  return { text: rawText, suggestions };
 }
 
 // ── Context-aware application ──

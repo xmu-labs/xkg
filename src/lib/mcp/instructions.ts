@@ -13,6 +13,7 @@ export const SERVER_INSTRUCTIONS = `xkg holds the user's outside knowledge (arti
 
 When to use it:
 - At the start of a coding session in a repo, call \`briefing\` with the repo name, branch, and last few commit messages. Mid-task, call \`recall\` with a short description of the task.
+- xkg never sees your code, so a briefing gives candidates, not answers: check each candidate against the code and never name a file you have not opened. To look through every capture, call \`search_captures\` with no query and page through the results.
 - When the user shares something worth keeping (a link, notes, an idea), call \`capture\`.
 - When you commit a change that used a capture, include a line \`xkg-capture: <filename>\` in that commit message. After the commit, call \`apply_capture\` with the filename, the commit sha, and one line on why.
 

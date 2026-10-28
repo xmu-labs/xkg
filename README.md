@@ -248,7 +248,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    capture "The Mom Test: don't ask if your idea is good. Ask about the person's real behavior, current workflow, and past spending."
    ```
 
-2. **Brief** — At the start of a work session, ask your worker for a briefing. xkg uses your project name, branch, and recent commit messages to rank captures that could help now: **why** it matters, **what** applying it could achieve, **where** it could land. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
+2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code, so it doesn't guess where a capture lands: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
 3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
 
@@ -337,7 +337,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `search_captures` | Keyword search across your captures |
 | `read_capture` | Read a capture in full |
 | `recall` | Find relevant context from a description of your task |
-| `briefing` | Get project-specific recommendations |
+| `briefing` | Get captures that may fit the current project, for the agent to check against the code |
 | `generate_plan` | Turn selected captures into an implementation plan |
 | `list_plans` | List or read saved plans |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why |
