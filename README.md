@@ -63,7 +63,7 @@ Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub.
 xkg will:
 
 1. Create a **private** GitHub repo for your knowledge (you can opt to make it public)
-2. Ask for your LLM provider API key — Anthropic, OpenAI, or Google. Your key, your cost.
+2. Ask for your LLM provider and API key: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral or Groq. Your key, your cost. Change the provider, model or reasoning effort any time in Settings → AI model.
 3. Let you set a PIN (6+ characters) for quick unlock on this device
 4. Show your **xkg API key** once — save it if you want to connect an AI worker
 
@@ -73,7 +73,7 @@ That's the whole setup. No repo to clone. No database. No CLI required.
 
 In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then hit **Capture**.
 
-xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**, then commits Markdown to your GitHub repo.
+xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
@@ -192,7 +192,7 @@ Or the URL, no API key:
 claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
 ```
 
-Optional session hooks (MCP works without them):
+`serve-mcp` installs a light session hook the first time it runs. More hooks, all optional (MCP works without them):
 
 ```bash
 npx -y @xmu-labs/xkg@latest setup-hooks --key YOUR_API_KEY --briefing --vault
@@ -263,40 +263,64 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    npx -y @xmu-labs/xkg@latest config set agent "codex exec"
    ```
 
+5. **Mark applied** — After committing a change that applies a capture, the worker calls `apply_capture` with the commit sha and one line on why. xkg moves the capture to `applied/`, adds an entry to its application log and to `APPLIED.md`, and counts it once per capture and commit.
+
+   Any coding agent, or you by hand, can also add a trailer to the commit message:
+
+   ```text
+   xkg-capture: 2026-10-28-alert-ownership.md
+   ```
+
+   With the git hook installed in that repo, xkg records it after each commit:
+
+   ```bash
+   npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
+   ```
+
+   Ask *apply stats* to see how many captures you applied each week.
+
 ### Example capture
 
 ```text
-The Mom Test: don't ask if your idea is good. Ask about the person's real behavior, current workflow, and past spending.
+Note to self after the incident review: our alerts fired, but nobody owned them. Alerts without a named owner get ignored. Every alert needs one person on the hook, not a channel.
 ```
 
 ```markdown
 ---
-date: 2026-06-05
-source: The Mom Test note
-type: note
-tags: customer-discovery, product, research
+date: 2026-10-28
+source: Alert ownership importance
+type: notes
+source_type: note
+tags: incident-management, alerting, responsibility
 status: inbox
+source_sha256: 21275782a8bf…
 ---
 
-# The Mom Test
+# Alert ownership importance
 
 ## Core idea
-
-Do not ask people to judge your idea. Ask about their real life,
-recent behavior, current workaround, and what they have already
-tried or paid for.
+Alerts in incident reviews must have a designated owner to ensure
+they are acted upon, as unowned alerts tend to be ignored.
 
 ## Key takeaways
+- Every alert needs one person responsible for it to prevent neglect.
+- Alerts without a named owner are typically ignored.
 
-- Avoid compliments and future promises
-- Ask about specific past behavior
-- Look for existing pain, workarounds, and spending
+## Evidence
+**Core idea** · `c-ac3270c3bbc8`
+> "Alerts without a named owner get ignored." (s1)
 
-## Where to apply
+**Takeaway 1** · `c-59d033daf0e2`
+> "Every alert needs one person on the hook, not a channel." (s1)
 
-Discovery interview scripts, landing page tests, and product
-validation prompts.
+<details>
+<summary>Source text (sha256: 21275782a8bf…)</summary>
+
+[s1] Note to self after the incident review: our alerts fired, …
+</details>
 ```
+
+Shortened from a real capture. Every claim points to a quote that appears word for word in the source text below it, so you can check it.
 
 Plain Markdown in a repo you own. Readable, editable, versioned, portable.
 
@@ -314,7 +338,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `briefing` | Get project-specific recommendations |
 | `generate_plan` | Turn selected captures into an implementation plan |
 | `list_plans` | List or read saved plans |
-| `apply_capture` | Mark a capture as applied, with the commit that applied it |
+| `apply_capture` | Mark a capture as applied, with the commit that applied it and why |
 | `apply_stats` | Captures applied per week, and how many came with a commit |
 | `archive_capture` | Archive a capture |
 | `delete_capture` | Delete a capture |
@@ -375,15 +399,16 @@ The whole point of this repo being public is that you can check these claims rat
 | `llm_provider`, `llm_api_key` | encrypted |
 | `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
+| apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly three kinds of destination:
 
 1. **GitHub** — to write the capture into your repo
-2. **Your LLM provider**, with *your* key — Anthropic, OpenAI, or Google
+2. **Your LLM provider**, with *your* key: the one you picked in Settings
 3. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
 
-No analytics, no telemetry, no third-party tracking.
+No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
 
 ### How your credentials are stored
 
@@ -400,6 +425,15 @@ Your MCP key is shown exactly once. If you lose it, generate a new one.
 
 **Revoking access.** Generating a new MCP key invalidates the old key, every other signed-in session, and every connected MCP client. Sessions also expire after 30 days.
 
+**Removing xkg from a computer.** Your account and captures are not touched:
+
+1. `claude mcp remove xkg` (or delete the `xkg` block from your editor's MCP config). Remove web connectors in each app's Connectors settings.
+2. Delete the xkg entries under `hooks` in `~/.claude/settings.json`.
+3. In each repo with the git hook, delete the line ending in `# xkg` from `.git/hooks/post-commit`.
+4. `rm -rf ~/.xkg`
+
+Generate a new MCP key afterwards to cut off any connection you missed.
+
 **Deleting your account.** Settings → Delete account removes your account row and every record keyed to it, and asks GitHub to revoke xkg's access (`src/lib/account.ts`). Your captures stay in your repo.
 
 The hosted service's [Privacy Policy](https://xkg.xmu.sh/privacy) and [Terms of Service](https://xkg.xmu.sh/terms) say the same in legal form.
@@ -408,15 +442,17 @@ The hosted service's [Privacy Policy](https://xkg.xmu.sh/privacy) and [Terms of 
 
 xkg is BYOK. You bring your own API key. xkg never charges you for inference.
 
-Extraction runs on a fast, low-cost model (Claude Haiku 4.5 by default):
+Each provider starts on a low-cost model, which you can change in Settings → AI model. For example, Anthropic starts on Claude Haiku 4.5, OpenAI on GPT-4o mini and Google on Gemini 2.0 Flash.
 
-| Usage | Estimated monthly cost |
-| --- | --- |
-| 50 captures/month | ~$0.15 |
-| 100 captures/month | ~$0.30 |
-| 200 captures/month | ~$0.60 |
+A capture uses about 2,000–3,700 input tokens and 750–1,100 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt). At list prices:
 
-Briefing, planning, and synthesis only run when you ask for them.
+| Usage | Claude Haiku 4.5 | GPT-4o mini |
+| --- | --- | --- |
+| 50 captures/month | ~$0.40 | ~$0.05 |
+| 100 captures/month | ~$0.80 | ~$0.10 |
+| 200 captures/month | ~$1.60 | ~$0.20 |
+
+Larger models cost more. Briefing, planning, and synthesis only run when you ask for them.
 
 ## Roadmap
 

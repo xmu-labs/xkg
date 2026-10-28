@@ -124,6 +124,9 @@ checks, publishes both names with provenance, and confirms npm recorded the tagg
 Until npm/cli#9969 is fixed, trusted publishing fails for this repository, so a maintainer runs
 `scripts/publish.sh` (or `scripts/publish.sh next` for a pre-release) by hand from a clean checkout of
 the bump commit before step 2. The workflow then skips the publish and only verifies.
+The workflow also passes an `NPM_TOKEN` repository secret to npm when one is set (a granular token
+with write access to these two packages only). That would remove the manual step, but it has not
+been tried while trusted publishing is configured and rejected.
 
 ## Security issues
 
@@ -147,7 +150,7 @@ has shipped several that matter. The hosted instance at
 | Auth | GitHub OAuth · OAuth 2.1 + PKCE for MCP connectors |
 | Storage | GitHub Contents API — your captures live in your repo |
 | Agent interface | Model Context Protocol (Streamable HTTP + stdio proxy) |
-| LLM | Anthropic SDK · OpenAI and Google via REST (BYOK) |
+| LLM | Anthropic SDK · Google and OpenAI-compatible providers via REST (BYOK, `src/lib/providers.ts`) |
 | Styling | Tailwind CSS |
 | Tests | Vitest (unit) · Playwright (e2e) |
 
