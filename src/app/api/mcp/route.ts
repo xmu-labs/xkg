@@ -11,7 +11,7 @@ import { getUserByApiKey, getUserById } from "@/lib/db";
 import type { User } from "@/lib/db";
 import { verifyToken, wwwAuthenticateHeader } from "@/lib/oauth";
 import { requestOrigin } from "@/lib/origin";
-import { issueMcpSessionId, verifyMcpSessionId } from "@/lib/mcp-session";
+import { clientNameFromInitialize, harnessForCall, issueMcpSessionId, verifyMcpSessionId } from "@/lib/mcp-session";
 import { env } from "@/lib/env";
 import { TOOLS, type ToolName } from "@/lib/mcp/tools";
 import { HANDLERS } from "@/lib/mcp/handlers";
@@ -194,8 +194,9 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
         // Echo the client's requested protocol version when it states one.
         const requested = (params as { protocolVersion?: unknown } | undefined)?.protocolVersion;
         const protocolVersion = typeof requested === "string" ? requested : DEFAULT_PROTOCOL_VERSION;
-        // Hand the client a session id it will echo on subsequent requests.
-        const sessionId = issueMcpSessionId(user.id);
+        // Hand the client a session id it will echo on subsequent requests. It
+        // carries the client's name, so tool calls know which agent made them.
+        const sessionId = issueMcpSessionId(user.id, clientNameFromInitialize(params));
         return respond(
           {
             jsonrpc: "2.0",
@@ -238,7 +239,7 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
             wantsSse,
           );
         }
-        const result = await handler(user, toolArgs as never);
+        const result = await handler(user, toolArgs as never, { harness: harnessForCall(providedSession, user.id) });
 
         return respond(
           { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: result }] } },

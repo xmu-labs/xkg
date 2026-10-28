@@ -20,6 +20,7 @@ const SESSION_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 interface SessionPayload {
   u: number; // user id
   iat: number; // issued-at (epoch seconds)
+  c?: string; // client name from initialize, e.g. "claude-code"
 }
 
 function sign(body: string): string {
@@ -27,15 +28,15 @@ function sign(body: string): string {
   return crypto.createHmac("sha256", env.sessionSecret).update(`mcp-session:${body}`).digest("base64url");
 }
 
-/** Issue a signed session id for a user. The value is visible-ASCII only. */
-export function issueMcpSessionId(userId: number): string {
-  const payload: SessionPayload = { u: userId, iat: Math.floor(Date.now() / 1000) };
+/** Issue a signed session id for a user and the client it was opened from. The value is visible-ASCII only. */
+export function issueMcpSessionId(userId: number, client?: string): string {
+  const payload: SessionPayload = { u: userId, iat: Math.floor(Date.now() / 1000), ...(client ? { c: client } : {}) };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${sign(body)}`;
 }
 
-/** Verify a session id's signature and expiry. Returns the user id or null. */
-export function verifyMcpSessionId(id: string): { userId: number } | null {
+/** Verify a session id's signature and expiry. Returns the user id (and client name, when given) or null. */
+export function verifyMcpSessionId(id: string): { userId: number; client?: string } | null {
   const dot = id.lastIndexOf(".");
   if (dot === -1) return null;
 
@@ -57,5 +58,21 @@ export function verifyMcpSessionId(id: string): { userId: number } | null {
   if (typeof payload.u !== "number" || typeof payload.iat !== "number") return null;
   if (payload.iat + SESSION_TTL_SECONDS < Math.floor(Date.now() / 1000)) return null;
 
-  return { userId: payload.u };
+  return typeof payload.c === "string" ? { userId: payload.u, client: payload.c } : { userId: payload.u };
+}
+
+/**
+ * The agent behind a tool call: the client name its session was opened with,
+ * or "unknown" when there is no valid session for this user. Recorded by the
+ * server, never taken from tool arguments the model fills in.
+ */
+export function harnessForCall(sessionId: string | null, userId: number): string {
+  const session = sessionId ? verifyMcpSessionId(sessionId) : null;
+  return session && session.userId === userId && session.client ? session.client : "unknown";
+}
+
+/** `clientInfo.name` from initialize params, when it is a short plain name. */
+export function clientNameFromInitialize(params: unknown): string | undefined {
+  const name = (params as { clientInfo?: { name?: unknown } } | undefined)?.clientInfo?.name;
+  return typeof name === "string" && /^[A-Za-z0-9 ._-]{1,64}$/.test(name) ? name : undefined;
 }

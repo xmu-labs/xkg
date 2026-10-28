@@ -31,6 +31,7 @@ describe("deleteUserData", () => {
       "DELETE FROM oauth_codes WHERE user_id = ?",
       "DELETE FROM usage_quota WHERE identifier = ?",
       "DELETE FROM login_attempts WHERE identifier IN (?, ?)",
+      "DELETE FROM apply_events WHERE user_id = ?",
       "DELETE FROM users WHERE id = ?",
     ]);
     expect(queries.map((q) => q.values)).toEqual([
@@ -38,6 +39,7 @@ describe("deleteUserData", () => {
       [7],
       ["capture:user:7"],
       ["user:7", "octo-cat"],
+      [7],
       [7],
     ]);
   });
