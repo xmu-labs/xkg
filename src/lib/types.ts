@@ -116,21 +116,6 @@ export interface ApplicationSuggestion {
   suggestion: string;
 }
 
-/** One capture surfaced in an active briefing. */
-export interface BriefingSuggestion {
-  filename: string;
-  why: string;
-  benefit: string;
-  where: string;
-  applyNow: boolean;
-}
-
-/** Structured output from composeBriefing — text for display + parsed suggestions. */
-export interface BriefingOutput {
-  text: string;
-  suggestions: BriefingSuggestion[];
-}
-
 /** Result of curating a single capture (URL check + confidence check). */
 export interface CurationResult {
   filename: string;

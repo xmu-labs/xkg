@@ -144,7 +144,7 @@ export const TOOLS = [
   },
   {
     name: "briefing",
-    description: "Call at the start of a coding session: returns a briefing of the knowledge relevant to the current project. Combines relevant rules, recent captures, and applicable insights into a concise summary.",
+    description: "Call at the start of a coding session: returns up to 5 captures that may fit the current project, plus the user's rules. xkg has not seen the code, so these are candidates: check each one against the code before you suggest it.",
     inputSchema: {
       type: "object" as const,
       properties: {

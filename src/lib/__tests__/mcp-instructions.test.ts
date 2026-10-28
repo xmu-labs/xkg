@@ -38,6 +38,12 @@ describe("MCP server instructions", () => {
     for (const cmd of commands) expect(cliSource).toContain(`command === "${cmd}"`);
   });
 
+  it("has the agent check briefing candidates against the code, since xkg never sees it", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/check each candidate against the code/i);
+    expect(SERVER_INSTRUCTIONS).toMatch(/never name a file you have not opened/i);
+    expect(SERVER_INSTRUCTIONS).toContain("`list_inbox`");
+  });
+
   it("has the agent ask the user before changing their machine", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/ask the user first/i);
   });
@@ -51,5 +57,11 @@ describe("briefing tool description", () => {
   it("says when to call it, for clients that ignore server instructions", () => {
     const briefing = TOOLS.find((t) => t.name === "briefing")!;
     expect(briefing.description).toMatch(/start of a coding session/i);
+  });
+
+  it("says it returns candidates the agent must check against the code", () => {
+    const briefing = TOOLS.find((t) => t.name === "briefing")!;
+    expect(briefing.description).toMatch(/candidates/i);
+    expect(briefing.description).toMatch(/check[^.]*against the code/i);
   });
 });
