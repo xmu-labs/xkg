@@ -41,7 +41,7 @@ describe("MCP server instructions", () => {
   it("has the agent check briefing candidates against the code, since xkg never sees it", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/check each candidate against the code/i);
     expect(SERVER_INSTRUCTIONS).toMatch(/never name a file you have not opened/i);
-    expect(SERVER_INSTRUCTIONS).toContain("`list_inbox`");
+    expect(SERVER_INSTRUCTIONS).toContain("call `search_captures` with no query");
   });
 
   it("has the agent ask the user before changing their machine", () => {

@@ -128,7 +128,7 @@ describe("formatBriefing", () => {
     expect(text).toMatch(/ask before changing anything/i);
     expect(text).toContain("xkg-capture: <filename>");
     expect(text).toContain("`apply_capture`");
-    expect(text).toContain("`list_inbox`");
+    expect(text).toContain("call `search_captures` with no query");
   });
 
   it("lists candidates in rank order with filename, fit, reason, main idea and key points", () => {
@@ -146,9 +146,10 @@ describe("formatBriefing", () => {
     expect(text).not.toContain("Applied to");
   });
 
-  it("points to list_inbox when nothing fits", () => {
+  it("points to the full capture list when nothing fits", () => {
+    // search_captures lists inbox, applied and archived captures; list_inbox only the inbox
     expect(formatBriefing([], "")).toBe(
-      "xkg briefing: no capture looks related to this repo's recent work. To check every capture, page through `list_inbox`.",
+      "xkg briefing: no capture looks related to this repo's recent work. To check every capture, call `search_captures` with no query and page through the results.",
     );
   });
 

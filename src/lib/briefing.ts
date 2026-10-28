@@ -70,7 +70,7 @@ function rulesSection(rules: string): string {
 
 export function formatBriefing(candidates: BriefingCandidate[], rules: string): string {
   if (candidates.length === 0) {
-    return `xkg briefing: no capture looks related to this repo's recent work. To check every capture, page through \`list_inbox\`.${rulesSection(rules)}`;
+    return `xkg briefing: no capture looks related to this repo's recent work. To check every capture, call \`search_captures\` with no query and page through the results.${rulesSection(rules)}`;
   }
 
   const n = candidates.length;
@@ -81,7 +81,7 @@ What to do:
 2. Keep only real matches. For each, name a file you opened and the change.
 3. Show the user at most 3, best first, and ask before changing anything.
 4. When you commit a change that used one, include \`xkg-capture: <filename>\` in the commit message, then call \`apply_capture\` with the filename and the commit sha.
-To check every capture instead of these candidates, page through \`list_inbox\`.`;
+To check every capture instead of these candidates, call \`search_captures\` with no query and page through the results.`;
 
   const items = candidates.map((c, i) => {
     const lines = [
