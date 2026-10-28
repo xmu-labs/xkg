@@ -337,7 +337,7 @@ npx -y @xmu-labs/xkg@latest <command>
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
-| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook |
+| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook. Setup checks that the hook can reach xkg, and the hook runs the CLI version that installed it (run setup again to update) |
 | `config set agent "claude -p"` | Set which assistant `kos` should drive |
 | `kos --key YOUR_API_KEY` | Implement the latest plan in an isolated worktree |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |

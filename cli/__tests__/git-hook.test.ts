@@ -56,11 +56,11 @@ describe("installPostCommitHook", () => {
   beforeEach(() => { repo = makeRepo(); });
   afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
-  const LINE = 'xkg_sha=$(git rev-parse HEAD); npx -y @xmu-labs/xkg@latest post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg';
+  const LINE = 'xkg_sha=$(git rev-parse HEAD); npx -y @xmu-labs/xkg@1.7.0 post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg';
 
   it("creates an executable hook that records the commit sha before going to the background", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
-    const path = installPostCommitHook(repo);
+    const path = installPostCommitHook(repo, "1.7.0");
     expect(path).toBe(join(repo, ".git", "hooks", "post-commit"));
     expect(readFileSync(path, "utf-8")).toBe(`#!/bin/sh\n${LINE}\n`);
     expect(statSync(path).mode & 0o111).not.toBe(0);
@@ -70,9 +70,22 @@ describe("installPostCommitHook", () => {
     const { installPostCommitHook } = await import("../git-hook.js");
     const path = join(repo, ".git", "hooks", "post-commit");
     writeFileSync(path, "#!/bin/bash\necho mine\nnpx -y @xmu-labs/xkg@latest post-commit --key old >/dev/null 2>&1 & # xkg\n");
-    installPostCommitHook(repo);
-    installPostCommitHook(repo);
+    installPostCommitHook(repo, "1.6.1");
+    installPostCommitHook(repo, "1.7.0");
     expect(readFileSync(path, "utf-8")).toBe(`#!/bin/bash\necho mine\n${LINE}\n`);
+  });
+
+  it("pins the CLI version that installed it, so a release can't change every repo's hook at once", async () => {
+    const { installPostCommitHook } = await import("../git-hook.js");
+    const path = installPostCommitHook(repo, "1.7.0");
+    expect(readFileSync(path, "utf-8")).toContain("npx -y @xmu-labs/xkg@1.7.0 post-commit");
+    expect(readFileSync(path, "utf-8")).not.toContain("@latest");
+  });
+
+  it("falls back to @latest when its own version is unknown", async () => {
+    const { installPostCommitHook } = await import("../git-hook.js");
+    const path = installPostCommitHook(repo, "0.0.0");
+    expect(readFileSync(path, "utf-8")).toContain("npx -y @xmu-labs/xkg@latest post-commit");
   });
 
   it("refuses to touch a hook written in another language", async () => {
@@ -107,8 +120,15 @@ describe("postCommit", () => {
     rmSync(repo, { recursive: true, force: true });
   });
 
+  type Sent = { method: string; params: { name: string; arguments: Record<string, unknown>; clientInfo?: { name: string } } };
+  function sent(): Array<{ body: Sent; session: string | undefined }> {
+    return fetchSpy.mock.calls.map((c: unknown[]) => {
+      const init = c[1] as { body: string; headers: Record<string, string> };
+      return { body: JSON.parse(init.body) as Sent, session: init.headers["Mcp-Session-Id"] };
+    });
+  }
   function calls(): Array<{ name: string; arguments: Record<string, unknown> }> {
-    return fetchSpy.mock.calls.map((c: unknown[]) => (JSON.parse((c[1] as { body: string }).body) as { params: { name: string; arguments: Record<string, unknown> } }).params);
+    return sent().filter((s) => s.body.method === "tools/call").map((s) => s.body.params);
   }
 
   it("reports each trailer to apply_capture with the commit sha and changed files", async () => {
@@ -125,6 +145,29 @@ describe("postCommit", () => {
     ]);
   });
 
+  it("names itself xkg-git-hook in one session, so the server counts these applies by agent", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    fetchSpy.mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ result: { content: [{ text: "ok" }] } }), { status: 200, headers: { "mcp-session-id": "hook-session" } })));
+    const sha = commit(repo, "a.ts", "Fix\n\nxkg-capture: a.md\nxkg-capture: b.md");
+
+    await postCommit("key", sha, repo);
+
+    expect(sent().map((s) => [s.body.method, s.body.params.clientInfo?.name ?? s.body.params.name, s.session])).toEqual([
+      ["initialize", "xkg-git-hook", undefined],
+      ["tools/call", "apply_capture", "hook-session"],
+      ["tools/call", "apply_capture", "hook-session"],
+    ]);
+  });
+
+  it("still reports when the session can't be opened", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    fetchSpy.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })));
+    const sha = commit(repo, "a.ts", "Fix\n\nxkg-capture: a.md");
+    await postCommit("key", sha, repo);
+    expect(calls()).toEqual([{ name: "apply_capture", arguments: { filename: "a.md", commit_sha: sha, target_file: "a.ts" } }]);
+  });
+
   it("does nothing for a commit without a trailer", async () => {
     const { postCommit } = await import("../git-hook.js");
     const sha = commit(repo, "a.ts", "Plain commit");
@@ -138,5 +181,40 @@ describe("postCommit", () => {
     fetchSpy.mockRejectedValue(new Error("offline"));
     await expect(postCommit("key", sha, repo)).resolves.toBeUndefined();
     await expect(postCommit("key", "not-a-sha", repo)).resolves.toBeUndefined();
+  });
+});
+
+describe("checkHookConnection", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    fetchSpy = vi.spyOn(globalThis, "fetch");
+  });
+  afterEach(() => fetchSpy.mockRestore());
+
+  it("succeeds when xkg accepts the key, without reporting any capture", async () => {
+    const { checkHookConnection } = await import("../git-hook.js");
+    fetchSpy.mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), { status: 200 }));
+
+    expect(await checkHookConnection("key")).toEqual({ ok: true });
+    const body = JSON.parse((fetchSpy.mock.calls[0]![1] as { body: string }).body) as { method: string };
+    expect(body.method).toBe("initialize");
+  });
+
+  it("says when the key is rejected", async () => {
+    const { checkHookConnection } = await import("../git-hook.js");
+    fetchSpy.mockResolvedValue(new Response("{}", { status: 401 }));
+    expect(await checkHookConnection("bad")).toEqual({ ok: false, reason: "xkg rejected the API key (HTTP 401). Run setup-git-hook again with a current key." });
+  });
+
+  it("says when xkg can't be reached", async () => {
+    const { checkHookConnection } = await import("../git-hook.js");
+    fetchSpy.mockRejectedValue(new Error("getaddrinfo ENOTFOUND"));
+    expect(await checkHookConnection("key")).toEqual({ ok: false, reason: "Could not reach xkg: getaddrinfo ENOTFOUND" });
+  });
+
+  it("says when xkg answers with an error", async () => {
+    const { checkHookConnection } = await import("../git-hook.js");
+    fetchSpy.mockResolvedValue(new Response("<html>", { status: 502 }));
+    expect(await checkHookConnection("key")).toEqual({ ok: false, reason: "xkg answered HTTP 502." });
   });
 });

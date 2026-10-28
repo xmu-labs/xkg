@@ -48,7 +48,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "setup-git-hook") {
-    const { installPostCommitHook } = await import("./git-hook.js");
+    const { installPostCommitHook, checkHookConnection } = await import("./git-hook.js");
     const { readConfig, setConfigField } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const keyArg = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
@@ -66,6 +66,14 @@ async function main(): Promise<void> {
       console.error(err instanceof Error && err.message.includes("not a shell script")
         ? err.message
         : "Not a git repository. Run this inside the repo you code in.");
+      process.exit(1);
+    }
+    // The hook runs in the background with its output discarded, so check now that it can report.
+    const check = await checkHookConnection(readConfig().key!);
+    if (check.ok) {
+      console.log("Checked: the hook reached xkg with your key.");
+    } else {
+      console.error(`The hook is installed but can't report yet: ${check.reason}`);
       process.exit(1);
     }
     return;

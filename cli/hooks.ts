@@ -258,18 +258,37 @@ function detectProjectContext(): string {
   return parts.length > 0 ? parts.join("\n\n") : "current project";
 }
 
+/**
+ * Opens an MCP session that names the caller, so the server can tell which
+ * agent made the calls on it. Returns the raw reply; callers read the status
+ * or the Mcp-Session-Id header.
+ */
+export async function initializeMcp(apiKey: string, client: string, timeoutMs = 15000): Promise<Response> {
+  return fetch(HOSTED_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: client } },
+      id: 1,
+    }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+}
+
 export async function callMcp(
   apiKey: string,
   toolName: string,
   toolArgs: Record<string, unknown>,
   timeoutMs = 15000,
+  sessionId?: string | null,
 ): Promise<string | null> {
+  const headers: Record<string, string> = { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` };
+  if (sessionId) headers["Mcp-Session-Id"] = sessionId;
   const res = await fetch(HOSTED_URL, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     body: JSON.stringify({
       jsonrpc: "2.0",
       method: "tools/call",
