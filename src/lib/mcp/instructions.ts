@@ -14,7 +14,7 @@ export const SERVER_INSTRUCTIONS = `xkg holds the user's outside knowledge (arti
 When to use it:
 - At the start of a coding session in a repo, call \`briefing\` with the repo name, branch, and last few commit messages. Mid-task, call \`recall\` with a short description of the task.
 - When the user shares something worth keeping (a link, notes, an idea), call \`capture\`.
-- After you commit a change that used a capture, add a line \`xkg-capture: <filename>\` to the commit message, then call \`apply_capture\` with the filename, the commit sha, and one line on why.
+- When you commit a change that used a capture, include a line \`xkg-capture: <filename>\` in that commit message. After the commit, call \`apply_capture\` with the filename, the commit sha, and one line on why.
 
 One-time setup, only if you can run shell commands in the user's git repo. Ask the user first, and don't ask again in this session if they say no:
 - Git hook, so applies are recorded even when a call is missed: run \`npx -y @xmu-labs/xkg@latest setup-git-hook\` in the repo. If it asks for a key, ask the user for their xkg API key (xkg.xmu.sh, Settings) and add --key <key>. Skip this if .git/hooks/post-commit already has an "# xkg" line.

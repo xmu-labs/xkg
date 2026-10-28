@@ -27,6 +27,11 @@ describe("MCP server instructions", () => {
     expect(SERVER_INSTRUCTIONS).toContain("xkg-capture:");
   });
 
+  it("puts the trailer in the commit itself, since the git hook reads it at commit time", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/when you commit[^.]*include[^.]*xkg-capture:/i);
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/after you commit[^.]*add a line/i);
+  });
+
   it("gives setup commands the published CLI actually has", () => {
     const commands = [...SERVER_INSTRUCTIONS.matchAll(/npx -y @xmu-labs\/xkg@latest ([a-z-]+)/g)].map((m) => m[1]!);
     expect(commands).toEqual(expect.arrayContaining(["setup-git-hook", "setup-hooks"]));
