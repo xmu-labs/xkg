@@ -15,6 +15,7 @@ import { clientNameFromInitialize, harnessForCall, issueMcpSessionId, verifyMcpS
 import { env } from "@/lib/env";
 import { TOOLS, type ToolName } from "@/lib/mcp/tools";
 import { HANDLERS } from "@/lib/mcp/handlers";
+import { SERVER_INSTRUCTIONS } from "@/lib/mcp/instructions";
 
 // ── Types ──
 
@@ -218,6 +219,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
                   { src: `${env.appUrl}/connector-icon-192-dark.png`, mimeType: "image/png", sizes: ["192x192"] },
                 ],
               },
+              // How to use xkg and finish setup; clients add it to the agent's system prompt.
+              instructions: SERVER_INSTRUCTIONS,
             },
           },
           wantsSse,
