@@ -15,7 +15,7 @@ body:
       options:
         - Web app (xkg.xmu.sh)
         - MCP connector in an AI worker
-        - CLI (serve-mcp, setup-hooks, kos)
+        - CLI (serve-mcp, setup-hooks, agent)
         - Self-hosted instance
     validations:
       required: true
