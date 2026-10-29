@@ -12,12 +12,14 @@ import type { WhereResult } from "../where";
 const queries: Array<{ text: string; values: unknown[] }> = [];
 let rows: unknown[] = [];
 let fail = false;
+let failDdl = false;
 
 vi.mock("../sql", () => ({
   sql: (strings: TemplateStringsArray, ...values: unknown[]) => {
     const text = strings.join("?").replace(/\s+/g, " ").trim();
     queries.push({ text, values });
     if (fail && text.startsWith("INSERT")) return Promise.reject(new Error("db down"));
+    if (failDdl && text.startsWith("CREATE TABLE")) return Promise.reject(new Error("db down"));
     return Promise.resolve({ rows, rowCount: rows.length });
   },
 }));
@@ -36,6 +38,7 @@ beforeEach(() => {
   queries.length = 0;
   rows = [];
   fail = false;
+  failDdl = false;
 });
 
 const where: WhereResult = {
@@ -61,6 +64,24 @@ describe("recordSurfaceEvents", () => {
     expect(queries[0]!.text).toContain("shown BOOLEAN");
     // A table made before the column existed gets it too
     expect(queries.map((q) => q.text)).toContain("ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN");
+  });
+
+  // protects: concurrent first uses (the stats route runs two queries at once) share one table creation; fails_when: the DDL runs twice and can collide; no_claim: other processes
+  it("creates the table once when two first uses run at the same time", async () => {
+    vi.resetModules();
+    const fresh = await import("../surface-events");
+    await Promise.all([fresh.applySourceStats("2026-10-29", 1), fresh.matchingStats("2026-10-29", 1)]);
+    expect(queries.filter((q) => q.text.startsWith("CREATE TABLE"))).toHaveLength(1);
+  });
+
+  it("tries to create the table again after a failed attempt", async () => {
+    vi.resetModules();
+    const fresh = await import("../surface-events");
+    failDdl = true;
+    await expect(fresh.matchingStats("2026-10-29", 1)).rejects.toThrow("db down");
+    failDdl = false;
+    await expect(fresh.matchingStats("2026-10-29", 1)).resolves.toEqual([]);
+    expect(queries.filter((q) => q.text.startsWith("CREATE TABLE"))).toHaveLength(2);
   });
 
   it("does nothing for an empty list", async () => {
@@ -137,26 +158,32 @@ describe("matchingStats", () => {
   // protects: AC21, median tokens per match; fails_when: unknown counts skew the median or no-fit matches go uncounted; no_claim: none
   it("counts matches and suggestions per week, with the median tokens of the calls that reported them", async () => {
     rows = [
-      { user_id: 7, tier: "strong", tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
-      { user_id: 7, tier: "possible", tokens_in: 300, tokens_out: 30, scorer: "evidence", surfaced_at: "2026-10-28T10:00:00Z" },
-      { user_id: 7, tier: "none", tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-28T11:00:00Z" },
-      { user_id: 7, tier: "none", tokens_in: null, tokens_out: null, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" },
-      { user_id: 7, tier: "strong", tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-20T10:00:00Z" },
-      { user_id: 7, tier: "strong", tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-21T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
+      { user_id: 7, tier: "possible", shown: true, tokens_in: 300, tokens_out: 30, scorer: "evidence", surfaced_at: "2026-10-28T10:00:00Z" },
+      { user_id: 7, tier: "none", shown: true, tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-28T11:00:00Z" },
+      { user_id: 7, tier: "none", shown: false, tokens_in: null, tokens_out: null, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-20T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-21T10:00:00Z" },
     ];
     expect(await matchingStats("2026-10-29", 2)).toEqual([
       { userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 4, suggestions: 2, medianTokens: 220 },
       { userId: 7, weekStart: "2026-10-19", scorer: "evidence", matches: 2, suggestions: 2, medianTokens: 165 },
     ]);
-    expect(selects()[0]!.text).toMatch(/WHERE channel = 'where' AND surfaced_at >= \?/);
+    expect(selects()[0]!.text).toMatch(/^SELECT user_id, tier, shown, tokens_in, tokens_out, scorer, surfaced_at FROM surface_events WHERE channel = 'where' AND surfaced_at >= \?/);
+  });
+
+  // protects: a suggestion is a fit the user saw; fails_when: a fit whose section never reached the agent counts as a suggestion; no_claim: none
+  it("counts a fit the user never saw as a match but not a suggestion", async () => {
+    rows = [{ user_id: 7, tier: "strong", shown: false, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" }];
+    expect(await matchingStats("2026-10-29", 1)).toEqual([{ userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 1, suggestions: 0, medianTokens: 110 }]);
   });
 
   // protects: Jev's cost (xkg's) and the model's (the user's) are never mixed; fails_when: matches from both engines share one median; no_claim: none
   it("counts each engine separately", async () => {
     rows = [
-      { user_id: 7, tier: "strong", tokens_in: 3300, tokens_out: 200, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
-      { user_id: 7, tier: "possible", tokens_in: 6000, tokens_out: 400, scorer: "jev", surfaced_at: "2026-10-28T10:00:00Z" },
-      { user_id: 7, tier: "none", tokens_in: 5000, tokens_out: 300, scorer: "jev", surfaced_at: "2026-10-28T11:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 3300, tokens_out: 200, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
+      { user_id: 7, tier: "possible", shown: true, tokens_in: 6000, tokens_out: 400, scorer: "jev", surfaced_at: "2026-10-28T10:00:00Z" },
+      { user_id: 7, tier: "none", shown: true, tokens_in: 5000, tokens_out: 300, scorer: "jev", surfaced_at: "2026-10-28T11:00:00Z" },
     ];
     expect(await matchingStats("2026-10-29", 1)).toEqual([
       { userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 1, suggestions: 1, medianTokens: 3500 },
