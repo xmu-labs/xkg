@@ -23,8 +23,8 @@ import { sql } from "./sql";
 import { env } from "./env";
 import { ensureHandoffScoreTable } from "./db";
 import { captureKey } from "./apply-events";
-import { readFile } from "./github";
-import { captureName, markDead, parseHandoffLog, readHandoffs, type HandoffLogEntry } from "./handoffs";
+import { githubGet } from "./github";
+import { captureName, HANDOFFS_PATH, markDead, parseHandoffLog, parseHandoffs, type HandoffLogEntry } from "./handoffs";
 
 export const HALF_LIFE_DAYS = 30;
 /** Negatives that make a capture × file or capture × repo a dead end. */
@@ -79,7 +79,8 @@ export function scoresOf(entries: HandoffLogEntry[], today: string): Score[] {
   };
   const reverted = new Set<HandoffLogEntry>();
   for (const r of reverts) {
-    const apply = applies.find((a) => !reverted.has(a) && a.commit && sameCommit(a.commit, r.commit!));
+    // The apply of that commit in the repo the revert names (an upstream and its fork share commits)
+    const apply = applies.find((a) => !reverted.has(a) && a.commit && sameCommit(a.commit, r.commit!) && (!r.repo || a.repo!.toLowerCase() === r.repo.toLowerCase()));
     if (apply) reverted.add(apply);
     const repo = apply?.repo ?? r.repo;
     if (repo) add(repo, ["", ...(apply?.files ?? [])], r.date, -1);
@@ -226,29 +227,37 @@ export async function provenFor(userId: number, tags: string[], today: string): 
   }
 }
 
+/** A file's content, or null when it doesn't exist. Throws on any other GitHub answer, so a failed read is never taken for a missing file. */
+async function readOrThrow(token: string, repo: string, path: string): Promise<string | null> {
+  const res = await githubGet<{ content: string }>(token, repo, path);
+  if (res.status === 404) return null;
+  if (!res.ok || !res.data) throw new Error(`GitHub GET ${path}: HTTP ${res.status}`);
+  return Buffer.from(res.data.content.replace(/\n/g, ""), "base64").toString("utf-8");
+}
+
 /**
  * Makes the user's handoff_scores again from git: every capture with a row in
  * HANDOFFS.md, read from inbox/, applied/ or archived/. Captures whose
- * finished rows were pruned from HANDOFFS.md are left out.
+ * finished rows were pruned from HANDOFFS.md are left out. Everything is read
+ * before the old rows are dropped, so a failed GitHub read throws and leaves
+ * the index as it was.
  */
 export async function rebuildHandoffIndex(user: LearnUser, today: string): Promise<{ captures: number; rows: number }> {
   if (!user.github_repo) return { captures: 0, rows: 0 };
-  const names = [...new Set((await readHandoffs(user.github_token, user.github_repo)).map((r) => captureName(r.capture)))];
-  await ensureHandoffScoreTable();
-  await sql`DELETE FROM handoff_scores WHERE user_id = ${user.id}`;
-  let captures = 0;
-  let rows = 0;
+  const handoffs = await readOrThrow(user.github_token, user.github_repo, HANDOFFS_PATH);
+  const names = [...new Set((handoffs ? parseHandoffs(handoffs).rows : []).map((r) => captureName(r.capture)))];
+  const rebuilt: { key: string; tagKeys: string[]; scores: Score[] }[] = [];
   for (const name of names) {
     let content: string | null = null;
     for (const dir of ["inbox", "applied", "archived"]) {
-      content = (await readFile(user.github_token, user.github_repo, `${dir}/${name}`))?.content ?? null;
+      content = await readOrThrow(user.github_token, user.github_repo, `${dir}/${name}`);
       if (content) break;
     }
-    if (!content) continue;
-    const scores = scoresOf(parseHandoffLog(content), today);
-    await insertScores(user.id, captureKey(name), tagsOf(content).map(tagKey), scores, today);
-    captures++;
-    rows += scores.length;
+    if (content) rebuilt.push({ key: captureKey(name), tagKeys: tagsOf(content).map(tagKey), scores: scoresOf(parseHandoffLog(content), today) });
   }
-  return { captures, rows };
+
+  await ensureHandoffScoreTable();
+  await sql`DELETE FROM handoff_scores WHERE user_id = ${user.id}`;
+  for (const c of rebuilt) await insertScores(user.id, c.key, c.tagKeys, c.scores, today);
+  return { captures: rebuilt.length, rows: rebuilt.reduce((n, c) => n + c.scores.length, 0) };
 }

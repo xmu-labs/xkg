@@ -106,6 +106,21 @@ describe("matchCapture with Jev", () => {
     expect(where.files[0]).toEqual({ path: outside, why: "applied twice before for llm" });
   });
 
+  // protects: a capture whose words share nothing with the code still reaches a file proven for its tag; fails_when: the match stops at "no shared words", or the repo's pool is skipped; no_claim: none
+  it("rates proven files even when no file shares a word with the capture", async () => {
+    const odd = { ...capture, inferredTitle: "Zqxv", coreIdea: "Blorpt fnargle quuxly.", takeaways: ["Wibblet zorp."] };
+    expect(rankFiles([xkg, other], [odd.inferredTitle, odd.coreIdea, ...odd.takeaways].join("\n"))).toEqual([]);
+    const jev = jevStub({ [`xmu-labs/xkg:${LLM_TS}`]: 0.73 });
+    const proven = async () => [{ tag: "llm", repo: "xmu-labs/xkg", path: LLM_TS, captures: 2, weight: 2 }];
+    const where = (await matchCapture(user, odd, deps({ jev, proven }).d))!;
+    const sent = jev.score.mock.calls[0]![1] as Candidate[];
+    expect(sent.map((c) => [c.repo, c.path, c.rel, c.note])).toEqual([["xmu-labs/xkg", LLM_TS, 0, "applied twice before for llm"]]);
+    expect(where.files).toEqual([{ path: LLM_TS, why: "applied twice before for llm" }]);
+
+    const none = (await matchCapture(user, odd, deps({ jev: jevStub({}), proven: async () => [] }).d))!;
+    expect(none.noFit).toEqual({ reason: "no-shared-words" });
+  });
+
   // protects: learning never blocks a match; fails_when: a failed read of proven files fails the match; no_claim: none
   it("matches as before when proven files can't be read", async () => {
     const jev = jevStub({ [`xmu-labs/xkg:${LLM_TS}`]: 0.73 });

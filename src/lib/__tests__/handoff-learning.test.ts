@@ -23,8 +23,15 @@ vi.mock("../sql", () => ({
 }));
 
 const files: Record<string, { content: string; sha: string }> = {};
+/** GitHub answers for a path that isn't a 200 or a 404 (a rate limit, an expired token). */
+const failing: Record<string, number> = {};
 vi.mock("../github", () => ({
   readFile: async (_t: string, _r: string, path: string) => files[path] ?? null,
+  githubGet: async (_t: string, _r: string, path: string) => {
+    if (failing[path]) return { ok: false, data: { message: "rate limited" }, status: failing[path] };
+    const f = files[path];
+    return f ? { ok: true, data: { content: Buffer.from(f.content).toString("base64"), sha: f.sha }, status: 200 } : { ok: false, data: null, status: 404 };
+  },
   githubPut: vi.fn(async (_t: string, _r: string, path: string, content: string) => {
     files[path] = { content, sha: `${path}-${Object.keys(files).length}` };
   }),
@@ -48,6 +55,7 @@ beforeEach(() => {
   selectRows = [];
   fail = false;
   for (const k of Object.keys(files)) delete files[k];
+  for (const k of Object.keys(failing)) delete failing[k];
 });
 
 describe("decay", () => {
@@ -79,6 +87,22 @@ describe("scoresOf", () => {
     ], TODAY))).toEqual({
       "acme/app src/a.ts": { weight: -1, negatives: 1 },
       "acme/web (repo)": { weight: -1, negatives: 1 },
+    });
+  });
+
+  // protects: a revert reported for one repo takes back that repo's apply only; fails_when: an apply of the same commit in another repo (a fork) is cancelled instead; no_claim: none
+  it("matches a revert to the apply in the repo it names", () => {
+    const sha = "d".repeat(40);
+    const scores = scoresOf([
+      e({ outcome: "applied", commit: sha, files: ["src/a.ts"] }),
+      e({ outcome: "applied", repo: "acme/fork", commit: sha, files: ["src/a.ts"] }),
+      { date: TODAY, repo: "acme/fork", outcome: "reverted", commit: sha },
+    ], TODAY);
+    expect(byKey(scores)).toEqual({
+      "acme/app (repo)": { weight: 1, negatives: 0 },
+      "acme/app src/a.ts": { weight: 1, negatives: 0 },
+      "acme/fork (repo)": { weight: -1, negatives: 1 },
+      "acme/fork src/a.ts": { weight: -1, negatives: 1 },
     });
   });
 
@@ -203,5 +227,19 @@ describe("rebuildHandoffIndex", () => {
     expect(queries[wipe]!.text).toBe("DELETE FROM handoff_scores WHERE user_id = ?");
     expect(wipe).toBeLessThan(queries.findIndex((q) => q.text.startsWith("INSERT")));
     expect(inserts().map((q) => q.values)).toEqual(learned);
+  });
+
+  // protects: a failed GitHub read never wipes what was learned; fails_when: an error reading HANDOFFS.md or a capture deletes the index or reports success; no_claim: none
+  it("keeps the index when GitHub can't be read", async () => {
+    const rowFor = (capture: string): HandoffRow => ({ capture, repo: "acme/app", kind: "code", files: [], fit: "strong", status: "applied", since: TODAY, source: "auto" });
+    files["HANDOFFS.md"] = { content: renderHandoffs([rowFor(`inbox/${NAME}`)]), sha: "h1" };
+    files[`inbox/${NAME}`] = { content: capture([e({ outcome: "applied", files: ["src/a.ts"] })]), sha: "a1" };
+    for (const path of ["HANDOFFS.md", `inbox/${NAME}`]) {
+      failing[path] = 403;
+      queries.length = 0;
+      await expect(rebuildHandoffIndex(user, TODAY)).rejects.toThrow(/HTTP 403/);
+      expect(queries.some((q) => q.text.startsWith("DELETE"))).toBe(false);
+      delete failing[path];
+    }
   });
 });

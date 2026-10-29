@@ -204,22 +204,29 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const text = captureText(capture);
     const query = [text.title, text.coreIdea, ...text.takeaways].join("\n");
     const ranked = rankFiles(maps, query);
-    if (!ranked.length) return none({ reason: "no-shared-words" });
     const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
+    // Files proven for the capture's tags, in the maps: Jev rates them even when no name matches
+    const today = now.toISOString().slice(0, 10);
+    const proven = jev
+      ? (await (deps.proven ?? ((tags: string[]) => provenFor(user.id, tags, today)))(capture.tags ?? []).catch(() => [])).filter((p) =>
+          maps.some((m) => m.repo === p.repo && m.files.some((f) => f.p === p.path)),
+        )
+      : [];
+    if (!ranked.length && !proven.length) return none({ reason: "no-shared-words" });
+    const noFitFromRanked = () => (ranked.length ? noFitOf(mapOf(ranked[0]!.repo), fresh) : { reason: "no-shared-words" as const });
 
     if (jev) {
       try {
-        const today = now.toISOString().slice(0, 10);
-        const proven = await (deps.proven ?? ((tags: string[]) => provenFor(user.id, tags, today)))(capture.tags ?? []).catch(() => []);
         const decided = await decideWithJev(jev, maps, ranked, text, query, fresh, proven);
         tokens = decided.tokens;
-        return decided.top ? decided.top : none(noFitOf(mapOf(ranked[0]!.repo), fresh), null, jev);
+        return decided.top ? decided.top : none(noFitFromRanked(), null, jev);
       } catch (err) {
         console.error("[where] Jev failed, the model picks instead:", err instanceof Error ? err.message : err);
         tokens = undefined;
       }
     }
 
+    if (!ranked.length) return none({ reason: "no-shared-words" });
     let usage = null as LlmUsage | null;
     const raw = await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture), (u) => { usage = u; });
     tokens = { in: usage?.tokensIn ?? null, out: usage?.tokensOut ?? null };
@@ -295,13 +302,15 @@ async function decideWithJev(
   proven: Proven[],
 ): Promise<{ top: WhereResult | null; tokens: NonNullable<WhereResult["tokens"]> }> {
   const pool: Candidate[] = [];
-  for (const repo of new Set(ranked.map((r) => r.repo))) {
-    const map = maps.find((m) => m.repo === repo)!;
+  for (const repo of new Set([...ranked.map((r) => r.repo), ...proven.map((p) => p.repo)])) {
+    const map = maps.find((m) => m.repo === repo);
+    if (!map) continue;
     const byPath = new Map(map.files.map((f) => [f.p, f]));
     const mine = ranked.filter((r) => r.repo === repo);
     const top = mine.slice(0, JEV_POOL);
     const notes = new Map(proven.filter((p) => p.repo === repo && byPath.has(p.path)).map((p) => [p.path, provenNote(p)]));
-    const rel = (path: string) => (mine.find((r) => r.path === path)?.score ?? 0) / top[0]!.score;
+    // A proven file the ranker didn't score, or a repo it didn't rank at all, starts from 0
+    const rel = (path: string) => (top.length ? (mine.find((r) => r.path === path)?.score ?? 0) / top[0]!.score : 0);
     const paths = [...top.map((r) => r.path), ...[...notes.keys()].filter((path) => !top.some((r) => r.path === path))];
     for (const path of paths) {
       const note = notes.get(path);
