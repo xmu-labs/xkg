@@ -25,7 +25,7 @@ vi.mock("../github", () => ({
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
 }));
 
-const { HANDOFFS_PATH, parseHandoffs, renderHandoffs, upsertHandoff, autoHandoff, queueHandoff } = await import("../handoffs");
+const { HANDOFFS_PATH, parseHandoffs, renderHandoffs, upsertHandoff, autoHandoff, queueHandoff, setHandoffStatus } = await import("../handoffs");
 type Row = import("../handoffs").HandoffRow;
 
 const row = (over: Partial<Row> = {}): Row => ({
@@ -188,5 +188,26 @@ describe("queueHandoff", () => {
     files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
     expect(await queueHandoff("t", "o/k", row())).toEqual({ row: row(), changed: false });
     expect(githubPut).not.toHaveBeenCalled();
+  });
+});
+
+describe("setHandoffStatus", () => {
+  // protects: a status change lands only on the row as it was read, so an edit or answer made meanwhile is kept; fails_when: a row whose status or date changed since the read is overwritten; no_claim: none
+  it("changes a row only if it's unchanged since it was read", async () => {
+    const read = row();
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [read, row({ capture: "inbox/b.md" })], "expired")).toBe(true);
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.status)).toEqual(["done", "expired"]);
+  });
+
+  // protects: the re-read after a conflict is checked the same way; fails_when: the retry overwrites a row the conflicting write changed; no_claim: none
+  it("checks again on the retry after a conflict", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    githubPut.mockImplementationOnce(async () => {
+      files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "snoozed:2026-11-05" })]), sha: "s2" });
+      throw new Error("GitHub PUT HANDOFFS.md: HTTP 409");
+    });
+    await setHandoffStatus("t", "o/k", [row()], "expired");
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows[0]!.status).toBe("snoozed:2026-11-05");
   });
 });

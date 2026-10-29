@@ -47,9 +47,16 @@ export function offerable(rows: HandoffRow[], repo: string, today: string): Hand
     .map(({ r }) => r);
 }
 
-/** Rows offered on EXPIRE_AFTER_DAYS earlier days since they were queued. `days` is keyed by capture name. */
+/**
+ * Rows offered on EXPIRE_AFTER_DAYS earlier days since they last started
+ * waiting: when queued, or when a snooze ended. `days` is keyed by capture name.
+ */
 export function expiredRows(rows: HandoffRow[], days: Map<string, string[]>, today: string): HandoffRow[] {
-  return rows.filter((r) => (days.get(captureName(r.capture)) ?? []).filter((d) => d >= r.since && d < today).length >= EXPIRE_AFTER_DAYS);
+  return rows.filter((r) => {
+    const snoozedUntil = r.status.startsWith("snoozed:") ? r.status.slice("snoozed:".length) : "";
+    const from = snoozedUntil > r.since ? snoozedUntil : r.since;
+    return (days.get(captureName(r.capture)) ?? []).filter((d) => d >= from && d < today).length >= EXPIRE_AFTER_DAYS;
+  });
 }
 
 export const HANDOFF_GUIDE = `If the user says yes, list these, let them pick one, then follow "How to hand off" below.

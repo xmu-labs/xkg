@@ -45,6 +45,14 @@ describe("expiredRows", () => {
     expect(expiredRows([r], days(["2026-10-21", "2026-10-22", "2026-10-29"]), "2026-10-29")).toEqual([]);
     expect(expiredRows([r], days(["2026-10-01", "2026-10-02", "2026-10-21"]), "2026-10-29")).toEqual([]);
   });
+
+  // protects: a snooze gives the capture a fresh start; fails_when: offers from before the snooze ended still count toward expiry; no_claim: none
+  it("counts only offers since a snooze ended", () => {
+    const r = row({ status: "snoozed:2026-11-05", since: "2026-10-20" });
+    const days = (d: string[]) => new Map([["2026-10-29-llm-memory.md", d]]);
+    expect(expiredRows([r], days(["2026-10-21", "2026-10-22", "2026-10-23", "2026-11-05", "2026-11-06"]), "2026-11-07")).toEqual([]);
+    expect(expiredRows([r], days(["2026-10-21", "2026-11-05", "2026-11-06", "2026-11-07"]), "2026-11-08")).toEqual([r]);
+  });
 });
 
 describe("formatOffer", () => {

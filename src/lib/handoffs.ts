@@ -160,12 +160,17 @@ export function queueHandoff(token: string, repo: string, row: HandoffRow): Prom
 const samePair = (a: Pick<HandoffRow, "capture" | "repo">, b: Pick<HandoffRow, "capture" | "repo">) =>
   a.repo.toLowerCase() === b.repo.toLowerCase() && captureName(a.capture) === captureName(b.capture);
 
-/** Sets the status of these capture and repo pairs where they are still waiting. True when written (or nothing to change). */
-export async function setHandoffStatus(token: string, repo: string, pairs: Pick<HandoffRow, "capture" | "repo">[], status: string): Promise<boolean> {
-  const done = await updateHandoffs(token, repo, `handoff: mark ${pairs.length} ${status}`, (rows) => {
+/**
+ * Sets the status of these rows, each only if it's still as it was read (same
+ * status and date), so a change the user or another call made meanwhile is
+ * kept. A dead row stays dead. True when written (or nothing to change).
+ */
+export async function setHandoffStatus(token: string, repo: string, read: HandoffRow[], status: string): Promise<boolean> {
+  const done = await updateHandoffs(token, repo, `handoff: mark ${read.length} ${status}`, (rows) => {
     let changed = false;
     const next = rows.map((r) => {
-      if (!pairs.some((p) => samePair(p, r)) || r.status === status || r.status === "dead") return r;
+      const unchanged = read.some((p) => samePair(p, r) && p.status === r.status && p.since === r.since);
+      if (!unchanged || r.status === status || r.status === "dead") return r;
       changed = true;
       return { ...r, status };
     });
