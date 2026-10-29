@@ -114,7 +114,7 @@ export async function applySourceStats(today: string, weeks: number): Promise<So
 
 export type MatchingWeek = { userId: number; weekStart: string; matches: number; suggestions: number; medianTokens: number | null };
 
-type MatchRow = { user_id: number; tier: string | null; tokens_in: number | null; tokens_out: number | null; surfaced_at: string | Date };
+type MatchRow = { user_id: number; tier: string | null; shown: boolean | null; tokens_in: number | null; tokens_out: number | null; surfaced_at: string | Date };
 
 function median(values: number[]): number | null {
   if (!values.length) return null;
@@ -130,7 +130,7 @@ function median(values: number[]): number | null {
 export async function matchingStats(today: string, weeks: number): Promise<MatchingWeek[]> {
   await ensureSurfaceEventTable();
   const { rows } = await sql<MatchRow>`
-    SELECT user_id, tier, tokens_in, tokens_out, surfaced_at
+    SELECT user_id, tier, shown, tokens_in, tokens_out, surfaced_at
     FROM surface_events
     WHERE channel = 'where' AND surfaced_at >= ${windowStart(today, weeks)}
   `;
@@ -145,7 +145,7 @@ export async function matchingStats(today: string, weeks: number): Promise<Match
       groups.set(id, g);
     }
     g.matches++;
-    if (row.tier === "strong" || row.tier === "possible") g.suggestions++;
+    if (row.shown && (row.tier === "strong" || row.tier === "possible")) g.suggestions++;
     if (row.tokens_in !== null && row.tokens_out !== null) g.tokens.push(row.tokens_in + row.tokens_out);
   }
 
