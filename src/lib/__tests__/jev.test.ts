@@ -104,7 +104,7 @@ describe("jevScorer", () => {
   const cand = (repo: string, file: MapFile): Candidate => ({ repo, path: file.p, rel: 0, whyKept: false, fresh: true, file });
 
   // protects: one request per repo, and no file reads as a better fit than "anything fits" allows; fails_when: repos share a request, a file's p exceeds anything_fits, or tokens are not summed; no_claim: how good the cutoffs are
-  it("asks once per repo, scores each file as the lower of its fit and 'anything fits', and reports the tokens", async () => {
+  it("asks once per repo, scores each file as its fit times 'anything fits', and reports the tokens", async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {
       const repo = JSON.parse(init.body as string).state.repo.name as string;
       return repo === "acme/app"
@@ -116,14 +116,29 @@ describe("jevScorer", () => {
     const scores = await scorer.score(capture, [cand("acme/app", files[0]!), cand("acme/app", files[1]!), cand("acme/notes", { p: "src/memory.ts", e: ["recall"] })], onUsage);
 
     expect(fetch).toHaveBeenCalledTimes(2);
-    expect(scores).toEqual([
-      { repo: "acme/app", path: "src/lib/llm.ts", p: 0.73 },
-      { repo: "acme/app", path: "src/lib/providers.ts", p: 0.2 },
-      { repo: "acme/notes", path: "src/memory.ts", p: 0.1 },
+    expect(scores.map((s) => [s.repo, s.path])).toEqual([
+      ["acme/app", "src/lib/llm.ts"],
+      ["acme/app", "src/lib/providers.ts"],
+      ["acme/notes", "src/memory.ts"],
     ]);
+    expect(scores[0]!.p).toBeCloseTo(0.79 * 0.73, 10);
+    expect(scores[1]!.p).toBeCloseTo(0.2 * 0.73, 10);
+    expect(scores[2]!.p).toBeCloseTo(0.5 * 0.1, 10);
     expect(onUsage).toHaveBeenCalledWith({ tokensIn: 12000, tokensOut: 800 });
     expect(scorer.name).toBe("jev");
     expect(scorer.cutoffs).toEqual(JEV_CUTOFFS);
+  });
+
+  // protects: the file Jev rates higher stays ahead even when "anything fits" is lower than both; fails_when: the gate flattens them to one score and the ranker's order picks the file; no_claim: none
+  it("keeps Jev's order between files when 'anything fits' caps them", async () => {
+    const fetch = fetchOf(() => reply({ fit_0: noul(0.7), fit_1: noul(0.9), anything_fits: noul(0.6) }));
+    const [first, second] = await jevScorer("ts-key", fetch).score(capture, [cand("acme/app", files[0]!), cand("acme/app", files[1]!)]);
+    expect(second!.p).toBeGreaterThan(first!.p);
+  });
+
+  // protects: the tiers use the cutoffs measured on captures with known targets; fails_when: they drift from the measured values; no_claim: that the values are final
+  it("uses Strong 0.5 and Possible 0.4", () => {
+    expect(JEV_CUTOFFS).toEqual({ strong: 0.5, possible: 0.4 });
   });
 
   // protects: matching-cost stats never count a call as free; fails_when: a reply without token counts adds 0 to the total; no_claim: none
