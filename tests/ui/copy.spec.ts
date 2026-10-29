@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME, WORST_REPO } from "./fixtures";
 
 // Framing and copy (2026-10-24 review): say what xkg does, and show the next step.
 
@@ -73,4 +73,22 @@ test("with reduced motion Settings fades instead of sliding", async ({ page }) =
     return { property: s.transitionProperty, duration: s.transitionDuration, transform: s.transform };
   });
   expect(t).toEqual({ property: "opacity", duration: "0.2s", transform: "none" });
+});
+
+test("Settings says where captures are stored and links to the repo", async ({ page }) => {
+  await signIn(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Captures are saved in", { exact: true })).toBeVisible();
+  const link = dialog.getByRole("link", { name: WORST_REPO });
+  await expect(link).toBeVisible();
+  await expect(link).toHaveAttribute("href", `https://github.com/${WORST_REPO}`);
+});
+
+test("Settings leaves out the repo row before onboarding", async ({ page }) => {
+  await signIn(page, { ...WORST_ME, knowledgeRepo: null });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  await expect(page.getByRole("dialog").getByText("Captures are saved in")).toHaveCount(0);
 });
