@@ -388,9 +388,11 @@ async function createHandoffScoreTable(): Promise<void> {
       negatives INTEGER NOT NULL,
       tag_keys TEXT[] NOT NULL,
       updated_at DATE NOT NULL,
+      log_entries INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (user_id, capture_key, repo, path)
     )
   `;
+  await sql`ALTER TABLE handoff_scores ADD COLUMN IF NOT EXISTS log_entries INTEGER NOT NULL DEFAULT 0`;
   await sql`CREATE INDEX IF NOT EXISTS handoff_scores_tags ON handoff_scores USING GIN (tag_keys)`;
 }
 

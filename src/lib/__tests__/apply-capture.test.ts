@@ -42,8 +42,13 @@ vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
 const recordApplyEvent = vi.fn();
 vi.mock("../apply-events", () => ({ recordApplyEvent: (...a: unknown[]) => recordApplyEvent(...a) }));
+const forgetCapture = vi.fn();
+vi.mock("../handoff-learning", async (original) => ({
+  ...(await original<typeof import("../handoff-learning")>()),
+  forgetCapture: (...a: unknown[]) => forgetCapture(...a),
+}));
 
-const { handleApplyCapture, handleApplyToContext, handleApplyStats } = await import("../mcp/handlers");
+const { handleApplyCapture, handleApplyToContext, handleApplyStats, handleDeleteCapture } = await import("../mcp/handlers");
 
 const llmUser = { id: 1, github_token: "t", github_repo: "o/r", llm_api_key: "k" } as unknown as User;
 // No LLM key, so the best-effort re-synthesis is skipped
@@ -270,5 +275,19 @@ describe("apply_capture tool schema", () => {
     expect(note).toMatch(/why/i);
     expect(note).toMatch(/one line/i);
     expect(note).toMatch(/200/);
+  });
+});
+
+describe("delete_capture", () => {
+  // protects: what xkg learned from a capture's handoffs goes with it, so a new capture with its name starts fresh; fails_when: its learning stays after the delete, or is dropped when the delete didn't happen; no_claim: the statement itself (handoff-learning tests)
+  it("forgets what was learned from the capture", async () => {
+    forgetCapture.mockReset();
+    readFile.mockImplementation((_t: string, _r: string, path: string) => (path === "inbox/2026-10-01-x.md" ? { content: CAPTURE, sha: "s1" } : null));
+    expect(await handleDeleteCapture(user, { filename: "2026-10-01-x.md" })).toBe("Deleted: 2026-10-01-x.md");
+    expect(forgetCapture).toHaveBeenCalledWith(1, "2026-10-01-x.md");
+
+    forgetCapture.mockReset();
+    expect(await handleDeleteCapture(user, { filename: "gone.md" })).toMatch(/^File not found/);
+    expect(forgetCapture).not.toHaveBeenCalled();
   });
 });

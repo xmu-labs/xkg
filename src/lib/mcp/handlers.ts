@@ -28,6 +28,7 @@ import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
+import { forgetCapture } from "@/lib/handoff-learning";
 import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted, weeklyApplyStats } from "@/lib/ledger";
@@ -414,6 +415,7 @@ export async function handleDeleteCapture(user: User, args: { filename: string }
 
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `delete: ${args.filename}`);
   await updateIndexEntry(user.github_token, user.github_repo, args.filename, "delete");
+  await forgetCapture(user.id, args.filename);
 
   return `Deleted: ${args.filename}`;
 }
