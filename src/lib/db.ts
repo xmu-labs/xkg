@@ -356,6 +356,7 @@ async function createHandoffEventTable(): Promise<void> {
       at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE handoff_events ADD COLUMN IF NOT EXISTS with_commit BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS handoff_events_user_capture ON handoff_events (user_id, capture_key, repo)`;
 }
 

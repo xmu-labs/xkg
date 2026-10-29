@@ -63,15 +63,19 @@ export const TOOLS = [
   },
   {
     name: "apply_capture",
-    description: "Mark a capture as applied. Call it right after you commit a change that applies a capture, with the commit sha. Records how and where the knowledge was used. The first time, moves the capture from inbox/ to applied/, updates status and index, and triggers rule re-synthesis; calling it for an already-applied capture adds another application log entry.",
+    description: "Mark a capture as applied, or record the user's answer to a handoff. Call it right after you commit a change that applies a capture, with the commit sha and the repo. Records how and where the knowledge was used. The first time, moves the capture from inbox/ to applied/, updates status and index, and triggers rule re-synthesis; calling it for an already-applied capture adds another application log entry. If the user turned the capture down, pass outcome declined (with a reason), done or later instead: the capture stays where it is, and a declined capture never counts as an apply.",
     inputSchema: {
       type: "object" as const,
       properties: {
         filename: { type: "string", description: "Capture filename (e.g. '2026-04-02-some-slug.md'); an 'inbox/' or 'applied/' prefix is accepted" },
-        commit_sha: { type: "string", description: "Sha of the commit that applied the capture (from `git rev-parse HEAD`). Links the insight to the code change it caused." },
+        commit_sha: { type: "string", description: "Sha of the commit that applied the capture (from `git rev-parse HEAD`). Links the insight to the code change it caused. With outcome reverted, the sha of the commit that was reverted." },
         applied_note: { type: "string", description: "Why this capture applied here and what you did, in one line of up to 200 characters (e.g. 'Retries hid a timeout bug, so added the capture's backoff rule to the API client')" },
         target_file: { type: "string", description: "File path where the knowledge was applied (e.g. 'docs/conventions.md', 'src/utils/pricing.ts')" },
-        outcome: { type: "string", description: "What changed as a result (e.g. 'Reduced error rate by rewriting retry logic per capture advice')" },
+        outcome: { type: "string", description: "applied (the default), declined (the user said no), done (it was already done), later (the user said not now: offered again in 7 days), or reverted (the change was undone). Any other text is kept in the application log as what changed." },
+        repo: { type: "string", description: "The code repo, as owner/name (from `git remote get-url origin`). Says which handoff this answers." },
+        reason: { type: "string", enum: ["wrong-files", "doesnt-fit", "other"], description: "With outcome declined: wrong-files (it fits, but not in those files), doesnt-fit (it doesn't fit this repo), or other." },
+        confidence: { type: "string", enum: ["high", "medium", "low"], description: "Your confidence in the change, from the spec's Confidence line." },
+        files: { type: "array", items: { type: "string" }, description: "Paths you changed, relative to the repo root. Only paths in the repo's code map are kept." },
         plan_file: { type: "string", description: "Optional plan filename that drove this application (e.g. 'plans/2026-06-04-plan-slug.md') — creates an audit trail linking captures to plans" },
       },
       required: ["filename"],

@@ -119,16 +119,34 @@ export function autoHandoff(capturePath: string, where: WhereResult, today: stri
   };
 }
 
+/** `date` (YYYY-MM-DD) plus `days`, which may be negative. */
+export function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+const FINISHED = new Set(["applied", "declined", "done", "expired"]);
+/** Days a finished row stays in HANDOFFS.md after its last change. Its history stays in the capture's Handoff log. */
+export const KEEP_FINISHED_DAYS = 90;
+
+/** Leaves out finished rows whose last change is more than KEEP_FINISHED_DAYS old. Waiting and dead rows stay. */
+export function pruneFinished(rows: HandoffRow[], today: string): HandoffRow[] {
+  const cutoff = addDays(today, -KEEP_FINISHED_DAYS);
+  return rows.filter((r) => !(FINISHED.has(r.status) && r.since < cutoff));
+}
+
 /**
- * Applies `change` to HANDOFFS.md and writes it with the file's sha. A failed
- * write (another commit got there first) is retried once from a fresh read;
- * after that it gives up and returns null, so the caller never fails because
- * of the queue.
+ * Applies `change` to HANDOFFS.md and writes it with the file's sha, dropping
+ * old finished rows on the way. A failed write (another commit got there
+ * first) is retried once from a fresh read; after that it gives up and returns
+ * null, so the caller never fails because of the queue.
  */
 async function updateHandoffs<T>(
   token: string,
   repo: string,
   message: string,
+  today: string,
   change: (rows: HandoffRow[]) => { rows: HandoffRow[]; changed: boolean; result: T },
 ): Promise<T | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -136,7 +154,7 @@ async function updateHandoffs<T>(
       const file = await readFile(token, repo, HANDOFFS_PATH);
       const parsed = file ? parseHandoffs(file.content) : { head: INTRO, rows: [], other: [], tail: "" };
       const { rows, changed, result } = change(parsed.rows);
-      if (changed) await githubPut(token, repo, HANDOFFS_PATH, renderHandoffs(rows, parsed), message, file?.sha);
+      if (changed) await githubPut(token, repo, HANDOFFS_PATH, renderHandoffs(pruneFinished(rows, today), parsed), message, file?.sha);
       return result;
     } catch (err) {
       if (attempt === 1) console.error("[handoffs] write failed:", err instanceof Error ? err.message : err);
@@ -147,7 +165,7 @@ async function updateHandoffs<T>(
 
 /** Writes the row to HANDOFFS.md (see upsertHandoff). Null when it couldn't be written. */
 export function queueHandoff(token: string, repo: string, row: HandoffRow): Promise<{ row: HandoffRow; changed: boolean } | null> {
-  return updateHandoffs(token, repo, `handoff: queue ${captureName(row.capture)} for ${row.repo}`, (rows) => {
+  return updateHandoffs(token, repo, `handoff: queue ${captureName(row.capture)} for ${row.repo}`, row.since, (rows) => {
     const result = upsertHandoff(rows, row);
     return { rows: result.rows, changed: result.changed, result: { row: result.row, changed: result.changed } };
   });
@@ -156,14 +174,23 @@ export function queueHandoff(token: string, repo: string, row: HandoffRow): Prom
 const samePair = (a: Pick<HandoffRow, "capture" | "repo">, b: Pick<HandoffRow, "capture" | "repo">) =>
   a.repo.toLowerCase() === b.repo.toLowerCase() && captureName(a.capture) === captureName(b.capture);
 
-/** Sets the status of these capture and repo pairs where they are still waiting. True when written (or nothing to change). */
-export async function setHandoffStatus(token: string, repo: string, pairs: Pick<HandoffRow, "capture" | "repo">[], status: string): Promise<boolean> {
-  const done = await updateHandoffs(token, repo, `handoff: mark ${pairs.length} ${status}`, (rows) => {
+/**
+ * Sets the status of these capture and repo pairs, from `today` (the row's
+ * `since`). A dead row stays dead. True when written (or nothing to change).
+ */
+export async function setHandoffStatus(
+  token: string,
+  repo: string,
+  pairs: Pick<HandoffRow, "capture" | "repo">[],
+  status: string,
+  today: string,
+): Promise<boolean> {
+  const done = await updateHandoffs(token, repo, `handoff: mark ${pairs.length} ${status}`, today, (rows) => {
     let changed = false;
     const next = rows.map((r) => {
       if (!pairs.some((p) => samePair(p, r)) || r.status === status || r.status === "dead") return r;
       changed = true;
-      return { ...r, status };
+      return { ...r, status, since: today };
     });
     return { rows: next, changed, result: true };
   });
@@ -187,4 +214,54 @@ export async function queueStrongFit(
   if (!queued || queued.row.status !== "pending") return null;
   if (queued.changed) await recordHandoffEvent(user.id, capturePath, row.repo, "queued", { source: "auto" });
   return row.repo;
+}
+
+/** The rows of HANDOFFS.md, or none when the file doesn't exist yet. */
+export async function readHandoffs(token: string, repo: string): Promise<HandoffRow[]> {
+  const file = await readFile(token, repo, HANDOFFS_PATH);
+  return file ? parseHandoffs(file.content).rows : [];
+}
+
+const waiting = (status: string) => status === "pending" || status === "expired" || status.startsWith("snoozed:");
+
+/**
+ * The row an answer is about: the capture's row for `repo`, or, with no repo,
+ * the capture's only waiting row (pending, snoozed or expired). Null when
+ * there's none, or more than one to choose from.
+ */
+export function handoffFor(rows: HandoffRow[], capture: string, repo?: string | null): HandoffRow | null {
+  const mine = rows.filter((r) => captureName(r.capture) === captureName(capture));
+  if (repo) return mine.find((r) => r.repo.toLowerCase() === repo.toLowerCase()) ?? null;
+  const open = mine.filter((r) => waiting(r.status));
+  return open.length === 1 ? open[0]! : null;
+}
+
+/** One answer, as kept in the capture. No free text: learning is rebuilt from these lines. */
+export interface HandoffLogEntry {
+  date: string;
+  repo?: string | null;
+  outcome: string;
+  reason?: string;
+  confidence?: string;
+  commit?: string;
+  files?: string[];
+}
+
+export function handoffLogLine(e: HandoffLogEntry): string {
+  const parts = [e.date, ...(e.repo ? [e.repo] : []), e.reason ? `${e.outcome} (${e.reason})` : e.outcome];
+  if (e.commit) parts.push(`commit ${e.commit}`);
+  if (e.confidence) parts.push(`confidence ${e.confidence}`);
+  if (e.files?.length) parts.push(`files ${e.files.join(", ")}`);
+  return `- ${parts.join(" · ")}`;
+}
+
+/** Adds `line` to the capture's `## Handoff log`, creating it before `## Links to memory` (or at the end). */
+export function appendHandoffLog(content: string, line: string): string {
+  const section = content.match(/## Handoff log\n[\s\S]*?(?=\n## |$)/);
+  if (section) {
+    const body = section[0].replace(/\n*$/, "");
+    return content.replace(section[0], () => `${body}\n${line}${section[0].endsWith("\n") ? "\n" : ""}`);
+  }
+  if (content.includes("\n## Links to memory")) return content.replace("\n## Links to memory", () => `\n## Handoff log\n${line}\n\n## Links to memory`);
+  return `${content.replace(/\n*$/, "\n")}\n## Handoff log\n${line}\n`;
 }

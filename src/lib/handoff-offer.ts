@@ -47,9 +47,16 @@ export function offerable(rows: HandoffRow[], repo: string, today: string): Hand
     .map(({ r }) => r);
 }
 
-/** Rows offered on EXPIRE_AFTER_DAYS earlier days since they were queued. `days` is keyed by capture name. */
+/**
+ * Rows offered on EXPIRE_AFTER_DAYS earlier days since they last started
+ * waiting: when queued, or when a snooze ended. `days` is keyed by capture name.
+ */
 export function expiredRows(rows: HandoffRow[], days: Map<string, string[]>, today: string): HandoffRow[] {
-  return rows.filter((r) => (days.get(captureName(r.capture)) ?? []).filter((d) => d >= r.since && d < today).length >= EXPIRE_AFTER_DAYS);
+  return rows.filter((r) => {
+    const snoozedUntil = r.status.startsWith("snoozed:") ? r.status.slice("snoozed:".length) : "";
+    const from = snoozedUntil > r.since ? snoozedUntil : r.since;
+    return (days.get(captureName(r.capture)) ?? []).filter((d) => d >= from && d < today).length >= EXPIRE_AFTER_DAYS;
+  });
 }
 
 export const HANDOFF_GUIDE = `If the user says yes, list these, let them pick one, then follow "How to hand off" below.
@@ -61,7 +68,10 @@ If they say no or don't answer, carry on; don't ask again this session.
    Add ".xkg/" to .git/info/exclude if it isn't there. Never commit this file, and never send its contents to xkg.
 3. Show the user the claim, the files and the checks, then ask: "Apply this now?"
 4. Yes: make the change in your normal way. Add "xkg-capture: <filename>" to the commit message.
-   Not now, or no: carry on with the user's task.
+   Not now: call apply_capture with the filename, repo and outcome "later". It comes back in 7 days.
+   No: call apply_capture with the filename, repo, outcome "declined" and reason (wrong-files, doesnt-fit or other).
+   Already done: call apply_capture with the filename, repo and outcome "done".
+   Then carry on with the user's task.
 
 ## Template
 # Apply: <capture title>
@@ -132,7 +142,7 @@ export async function handoffOffer(user: OfferUser, repo: string): Promise<strin
 
     const days = await offerDays(user.id, repo, waiting.map((r) => r.capture));
     const expired = expiredRows(waiting, days, today);
-    if (expired.length && (await setHandoffStatus(user.github_token, user.github_repo, expired, "expired"))) {
+    if (expired.length && (await setHandoffStatus(user.github_token, user.github_repo, expired, "expired", today))) {
       await Promise.all(expired.map((r) => recordHandoffEvent(user.id, r.capture, repo, "expired")));
     }
     waiting = waiting.filter((r) => !expired.includes(r));

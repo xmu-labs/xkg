@@ -88,3 +88,23 @@ export function ledgerHasCommit(content: string, capture: string, commit: string
     return r.capture === capture && r.commit !== EMPTY && (rowSha.startsWith(sha) || sha.startsWith(rowSha));
   });
 }
+
+/**
+ * Marks the capture's rows for this commit as reverted on `date`, in the
+ * Target cell; the row still counts as an application. Null when no row
+ * matches or it's already marked.
+ */
+export function markReverted(content: string, capture: string, commit: string, date: string): string | null {
+  const sha = commit.toLowerCase();
+  let changed = false;
+  const lines = content.split("\n").map((line) => {
+    const cells = splitRow(line.trim());
+    if (cells.length < 4 || !/^\d{4}-\d{2}-\d{2}$/.test(cells[0]!) || cells[1] !== capture) return line;
+    const rowSha = cells[2]!.toLowerCase();
+    if (cells[2] === EMPTY || !(rowSha.startsWith(sha) || sha.startsWith(rowSha)) || /\breverted \d{4}-/.test(cells[3]!)) return line;
+    changed = true;
+    const target = cells[3] === EMPTY ? `reverted ${date}` : `${cells[3]} · reverted ${date}`;
+    return `| ${cells[0]} | ${cell(cells[1])} | ${cell(cells[2])} | ${cell(target)} |`;
+  });
+  return changed ? lines.join("\n") : null;
+}
