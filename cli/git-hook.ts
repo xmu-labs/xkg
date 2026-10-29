@@ -111,8 +111,9 @@ export function installGitHooks(cwd: string = process.cwd(), version: string = g
  * changed. Never throws.
  */
 export async function postCommit(apiKey: string, sha: string, cwd: string = process.cwd()): Promise<void> {
-  await reportTrailers(apiKey, sha, cwd);
+  // The map first: the server keeps only an apply's files that are in it, so a file the commit added must be there
   await syncCodeMap(apiKey, cwd);
+  await reportTrailers(apiKey, sha, cwd);
 }
 
 /** Changed files sent per report; the server keeps those in the repo's code map. */

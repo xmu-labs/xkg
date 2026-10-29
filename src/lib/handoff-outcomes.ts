@@ -90,23 +90,49 @@ export async function appliedHandoff(user: ApplyUser, filename: string, args: An
   }
 }
 
+/** How closing a handoff went: closed (by this call or another report), left as is (the row became dead), or not written. */
+export type Closed = { closed: true } | { closed: false; status: string; failed: boolean };
+
 /**
  * Marks the handoff applied, and counts it only when this call set the row,
- * so a retry after a failed write counts it once. Best-effort: false when
- * HANDOFFS.md couldn't be written.
+ * so a retry after a failed write counts it once. When the row changed since
+ * it was read (a snooze or an answer landed meanwhile), it's read again and
+ * closed from there: an apply wins over anything but dead. Best-effort.
  */
-export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<boolean> {
-  const set = await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
-  if (set?.length) await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
-  return set !== null;
+export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<Closed> {
+  let row = handoff.row;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const set = await setHandoffStatus(user.github_token, user.github_repo!, [row], "applied", today);
+    if (!set) return { closed: false, status: row.status, failed: true };
+    if (set.length) {
+      await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
+      return { closed: true };
+    }
+    const now = await readHandoffs(user.github_token, user.github_repo!).then((rows) => handoffFor(rows, path, handoff.repo)).catch(() => null);
+    if (!now || now.status === "applied") return { closed: true };
+    if (now.status === "dead") return { closed: false, status: now.status, failed: false };
+    row = now;
+  }
+  return { closed: false, status: row.status, failed: true };
 }
 
 /** What the reply says about the handoff an apply closed. */
-export function closedNote(handoff: AppliedHandoff | null, saved: boolean): string {
-  if (!handoff) return "";
-  return saved
-    ? `. The handoff in ${handoff.repo} is done.`
-    : `. HANDOFFS.md couldn't be updated, so its row for ${handoff.repo} still says ${handoff.row.status}.`;
+export function closedNote(handoff: AppliedHandoff | null, result: Closed | null): string {
+  if (!handoff || !result) return "";
+  if (result.closed) return `. The handoff in ${handoff.repo} is done.`;
+  return result.failed
+    ? `. HANDOFFS.md couldn't be updated, so its row for ${handoff.repo} still says ${result.status}.`
+    : `. Its row for ${handoff.repo} in HANDOFFS.md says ${result.status}, so it was left as is.`;
+}
+
+/** The date this commit's revert was logged in the capture's Handoff log, or null. */
+export function revertedOn(content: string, commit: string): string | null {
+  const sha = commit.toLowerCase();
+  for (const m of content.matchAll(/^- (\d{4}-\d{2}-\d{2}) · .*?reverted · commit ([0-9a-f]+)/gim)) {
+    const logged = m[2]!.toLowerCase();
+    if (logged.startsWith(sha) || sha.startsWith(logged)) return m[1]!;
+  }
+  return null;
 }
 
 /**
@@ -225,10 +251,4 @@ async function markLedgerReverted(token: string, knowledge: string, filename: st
 }
 
 /** True when the capture's Handoff log already has this commit's revert (short and full shas match). */
-function revertLogged(content: string, commit: string): boolean {
-  const sha = commit.toLowerCase();
-  return [...content.matchAll(/^- .*· reverted · commit ([0-9a-f]+)/gim)].some((m) => {
-    const logged = m[1]!.toLowerCase();
-    return logged.startsWith(sha) || sha.startsWith(logged);
-  });
-}
+const revertLogged = (content: string, commit: string) => revertedOn(content, commit) !== null;
