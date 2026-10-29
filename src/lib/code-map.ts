@@ -13,12 +13,16 @@ export interface CodeMapPayload {
   truncated: boolean;
 }
 
+/** Where a stored map came from: the CLI on the user's machine, or file names read from GitHub. */
+export type CodeMapSource = "local" | "github";
+
 /** A map as read back from storage, for matching captures to code. */
 export interface StoredCodeMap {
   repo: string;
   files: MapFile[];
   head7: string | null;
   truncated: boolean;
+  source?: CodeMapSource;
   syncedAt: Date;
 }
 
@@ -74,5 +78,6 @@ export function parseCodeMap(body: unknown): { ok: true; map: CodeMapPayload } |
     }
     files.push(file);
   }
-  return { ok: true, map: { repo: b.repo, head7, files, truncated: b.truncated === true } };
+  // GitHub matches owner/name in any case, so one repo is one row however its remote is spelled.
+  return { ok: true, map: { repo: b.repo.toLowerCase(), head7, files, truncated: b.truncated === true } };
 }

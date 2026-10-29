@@ -309,6 +309,8 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
    The same setup keeps a **code map** of the repo: file paths, exported function and class names, and which files import which. Never file contents, comments or package names. It is sent after a commit, a pull or a branch switch when a name changed, and at most once a day otherwise, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
 
+   **Settings → Code repos** lists every repo xkg matches captures to, with where its map came from and when. For a repo you haven't opened with the hook, type `owner/name` under *Add a repo from GitHub*: xkg reads its file names with your GitHub sign-in (file paths only, no exported names, never a file's contents) and reads them again when they are a week old. A map from your machine replaces it the next time the hook runs there. *Remove* deletes a repo's map; captures stop matching it until it is synced or added again.
+
    Ask *apply stats* to see how many captures you applied each week.
 
 ### Example capture
@@ -446,17 +448,17 @@ The whole point of this repo being public is that you can check these claims rat
 | `github_repo` | the *name* of your hub, not its contents |
 | `pin_hash` | salted scrypt (`src/lib/pin.ts`) |
 | `api_key` | hashed — not recoverable |
-| `llm_provider`, `llm_api_key` | encrypted |
+| `llm_provider`, `llm_model`, `llm_effort`, `llm_api_key` | the key is encrypted; the provider, model and effort are plain text |
 | `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
-| code maps (`code_maps`) | per repo you sync with the git hooks (at most 20): file paths, exported function and class names, and which mapped files import which. Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it) |
+| code maps (`code_maps`) | per repo you sync with the git hooks or add in Settings (at most 20): file paths, exported function and class names, and which mapped files import which; for a repo added from GitHub, file paths only (`source = 'github'`). Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it, `src/lib/code-repos.ts` reads GitHub's file list) |
 | surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly four kinds of destination:
 
-1. **GitHub** — to write the capture into your repo
+1. **GitHub** — to write the capture into your repo, and to read the file list of a code repo you add in Settings, or refresh it when it is a week old
 2. **Your LLM provider**, with *your* key: the one you picked in Settings, to extract the capture
 3. **TypeSafe**, with xkg's key, only if you sync code maps: the extracted title, core idea and takeaways, and the names (paths, exported names, imported paths) of up to 15 files per repo, so its model Jev can say where the capture applies. If TypeSafe can't answer, the maps of your 5 most recently synced repos (names only) go to your LLM provider instead
 4. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address

@@ -56,6 +56,12 @@ describe("POST /api/code-map", () => {
     expect(saveCodeMap).toHaveBeenCalledWith(7, MAP, expect.stringMatching(/^[0-9a-f]{64}$/));
   });
 
+  // protects: one repo is one row whatever case its remote uses, so a GitHub add can't sit beside the local map; fails_when: Acme/Widgets and acme/widgets are stored apart; no_claim: hosts with case-sensitive names
+  it("stores the repo name in lowercase, as GitHub matches it", async () => {
+    await POST(send({ ...MAP, repo: "Acme/Widgets" }));
+    expect(saveCodeMap.mock.calls[0]![1].repo).toBe("acme/widgets");
+  });
+
   it("stores only paths, names and links, dropping anything else a client sends", async () => {
     await POST(send({ ...MAP, extra: "x", files: [{ p: "a.ts", e: ["a"], body: "const secret = 1" }] }));
     expect(saveCodeMap.mock.calls[0]![1]).toEqual({ repo: "acme/widgets", head7: "abc1234", truncated: false, files: [{ p: "a.ts", e: ["a"] }] });

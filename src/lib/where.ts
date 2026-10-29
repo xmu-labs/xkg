@@ -14,6 +14,7 @@
  */
 
 import type { MapFile, StoredCodeMap } from "./code-map";
+import { refreshStaleGithubMaps } from "./code-repos";
 import { listCodeMaps, type User } from "./db";
 import { env } from "./env";
 import { githubPut, readFile } from "./github";
@@ -70,7 +71,7 @@ export interface WhereDeps {
   now?: () => Date;
 }
 
-type MatchUser = Pick<User, "id" | "llm_api_key" | "llm_provider" | "llm_model" | "llm_effort">;
+type MatchUser = Pick<User, "id" | "llm_api_key" | "llm_provider" | "llm_model" | "llm_effort"> & Partial<Pick<User, "github_token">>;
 
 export const PROVENANCE = "from file names, not yet checked in your code";
 const FIT_LABEL: Record<Tier, string> = { strong: "Strong fit", possible: "Possible fit", none: "No clear fit" };
@@ -172,7 +173,8 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
   if (capture.lowConfidence || !capture.coreIdea?.trim() || !user.llm_api_key) return null;
   const apiKey = user.llm_api_key;
   const scorer = deps.scorer ?? evidenceScorer;
-  const listMaps = deps.listMaps ?? ((id: number) => listCodeMaps(id, MATCH_REPOS));
+  // A repo added from GitHub is read again here when its names are a week old.
+  const listMaps = deps.listMaps ?? (async (id: number) => refreshStaleGithubMaps(user.github_token, id, await listCodeMaps(id, MATCH_REPOS)));
   const complete =
     deps.complete ??
     ((system: string, text: string, onUsage?: (usage: LlmUsage) => void) =>
