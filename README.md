@@ -250,7 +250,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
 2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code, so it doesn't guess where a capture lands: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
-3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
+3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. The worker sends the contents of the code files it has open, since xkg never reads your code. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
 
 4. **Execute** — Hand the plan to your worker in the current session, or run it in an isolated git worktree:
 
