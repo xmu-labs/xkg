@@ -58,6 +58,9 @@ describe("recordSurfaceEvents", () => {
     const fresh = await import("../surface-events");
     await fresh.recordSurfaceEvents(7, ["inbox/a.md"], "recall");
     expect(queries[0]!.text).toMatch(/^CREATE TABLE IF NOT EXISTS surface_events/);
+    expect(queries[0]!.text).toContain("shown BOOLEAN");
+    // A table made before the column existed gets it too
+    expect(queries.map((q) => q.text)).toContain("ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN");
   });
 
   it("does nothing for an empty list", async () => {
@@ -75,20 +78,26 @@ describe("recordSurfaceEvents", () => {
 
 describe("recordWhereEvent", () => {
   // protects: AC21 and AC22, cost and the model's self-score are logged; fails_when: tokens, model_conf, scorer or tier are missing; no_claim: none
-  it("stores the tokens, the model's confidence, the scorer and the tier", async () => {
-    await recordWhereEvent(7, "inbox/2026-01-01-a.md", where);
-    expect(inserts()[0]!.text).toMatch(/^INSERT INTO surface_events \(user_id, capture_key, channel, tokens_in, tokens_out, model_conf, scorer, tier\)/);
-    expect(inserts()[0]!.text).toContain("VALUES (?, ?, 'where', ?, ?, ?, ?, ?)");
-    expect(inserts()[0]!.values).toEqual([7, captureKey("2026-01-01-a.md"), 3301, 142, 0.94, "evidence", "strong"]);
+  it("stores the tokens, the model's confidence, the scorer, the tier and whether the user saw it", async () => {
+    await recordWhereEvent(7, "inbox/2026-01-01-a.md", where, true);
+    expect(inserts()[0]!.text).toMatch(/^INSERT INTO surface_events \(user_id, capture_key, channel, tokens_in, tokens_out, model_conf, scorer, tier, shown\)/);
+    expect(inserts()[0]!.text).toContain("VALUES (?, ?, 'where', ?, ?, ?, ?, ?, ?)");
+    expect(inserts()[0]!.values).toEqual([7, captureKey("2026-01-01-a.md"), 3301, 142, 0.94, "evidence", "strong", true]);
   });
 
   it("logs a no-fit match too, since it cost a call", async () => {
-    await recordWhereEvent(7, "inbox/a.md", { ...where, tier: "none", files: [], tokens: { in: null, out: null }, modelConf: null });
-    expect(inserts()[0]!.values.slice(2)).toEqual([null, null, null, "evidence", "none"]);
+    await recordWhereEvent(7, "inbox/a.md", { ...where, tier: "none", files: [], tokens: { in: null, out: null }, modelConf: null }, true);
+    expect(inserts()[0]!.values.slice(2)).toEqual([null, null, null, "evidence", "none", true]);
+  });
+
+  // protects: a match the user never saw keeps its cost but earns no card credit; fails_when: shown is stored as true for it; no_claim: none
+  it("logs a match the user never saw as not shown", async () => {
+    await recordWhereEvent(7, "inbox/a.md", where, false);
+    expect(inserts()[0]!.values.slice(6)).toEqual(["strong", false]);
   });
 
   it("logs nothing when no model was called", async () => {
-    await recordWhereEvent(7, "inbox/a.md", { ...where, tokens: undefined });
+    await recordWhereEvent(7, "inbox/a.md", { ...where, tokens: undefined }, true);
     expect(inserts()).toHaveLength(0);
   });
 });
@@ -117,7 +126,8 @@ describe("applySourceStats", () => {
     await applySourceStats("2026-10-29", 2);
     const q = selects()[0]!;
     expect(q.text).toContain("s.surfaced_at <= a.applied_at");
-    expect(q.text).toContain("s.tier IN ('strong', 'possible')");
+    // Card credit needs a fit the user actually saw
+    expect(q.text).toContain("s.channel = 'where' AND s.shown AND s.tier IN ('strong', 'possible')");
     expect(q.text).toMatch(/WHERE a\.applied_at >= \?/);
     expect(q.values).toEqual(["2026-10-19"]);
   });

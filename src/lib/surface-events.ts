@@ -35,14 +35,18 @@ export async function recordSurfaceEvents(userId: number, filenames: string[], c
   }
 }
 
-/** Records a "Where it applies" match, when its model call was made. */
-export async function recordWhereEvent(userId: number, filename: string, where: WhereResult): Promise<void> {
+/**
+ * Records a "Where it applies" match, when its model call was made. `shown`:
+ * whether the user saw it (on the card, or in the tool result once the
+ * section was written); only a shown fit earns the card credit.
+ */
+export async function recordWhereEvent(userId: number, filename: string, where: WhereResult, shown: boolean): Promise<void> {
   if (!where.tokens) return;
   try {
     await ensureSurfaceEventTable();
     await sql`
-      INSERT INTO surface_events (user_id, capture_key, channel, tokens_in, tokens_out, model_conf, scorer, tier)
-      VALUES (${userId}, ${captureKey(filename)}, 'where', ${where.tokens.in}, ${where.tokens.out}, ${where.modelConf}, ${where.scorer}, ${where.tier})
+      INSERT INTO surface_events (user_id, capture_key, channel, tokens_in, tokens_out, model_conf, scorer, tier, shown)
+      VALUES (${userId}, ${captureKey(filename)}, 'where', ${where.tokens.in}, ${where.tokens.out}, ${where.modelConf}, ${where.scorer}, ${where.tier}, ${shown})
     `;
   } catch (err) {
     console.error("[surface] where event failed:", err instanceof Error ? err.message : err);
@@ -69,7 +73,7 @@ export async function applySourceStats(today: string, weeks: number): Promise<So
   await ensureSurfaceEventTable();
   const { rows } = await sql<SourceRow>`
     SELECT a.user_id, a.capture_key, a.applied_at,
-      bool_or(s.channel = 'where' AND s.tier IN ('strong', 'possible')) AS card,
+      bool_or(s.channel = 'where' AND s.shown AND s.tier IN ('strong', 'possible')) AS card,
       bool_or(s.channel = 'briefing') AS briefing,
       bool_or(s.channel IN ('recall', 'vault')) AS other
     FROM apply_events a
