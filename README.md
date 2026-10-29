@@ -38,8 +38,9 @@ xkg is the knowledge graph for AI workers that bridges human knowledge into cont
     - [Anything MCP](#anything-mcp)
 - [Workflow](#workflow)
 - [What's inside](#whats-inside)
-- [Your context stays in GitHub](#your-context-stays-in-github)
 - [CLI](#cli)
+- [Your context stays in GitHub](#your-context-stays-in-github)
+- [Cost](#cost)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -128,7 +129,7 @@ npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 
 Register that command in the tool you use.
 
-When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. There's nothing to paste into `AGENTS.md` or rules files.
+When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own, so there's nothing to paste into rules files. Codex CLI doesn't read it yet: see [Codex](#codex) for the lines to add.
 
 #### Cursor
 
@@ -175,6 +176,15 @@ args = ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
 ```
 
 Codex App: Settings → MCP → add the same `npx` command.
+
+Codex CLI doesn't read the instructions xkg sends when it connects, so add these lines to `~/.codex/AGENTS.md` (all projects) or the repo's `AGENTS.md`:
+
+```markdown
+## xkg
+- At the start of a coding session, call the xkg `briefing` tool with the repo name, branch, and last few commit messages. Check each capture it returns against the code before naming a file.
+- When the user shares something worth keeping, call `capture`.
+- When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, and one line on why.
+```
 
 #### Gemini CLI
 
