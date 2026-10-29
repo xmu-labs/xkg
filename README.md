@@ -279,6 +279,8 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
    ```
 
+   The same setup keeps a **code map** of the repo: file paths, exported function and class names, and which files import which. Never file contents, comments or package names. It is sent after a commit, a pull or a branch switch, only when a name changed, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
+
    Ask *apply stats* to see how many captures you applied each week.
 
 ### Example capture
@@ -363,7 +365,8 @@ npx -y @xmu-labs/xkg@latest <command>
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
-| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook. Setup checks that the hook can reach xkg, and the hook runs the CLI version that installed it (run setup again to update) |
+| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer, and keep the repo's code map up to date after commits, pulls and branch switches (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once; the hooks run the CLI version that installed them (run setup again to update) |
+| `map [--key YOUR_API_KEY]` | In a repo: send its code map now (file paths and exported names, never code) |
 | `config set agent "claude -p"` | Set which assistant `kos` should drive |
 | `kos --key YOUR_API_KEY` | Implement the latest plan in an isolated worktree |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
@@ -417,6 +420,7 @@ The whole point of this repo being public is that you can check these claims rat
 | `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
+| code maps (`code_maps`) | per repo you sync with the git hooks (at most 20): file paths, exported function and class names, and which mapped files import which. Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it) |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly three kinds of destination:

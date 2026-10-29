@@ -27,6 +27,12 @@ describe("middleware", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
+  it("lets the CLI's code map sync reach its route, which checks the API key itself", () => {
+    const res = visit("/api/code-map");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("location")).toBeNull();
+  });
+
   it("still sends a signed-out visitor on a private page to /login", () => {
     expect(visit("/").headers.get("location")).toBe(`${APP}/login`);
   });

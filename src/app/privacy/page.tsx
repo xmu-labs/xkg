@@ -43,6 +43,12 @@ export default function PrivacyPage() {
             "To count, per account and week, how many captures get applied in code",
             "A keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason itself",
           ],
+          [
+            "Code maps",
+            "The xkg CLI's git hooks, from repositories where you set them up",
+            "To show where a capture applies in your code",
+            "Per repository (at most 20): file paths, exported function and class names, and which files import which. Never file contents, comments or package names",
+          ],
         ]}
       />
       <p>
@@ -138,6 +144,7 @@ export default function PrivacyPage() {
           ["Failed PIN attempts", "Counted in 15-minute windows, lockouts last at most 24 hours; the record is kept until your account is deleted"],
           ["Capture counter", "Counted in 1-hour windows; the record is kept until your account is deleted"],
           ["Apply counts", "Until your account is deleted"],
+          ["Code maps", "Until your account is deleted. Syncing a 21st repository deletes the least recently synced one"],
           ["Hosting request logs", "Up to 30 days"],
           ["Database backups", "Up to 30 days"],
           ["Your captures", <>In your GitHub repository, until <strong>you</strong> delete them</>],
