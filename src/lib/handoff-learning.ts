@@ -83,7 +83,9 @@ export function scoresOf(entries: HandoffLogEntry[], today: string): Score[] {
     const apply = applies.find((a) => !reverted.has(a) && a.commit && sameCommit(a.commit, r.commit!) && (!r.repo || a.repo!.toLowerCase() === r.repo.toLowerCase()));
     if (apply) reverted.add(apply);
     const repo = apply?.repo ?? r.repo;
-    if (repo) add(repo, ["", ...(apply?.files ?? [])], r.date, -1);
+    // The apply's files, or the revert's own when the apply named none (or wasn't logged)
+    const files = apply?.files?.length ? apply.files : (r.files ?? []);
+    if (repo) add(repo, ["", ...files], r.date, -1);
   }
   for (const a of applies) if (!reverted.has(a)) add(a.repo!, ["", ...(a.files ?? [])], a.date, 1);
   for (const d of declines) {

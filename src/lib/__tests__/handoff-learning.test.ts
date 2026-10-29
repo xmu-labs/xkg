@@ -118,6 +118,20 @@ describe("scoresOf", () => {
     });
   });
 
+  // protects: a revert's own files count when its apply named none, or wasn't logged; fails_when: the reverted files never get a negative, so they can't become dead ends; no_claim: none
+  it("counts the revert's files when the apply named none", () => {
+    const scores = scoresOf([
+      e({ outcome: "applied", date: "2026-11-01", commit: "c".repeat(40) }),
+      e({ outcome: "reverted", commit: "ccccccc", files: ["src/a.ts"] }),
+      e({ outcome: "reverted", commit: "d".repeat(7), files: ["src/b.ts"] }),
+    ], TODAY);
+    expect(byKey(scores)).toEqual({
+      "acme/app (repo)": { weight: -2, negatives: 2 },
+      "acme/app src/a.ts": { weight: -1, negatives: 1 },
+      "acme/app src/b.ts": { weight: -1, negatives: 1 },
+    });
+  });
+
   // protects: answers that aren't about fit don't move anything; fails_when: later, done, expired or a repeated line changes a score; no_claim: none
   it("ignores later, done and expired, and a line repeated the same day", () => {
     const decline = e({ outcome: "declined", reason: "wrong-files", files: ["src/a.ts"] });
