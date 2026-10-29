@@ -270,4 +270,12 @@ describe("insertWhereSection", () => {
     const once = insertWhereSection(`## Core idea\nIdea\n\n## Key takeaways\n`, section);
     expect(insertWhereSection(once, section)).toBe(once);
   });
+
+  // Regression: Codex review on #127 — a "Where it applies" heading in the captured source made the check skip the new section
+  // protects: capturing a capture (or any source with that heading) still gets its section; fails_when: a heading in the raw text blocks insertion; no_claim: none
+  it("adds the section when only the captured source has that heading", () => {
+    const md = buildMarkdown("2026-10-29", capture, "# Old capture\n\n## Where it applies\n**Strong fit** · other/repo\n");
+    const out = insertWhereSection(md, section);
+    expect(out).toContain(`## Core idea\n${capture.coreIdea}\n\n${section}\n## Key takeaways`);
+  });
 });

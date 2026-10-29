@@ -271,11 +271,12 @@ export function whereCard(w: WhereResult): WhereCard {
 
 /** The capture file with the section right after "## Core idea"; unchanged if it has no Core idea or already has the section. */
 export function insertWhereSection(markdown: string, section: string): string {
-  if (/^## Where it applies$/m.test(markdown)) return markdown;
   const core = /^## Core idea\n/m.exec(markdown);
   if (!core) return markdown;
   const next = markdown.indexOf("\n## ", core.index + core[0].length);
   if (next < 0) return markdown;
+  // Only a section in this spot counts: the captured source may have the same heading.
+  if (markdown.startsWith("## Where it applies\n", next + 1)) return markdown;
   return `${markdown.slice(0, next + 1)}${section}\n${markdown.slice(next + 1)}`;
 }
 
