@@ -2,6 +2,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "f
 import { join, resolve } from "path";
 import { execFileSync } from "child_process";
 import { callMcp, initializeMcp } from "./hooks.js";
+import { syncCodeMap } from "./code-map.js";
 import { getCurrentVersion } from "./version-check.js";
 
 /**
@@ -10,6 +11,9 @@ import { getCurrentVersion } from "./version-check.js";
  * capture; a git post-commit hook reports each one to apply_capture with the
  * commit sha. The server counts a capture and commit once, so an agent that
  * also calls apply_capture itself does not double count.
+ *
+ * The same hooks, plus post-merge and post-checkout, keep the repo's code map
+ * (code-map.ts) fresh, so every agent gets it through git alone.
  */
 
 const PACKAGE = "@xmu-labs/xkg";
@@ -33,24 +37,14 @@ export function captureTrailers(message: string): string[] {
   return [...new Set(found)];
 }
 
-/**
- * Installs or updates xkg's line in the repo's post-commit hook and returns the hook's path.
- * The line holds no credential (the hooks directory may be tracked); the key comes from
- * `xkg config` at run time. It reads the sha before going to the background, so a quick
- * next commit can't be reported in its place. It runs the CLI version that installed it, so
- * a new release reaches a repo only when the hook is installed again.
- */
-export function installPostCommitHook(cwd: string = process.cwd(), version: string = getCurrentVersion()): string {
-  const hooksDir = resolve(cwd, git(cwd, "rev-parse", "--git-path", "hooks"));
-  const path = join(hooksDir, "post-commit");
-  const pin = version === "0.0.0" ? "latest" : version;
-  const line = `xkg_sha=$(git rev-parse HEAD); npx -y ${PACKAGE}@${pin} post-commit --sha "$xkg_sha" >/dev/null 2>&1 & ${MARKER}`;
-
+/** Writes `line` as xkg's only line in a shell hook, keeping the user's own lines. */
+function installHookLine(hooksDir: string, name: string, line: string, isOurs: (l: string) => boolean): string {
+  const path = join(hooksDir, name);
   const existing = existsSync(path) ? readFileSync(path, "utf-8") : "#!/bin/sh\n";
   if (!/^#!\s*\S*\b(?:env\s+)?(?:sh|bash|zsh|dash|ksh)\b/.test(existing.split("\n")[0] ?? "")) {
     throw new Error(`${path} is not a shell script; add this line to it yourself:\n${line}`);
   }
-  const kept = existing.split("\n").filter((l) => !l.endsWith(MARKER) || !l.includes(" post-commit "));
+  const kept = existing.split("\n").filter((l) => !(l.endsWith(MARKER) && isOurs(l)));
   const body = kept.join("\n").replace(/\n*$/, "\n");
 
   mkdirSync(hooksDir, { recursive: true });
@@ -59,8 +53,53 @@ export function installPostCommitHook(cwd: string = process.cwd(), version: stri
   return path;
 }
 
-/** Runs after each commit: reports every `xkg-capture:` trailer of `sha` to apply_capture. Never throws. */
+function hooksDirOf(cwd: string): string {
+  return resolve(cwd, git(cwd, "rev-parse", "--git-path", "hooks"));
+}
+
+function runner(version: string): string {
+  return `npx -y ${PACKAGE}@${version === "0.0.0" ? "latest" : version}`;
+}
+
+/**
+ * Installs or updates xkg's line in the repo's post-commit hook and returns the hook's path.
+ * The line holds no credential (the hooks directory may be tracked); the key comes from
+ * `xkg config` at run time. It reads the sha before going to the background, so a quick
+ * next commit can't be reported in its place. It runs the CLI version that installed it, so
+ * a new release reaches a repo only when the hook is installed again.
+ */
+export function installPostCommitHook(cwd: string = process.cwd(), version: string = getCurrentVersion()): string {
+  const line = `xkg_sha=$(git rev-parse HEAD); ${runner(version)} post-commit --sha "$xkg_sha" >/dev/null 2>&1 & ${MARKER}`;
+  return installHookLine(hooksDirOf(cwd), "post-commit", line, (l) => l.includes(" post-commit "));
+}
+
+/**
+ * Installs the post-commit hook, plus post-merge and post-checkout lines that sync the
+ * code map after a pull or a branch switch (not after a checkout of single files).
+ * Returns the three hooks' paths.
+ */
+export function installGitHooks(cwd: string = process.cwd(), version: string = getCurrentVersion()): string[] {
+  const commit = installPostCommitHook(cwd, version);
+  const dir = hooksDirOf(cwd);
+  const sync = `${runner(version)} sync-map >/dev/null 2>&1 & ${MARKER}`;
+  const isSync = (l: string) => l.includes(" sync-map ");
+  return [
+    commit,
+    installHookLine(dir, "post-merge", sync, isSync),
+    installHookLine(dir, "post-checkout", `[ "$3" = "1" ] && ${sync}`, isSync),
+  ];
+}
+
+/**
+ * Runs after each commit: reports every `xkg-capture:` trailer of `sha` to apply_capture,
+ * then syncs the code map if it changed. Never throws.
+ */
 export async function postCommit(apiKey: string, sha: string, cwd: string = process.cwd()): Promise<void> {
+  await reportTrailers(apiKey, sha, cwd);
+  await syncCodeMap(apiKey, cwd);
+}
+
+async function reportTrailers(apiKey: string, sha: string, cwd: string): Promise<void> {
   try {
     const full = git(cwd, "rev-parse", "--verify", `${sha}^{commit}`);
     const trailers = captureTrailers(git(cwd, "log", "-1", "--format=%B", full));

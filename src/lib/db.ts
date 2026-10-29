@@ -2,6 +2,7 @@ import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
 import { isLegacyPinHash, wrapLegacyHash } from "./pin";
 import type { LlmEffort, LlmProvider } from "./types";
+import type { CodeMapPayload } from "./code-map";
 
 export type { LlmProvider };
 
@@ -162,7 +163,64 @@ export async function initDb(): Promise<void> {
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS apply_events_once ON apply_events (user_id, capture_key, commit7)`;
   await sql`CREATE INDEX IF NOT EXISTS apply_events_applied_at ON apply_events (applied_at)`;
 
+  codeMapTableReady = false;
+  await ensureCodeMapTable();
+
   await upgradeLegacyData();
+}
+
+// ── Code maps (names only; see lib/code-map.ts) ──
+
+/** Repos kept per user; syncing one more drops the least recently synced. */
+export const MAX_CODE_MAPS = 20;
+
+let codeMapTableReady = false;
+
+/**
+ * One row per user and repo: file paths and exported names, never code.
+ * Created on first use as well as by initDb, so a deploy needs no init-db run
+ * before the first map arrives.
+ */
+export async function ensureCodeMapTable(): Promise<void> {
+  if (codeMapTableReady) return;
+  await sql`
+    CREATE TABLE IF NOT EXISTS code_maps (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      repo TEXT NOT NULL,
+      map JSONB NOT NULL,
+      map_hash TEXT NOT NULL,
+      head7 TEXT,
+      file_count INTEGER NOT NULL,
+      truncated BOOLEAN NOT NULL DEFAULT FALSE,
+      source TEXT NOT NULL DEFAULT 'local',
+      synced_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS code_maps_user_repo ON code_maps (user_id, repo)`;
+  codeMapTableReady = true;
+}
+
+/** Stores a repo's map (replacing the previous one), then keeps the user's 20 most recent repos. */
+export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: string): Promise<void> {
+  await ensureCodeMapTable();
+  await sql`
+    INSERT INTO code_maps (user_id, repo, map, map_hash, head7, file_count, truncated, source, synced_at)
+    VALUES (${userId}, ${map.repo}, ${JSON.stringify(map.files)}::jsonb, ${mapHash}, ${map.head7 || null}, ${map.files.length}, ${map.truncated}, 'local', NOW())
+    ON CONFLICT (user_id, repo) DO UPDATE SET
+      map = EXCLUDED.map,
+      map_hash = EXCLUDED.map_hash,
+      head7 = EXCLUDED.head7,
+      file_count = EXCLUDED.file_count,
+      truncated = EXCLUDED.truncated,
+      source = 'local',
+      synced_at = NOW()
+  `;
+  await sql`
+    DELETE FROM code_maps WHERE user_id = ${userId} AND id NOT IN (
+      SELECT id FROM code_maps WHERE user_id = ${userId} ORDER BY synced_at DESC, id DESC LIMIT ${MAX_CODE_MAPS}
+    )
+  `;
 }
 
 /**
@@ -423,13 +481,15 @@ export async function revokeUserTokens(userId: number): Promise<number> {
 export async function deleteUserData(userId: number, username: string): Promise<void> {
   await sql`DELETE FROM oauth_refresh_tokens WHERE user_id = ${userId}`;
   await sql`DELETE FROM oauth_codes WHERE user_id = ${userId}`;
-  await sql`DELETE FROM usage_quota WHERE identifier = ${`capture:user:${userId}`}`;
+  await sql`DELETE FROM usage_quota WHERE identifier IN (${`capture:user:${userId}`}, ${`code-map:user:${userId}`})`;
   // PIN lockouts are keyed by user id; rows from before that were keyed by username.
   await sql`
     DELETE FROM login_attempts
     WHERE identifier IN (${`user:${userId}`}, ${username.toLowerCase()})
   `;
   await sql`DELETE FROM apply_events WHERE user_id = ${userId}`;
+  await ensureCodeMapTable();
+  await sql`DELETE FROM code_maps WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 

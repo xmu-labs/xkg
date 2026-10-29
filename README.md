@@ -131,6 +131,22 @@ Register that command in the tool you use.
 
 When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own, so there's nothing to paste into rules files. Codex CLI doesn't read it yet: see [Codex](#codex) for the lines to add.
 
+#### Offer new captures when a session starts
+
+`xkg session-start` counts the captures in your inbox. When there are some, it tells your agent to ask you "You have 3 new xkg captures. Want to see them and apply one here?" before your task. It prints nothing when the inbox is empty or xkg can't be reached, and gives up after 3 seconds. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files carry no key.
+
+Add it as a session-start hook in your agent. `--agent` picks the output shape that agent reads:
+
+| Agent | File | Hook |
+| --- | --- | --- |
+| Claude Code | `~/.claude/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent claude" }] }] }` |
+| Codex | `~/.codex/hooks.json` | `{ "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent codex" }] }] } }`, then trust it once in `/hooks` |
+| Gemini CLI | `~/.gemini/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent gemini" }] }] }` |
+| GitHub Copilot CLI | `~/.copilot/hooks/xkg.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "type": "command", "bash": "npx -y @xmu-labs/xkg@latest session-start --agent copilot" }] } }` |
+| Cursor | `~/.cursor/hooks.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "command": "npx -y @xmu-labs/xkg@latest session-start --agent cursor" }] } }` |
+
+Merge the hook into the file if it already has other settings. Without `--agent`, the command prints plain text.
+
 #### Cursor
 
 Add this to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (all projects):
@@ -289,6 +305,8 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
    ```
 
+   The same setup keeps a **code map** of the repo: file paths, exported function and class names, and which files import which. Never file contents, comments or package names. It is sent after a commit, a pull or a branch switch when a name changed, and at most once a day otherwise, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
+
    Ask *apply stats* to see how many captures you applied each week.
 
 ### Example capture
@@ -373,7 +391,10 @@ npx -y @xmu-labs/xkg@latest <command>
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
-| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook. Setup checks that the hook can reach xkg, and the hook runs the CLI version that installed it (run setup again to update) |
+| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer, and keep the repo's code map up to date after commits, pulls and branch switches (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once; the hooks run the CLI version that installed them (run setup again to update) |
+| `map [--key YOUR_API_KEY]` | In a repo: send its code map now (file paths and exported names, never code) |
+| `session-start [--agent NAME]` | For an agent's session-start hook: ask whether to see and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot` or `cursor`; without it the output is plain text. See [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts) |
+| `config set key YOUR_API_KEY` | Store the key that `session-start`, the git hooks, `map` and `agent` use |
 | `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
 | `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
@@ -427,6 +448,7 @@ The whole point of this repo being public is that you can check these claims rat
 | `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
+| code maps (`code_maps`) | per repo you sync with the git hooks (at most 20): file paths, exported function and class names, and which mapped files import which. Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it) |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly three kinds of destination:
