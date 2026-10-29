@@ -285,8 +285,9 @@ export async function handleApplyCapture(
       let closed = false;
       if (handoff) {
         try {
-          await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, handoff.line), `handoff: applied ${filename}`, file.sha);
-          closed = await closeHandoff(user, appliedPath, handoff, true, today);
+          const logged = appendHandoffLog(file.content, handoff.line);
+          await githubPut(user.github_token, user.github_repo, appliedPath, logged, `handoff: applied ${filename}`, file.sha);
+          closed = await closeHandoff(user, appliedPath, logged, handoff, true, today);
         } catch (err) {
           console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
         }
@@ -340,7 +341,7 @@ export async function handleApplyCapture(
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
     const notes = (await recordInLedger()) + (await recordEvent());
-    const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : false;
+    const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : false;
     return `Applied again: ${appliedPath}${commitRef}${notes}${closedNote(handoff, closed)}`;
   }
 
@@ -348,7 +349,7 @@ export async function handleApplyCapture(
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
   const ledgerNote = (await recordInLedger()) + (await recordEvent());
-  const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : false;
+  const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : false;
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {

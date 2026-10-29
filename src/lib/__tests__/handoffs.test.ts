@@ -27,7 +27,7 @@ vi.mock("../github", () => ({
 
 const {
   HANDOFFS_PATH, parseHandoffs, renderHandoffs, upsertHandoff, autoHandoff, queueHandoff,
-  setHandoffStatus, pruneFinished, handoffFor, readHandoffs, handoffLogLine, appendHandoffLog, addDays,
+  setHandoffStatus, pruneFinished, handoffFor, readHandoffs, handoffLogLine, appendHandoffLog, addDays, parseHandoffLog, markDead,
 } = await import("../handoffs");
 type Row = import("../handoffs").HandoffRow;
 
@@ -238,6 +238,20 @@ describe("setHandoffStatus", () => {
   });
 });
 
+describe("markDead", () => {
+  // protects: a capture turned down twice in a repo is never offered there again; fails_when: another repo's row, another capture's row or an already dead row changes; no_claim: when it's called (handoff-learning tests)
+  it("marks the capture's rows in those repos dead", async () => {
+    const rows = [row({ status: "declined" }), row({ repo: "acme/web" }), row({ capture: "inbox/b.md" }), row({ capture: "inbox/c.md", status: "dead" })];
+    files.set(HANDOFFS_PATH, { content: renderHandoffs(rows), sha: "s1" });
+    expect(await markDead("t", "o/k", "applied/2026-10-29-llm-memory.md", ["ACME/app"], "2026-11-03"))
+      .toEqual([row({ status: "dead", since: "2026-11-03" })]);
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.status)).toEqual(["dead", "pending", "pending", "dead"]);
+    githubPut.mockClear();
+    expect(await markDead("t", "o/k", "inbox/2026-10-29-llm-memory.md", ["acme/app"], "2026-11-04")).toEqual([]);
+    expect(githubPut).not.toHaveBeenCalled();
+  });
+});
+
 describe("finished rows", () => {
   // protects: HANDOFFS.md stays short, the history lives in each capture's Handoff log; fails_when: a finished row older than 90 days is kept, or a waiting, dead or recent row is dropped; no_claim: none
   it("drops applied, declined, done and expired rows 90 days after their last change", () => {
@@ -308,6 +322,22 @@ describe("Handoff log", () => {
     expect(handoffLogLine({ date: "2026-10-30", outcome: "reverted", commit: "b".repeat(40) })).toBe(`- 2026-10-30 · reverted · commit ${"b".repeat(40)}`);
     // Written like HANDOFFS.md's list, so a path with ", " stays one path
     expect(handoffLogLine({ date: "2026-10-30", outcome: "applied", files: ["src/a, b.ts", "src/c.ts"] })).toBe("- 2026-10-30 · applied · files src/a%2C b.ts, src/c.ts");
+  });
+
+  // protects: learning is rebuilt from the capture alone; fails_when: a field written by handoffLogLine doesn't read back, or other text reads as an answer; no_claim: none
+  it("reads back every line it wrote, and nothing else", () => {
+    const entries = [
+      { date: "2026-10-30", repo: "acme/app", outcome: "declined", reason: "wrong-files", confidence: "high", files: ["src/a.ts"] },
+      { date: "2026-10-31", repo: "acme/app", outcome: "applied", commit: "a".repeat(40), files: ["src/a, b.ts", "src/c%d.ts"] },
+      { date: "2026-11-01", outcome: "reverted", commit: "b".repeat(7) },
+      { date: "2026-11-02", repo: "acme/web", outcome: "later" },
+    ];
+    const content = entries.reduce(
+      (c, e) => appendHandoffLog(c, handoffLogLine(e)),
+      "# T\n\n## Core idea\nIdea.\n- 2026-10-01 · acme/app · applied\n\n## Links to memory\n- none\n",
+    );
+    expect(parseHandoffLog(`${content}- not a log line\n`)).toEqual(entries);
+    expect(parseHandoffLog("# T\n\n## Core idea\nIdea.\n")).toEqual([]);
   });
 
   // protects: the log sits with the capture's other logs and grows in place; fails_when: a second section is added or it lands after Links to memory; no_claim: none

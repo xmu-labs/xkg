@@ -53,6 +53,14 @@ describe("jevPayload", () => {
     expect(p.questions.anything_fits.type).toBe("noul");
   });
 
+  // protects: spec M2d, Jev is told a file was applied before for the capture's tag; fails_when: the note is lost, or a file without one gets a history field; no_claim: how Jev weighs it
+  it("sends a file's history note when it has one", () => {
+    const p = jevPayload("acme/app", capture, [{ ...files[0]!, note: "applied twice before for llm" }, files[1]!]);
+    expect(p.state.repo.candidate_files["src/lib/llm.ts"]).toEqual({ exports: ["callLlm", "llmSettings"], imports: ["src/lib/providers.ts"], history: "applied twice before for llm" });
+    expect(p.state.repo.candidate_files["src/lib/providers.ts"]).toEqual({ exports: ["PROVIDERS"], imports: [] });
+    expect(p.questions.fit_0).toMatchObject({ instructions: { file: { path: "src/lib/llm.ts", history: "applied twice before for llm" } } });
+  });
+
   // protects: a payload's size stays bounded on a file with a huge export list; fails_when: more than 50 exports or 20 imports of one file are sent; no_claim: which names are the most useful
   it("sends at most 50 exports and 20 imports per file", () => {
     const big: MapFile = { p: "src/big.ts", e: Array.from({ length: 80 }, (_, i) => `f${i}`), i: Array.from({ length: 30 }, (_, i) => `src/m${i}.ts`) };
@@ -127,6 +135,13 @@ describe("jevScorer", () => {
     expect(onUsage).toHaveBeenCalledWith({ tokensIn: 12000, tokensOut: 800 });
     expect(scorer.name).toBe("jev");
     expect(scorer.cutoffs).toEqual(JEV_CUTOFFS);
+  });
+
+  // protects: a candidate's note reaches Jev; fails_when: the scorer drops it on the way to the payload; no_claim: none
+  it("passes each candidate's note to Jev", async () => {
+    const fetch = fetchOf(() => reply({ fit_0: noul(0.5), anything_fits: noul(0.5) }));
+    await jevScorer("ts-key", fetch).score(capture, [{ ...cand("acme/app", files[0]!), note: "applied twice before for llm" }]);
+    expect(JSON.parse(fetch.mock.calls[0]![1].body as string).state.repo.candidate_files["src/lib/llm.ts"].history).toBe("applied twice before for llm");
   });
 
   // protects: the file Jev rates higher stays ahead even when "anything fits" is lower than both; fails_when: the gate flattens them to one score and the ranker's order picks the file; no_claim: none

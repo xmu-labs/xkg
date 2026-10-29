@@ -7,6 +7,7 @@ import { repoName } from "@/lib/code-repos";
 import { readWhereSection } from "@/lib/where";
 import { queueHandoff, type HandoffRow } from "@/lib/handoffs";
 import { recordHandoffEvent } from "@/lib/handoff-events";
+import { deadEnds } from "@/lib/handoff-learning";
 import { formatDate } from "@/lib/llm";
 
 /**
@@ -47,15 +48,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const file = await readFile(user.github_token, user.github_repo, filename);
     if (!file) return fail(404, "Capture not found.");
 
-    // The best repo gets the files the card showed; an "also fits" repo gets
-    // none, and the agent finds them.
+    // The best repo gets the files the card showed, less any turned down twice
+    // for this capture; an "also fits" repo gets none, and the agent finds them.
     const where = readWhereSection(file.content);
+    const dead = where?.repo === repo ? await deadEnds(user.id, filename, repo) : new Set<string>();
     const fit = where?.repo === repo ? where.tier : (where?.also.find((a) => a.repo === repo)?.tier ?? "none");
     const row: HandoffRow = {
       capture: filename,
       repo,
       kind: "code",
-      files: where?.repo === repo ? where.files : [],
+      files: where?.repo === repo ? where.files.filter((f) => !dead.has(f)) : [],
       fit,
       status: "pending",
       since: formatDate(),

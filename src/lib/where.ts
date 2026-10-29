@@ -18,6 +18,7 @@ import { refreshStaleGithubMaps } from "./code-repos";
 import { listCodeMaps, type User } from "./db";
 import { env } from "./env";
 import { githubPut, readFile } from "./github";
+import { provenFor, type Proven } from "./handoff-learning";
 import { jevScorer } from "./jev";
 import { callLlm, llmSettings, type LlmUsage } from "./llm";
 import type { ExtractedCapture } from "./types";
@@ -68,6 +69,8 @@ export interface WhereDeps {
   scorer?: Scorer;
   /** Decides instead of the model when set; null: always the model. Defaults to Jev when xkg's TypeSafe key is set. */
   jev?: Scorer | null;
+  /** Files proven for any of these tags by earlier applies (handoff-learning.ts); Jev also rates them. */
+  proven?: (tags: string[]) => Promise<Proven[]>;
   now?: () => Date;
 }
 
@@ -206,7 +209,9 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
 
     if (jev) {
       try {
-        const decided = await decideWithJev(jev, maps, ranked, text, query, fresh);
+        const today = now.toISOString().slice(0, 10);
+        const proven = await (deps.proven ?? ((tags: string[]) => provenFor(user.id, tags, today)))(capture.tags ?? []).catch(() => []);
+        const decided = await decideWithJev(jev, maps, ranked, text, query, fresh, proven);
         tokens = decided.tokens;
         return decided.top ? decided.top : none(noFitOf(mapOf(ranked[0]!.repo), fresh), null, jev);
       } catch (err) {
@@ -270,11 +275,15 @@ function defaultJev(): Scorer | null {
   return key ? jevScorer(key) : null;
 }
 
+const provenNote = (p: Proven) => `applied ${p.captures === 2 ? "twice" : `${p.captures} times`} before for ${p.tag}`;
+
 /**
- * Jev rates where-rank's top files of each repo (one request per repo). The
- * best file picks the repo; up to 3 of its files at Possible or above are
- * shown. Their reason is the exported names they share with the capture, a
- * fact xkg can check. `top` is null when no file reaches Possible.
+ * Jev rates where-rank's top files of each repo (one request per repo), plus
+ * any file proven for the capture's tags that the ranker left out, with a note
+ * saying so. The best file picks the repo; up to 3 of its files at Possible or
+ * above are shown. Their reason is the note, or else the exported names they
+ * share with the capture: facts xkg can check. `top` is null when no file
+ * reaches Possible.
  */
 async function decideWithJev(
   jev: Scorer,
@@ -283,14 +292,20 @@ async function decideWithJev(
   text: CaptureText,
   query: string,
   fresh: (m: StoredCodeMap) => boolean,
+  proven: Proven[],
 ): Promise<{ top: WhereResult | null; tokens: NonNullable<WhereResult["tokens"]> }> {
   const pool: Candidate[] = [];
   for (const repo of new Set(ranked.map((r) => r.repo))) {
     const map = maps.find((m) => m.repo === repo)!;
     const byPath = new Map(map.files.map((f) => [f.p, f]));
-    const top = ranked.filter((r) => r.repo === repo).slice(0, JEV_POOL);
-    for (const r of top) {
-      pool.push({ repo, path: r.path, rel: r.score / top[0]!.score, whyKept: false, fresh: fresh(map), file: byPath.get(r.path) });
+    const mine = ranked.filter((r) => r.repo === repo);
+    const top = mine.slice(0, JEV_POOL);
+    const notes = new Map(proven.filter((p) => p.repo === repo && byPath.has(p.path)).map((p) => [p.path, provenNote(p)]));
+    const rel = (path: string) => (mine.find((r) => r.path === path)?.score ?? 0) / top[0]!.score;
+    const paths = [...top.map((r) => r.path), ...[...notes.keys()].filter((path) => !top.some((r) => r.path === path))];
+    for (const path of paths) {
+      const note = notes.get(path);
+      pool.push({ repo, path, rel: rel(path), whyKept: false, fresh: fresh(map), file: byPath.get(path), ...(note ? { note } : {}) });
     }
   }
 
@@ -310,6 +325,7 @@ async function decideWithJev(
     .filter((r) => r.c.repo === map.repo && tier(r.p) !== "none")
     .slice(0, MAX_FILES)
     .map(({ c }) => {
+      if (c.note) return { path: c.path, why: c.note };
       const names = c.file ? sharedNames(c.file, query, map.files) : [];
       return names.length ? { path: c.path, why: `shares names with the capture: ${names.map((n) => `\`${n}\``).join(", ")}` } : { path: c.path };
     });

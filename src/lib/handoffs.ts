@@ -200,6 +200,25 @@ export function setHandoffStatus(token: string, repo: string, read: HandoffRow[]
 }
 
 /**
+ * Marks the capture's rows in these repos dead: it's never offered there
+ * again (see handoff-learning.ts). Returns the rows it set, or null when
+ * HANDOFFS.md couldn't be written.
+ */
+export function markDead(token: string, repo: string, capture: string, repos: string[], today: string): Promise<HandoffRow[] | null> {
+  const dead = new Set(repos.map((r) => r.toLowerCase()));
+  return updateHandoffs(token, repo, `handoff: ${captureName(capture)} is a dead end in ${repos.join(", ")}`, today, (rows) => {
+    const set: HandoffRow[] = [];
+    const next = rows.map((r) => {
+      if (r.status === "dead" || !dead.has(r.repo.toLowerCase()) || captureName(r.capture) !== captureName(capture)) return r;
+      const updated = { ...r, status: "dead", since: today };
+      set.push(updated);
+      return updated;
+    });
+    return { rows: next, changed: set.length > 0, result: set };
+  });
+}
+
+/**
  * At capture: queues a Strong fit for the next coding session (written after
  * the capture's own section, never alongside it, so the two commits don't
  * race). Returns the repo it is waiting in, or null.
@@ -256,6 +275,34 @@ export function handoffLogLine(e: HandoffLogEntry): string {
   if (e.confidence) parts.push(`confidence ${e.confidence}`);
   if (e.files?.length) parts.push(`files ${e.files.map(encodePath).join(", ")}`);
   return `- ${parts.join(" · ")}`;
+}
+
+const LOG_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LOG_OUTCOME = /^([a-z]+)(?: \(([a-z-]+)\))?$/;
+
+/** The answers in the capture's `## Handoff log`, in order: what handoffLogLine wrote. Other lines are skipped. */
+export function parseHandoffLog(content: string): HandoffLogEntry[] {
+  const section = content.match(/## Handoff log\n([\s\S]*?)(?=\n## |$)/);
+  if (!section) return [];
+  const entries: HandoffLogEntry[] = [];
+  for (const line of section[1]!.split("\n")) {
+    if (!line.startsWith("- ")) continue;
+    const parts = line.slice(2).split(" · ");
+    const date = parts.shift()!;
+    const repo = parts[0]?.includes("/") ? parts.shift() : undefined;
+    const outcome = LOG_OUTCOME.exec(parts.shift() ?? "");
+    if (!LOG_DATE.test(date) || !outcome) continue;
+    const entry: HandoffLogEntry = { date, ...(repo ? { repo } : {}), outcome: outcome[1]!, ...(outcome[2] ? { reason: outcome[2] } : {}) };
+    for (const part of parts) {
+      const [field, ...rest] = part.split(" ");
+      const value = rest.join(" ");
+      if (field === "commit") entry.commit = value;
+      else if (field === "confidence") entry.confidence = value;
+      else if (field === "files") entry.files = value.split(", ").map(decodePath);
+    }
+    entries.push(entry);
+  }
+  return entries;
 }
 
 /** Adds `line` to the capture's `## Handoff log`, creating it before `## Links to memory` (or at the end). */

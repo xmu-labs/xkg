@@ -55,7 +55,7 @@ function jevStub(scores: Record<string, number>): Scorer & { score: ReturnType<t
 
 function deps(over: Partial<WhereDeps> = {}) {
   const complete = vi.fn(async () => JSON.stringify(modelReply));
-  return { complete, d: { listMaps: async () => [xkg, other], complete, now: () => NOW, ...over } as WhereDeps };
+  return { complete, d: { listMaps: async () => [xkg, other], complete, now: () => NOW, proven: async () => [], ...over } as WhereDeps };
 }
 
 afterEach(() => {
@@ -79,6 +79,38 @@ describe("matchCapture with Jev", () => {
     expect(new Set(sent.map((c) => c.repo))).toEqual(new Set(["xmu-labs/xkg", "acme/notes"]));
     expect(top("xmu-labs/xkg")).toHaveLength(15);
     for (const c of sent) expect(c.file).toEqual([xkg, other].find((m) => m.repo === c.repo)!.files.find((f) => f.p === c.path));
+  });
+
+  // protects: spec AC14, a file proven for the capture's tag is rated even when the name ranker left it out, and Jev is told why; fails_when: it's missing, sent twice, sent without its map entry, or a path or repo outside the maps is sent; no_claim: the proving (handoff-learning tests)
+  it("adds proven files for the capture's tags to Jev's pool, with their history", async () => {
+    const ranked = rankFiles([xkg, other], text);
+    const top = ranked.filter((r) => r.repo === "xmu-labs/xkg").slice(0, 15).map((r) => r.path);
+    const outside = xkg.files.map((f) => f.p).find((p) => !top.includes(p))!;
+    const proven = vi.fn(async () => [
+      { tag: "llm", repo: "xmu-labs/xkg", path: outside, captures: 2, weight: 1.5 },
+      { tag: "llm", repo: "xmu-labs/xkg", path: top[0]!, captures: 3, weight: 2 },
+      { tag: "memory", repo: "xmu-labs/xkg", path: "src/not-in-map.ts", captures: 2, weight: 2 },
+      { tag: "memory", repo: "acme/elsewhere", path: "src/a.ts", captures: 2, weight: 2 },
+    ]);
+    const jev = jevStub({ [`xmu-labs/xkg:${outside}`]: 0.73 });
+    const where = (await matchCapture(user, capture, deps({ jev, proven }).d))!;
+
+    expect(proven).toHaveBeenCalledWith(["llm", "memory"]);
+    const sent = jev.score.mock.calls[0]![1] as Candidate[];
+    const added = sent.filter((c) => c.path === outside);
+    expect(added).toHaveLength(1);
+    expect(added[0]).toMatchObject({ repo: "xmu-labs/xkg", note: "applied twice before for llm", file: xkg.files.find((f) => f.p === outside) });
+    expect(sent.find((c) => c.path === top[0])!.note).toBe("applied 3 times before for llm");
+    expect(sent.filter((c) => c.path === top[0])).toHaveLength(1);
+    expect(sent.some((c) => c.path === "src/not-in-map.ts" || c.repo === "acme/elsewhere")).toBe(false);
+    expect(where.files[0]).toEqual({ path: outside, why: "applied twice before for llm" });
+  });
+
+  // protects: learning never blocks a match; fails_when: a failed read of proven files fails the match; no_claim: none
+  it("matches as before when proven files can't be read", async () => {
+    const jev = jevStub({ [`xmu-labs/xkg:${LLM_TS}`]: 0.73 });
+    const where = await matchCapture(user, capture, deps({ jev, proven: async () => { throw new Error("db down"); } }).d);
+    expect(where?.files[0]?.path).toBe(LLM_TS);
   });
 
   // protects: the card shows Jev's best files, best first, with the tier of the best and Jev's cost; fails_when: a file under Possible is shown, more than 3 are shown, the order is wrong, or the result says the model decided; no_claim: the cutoffs are right (XKG-58)

@@ -7,7 +7,8 @@
  *   declined / done / later ──> row status + log line   (no move, no APPLIED.md row, no apply_events)
  *   reverted ──> APPLIED.md row marked + log line       (the row stays applied)
  *
- * Every answer goes to the capture's `## Handoff log` and to handoff_events.
+ * Every answer goes to the capture's `## Handoff log` and to handoff_events,
+ * and xkg learns from the log (handoff-learning.ts).
  * Any other outcome text is an older client describing an apply, and records
  * one as before.
  */
@@ -19,6 +20,7 @@ import { formatDate } from "./llm";
 import { repoName } from "./code-repos";
 import { LEDGER_PATH, markReverted } from "./ledger";
 import { recordHandoffEvent } from "./handoff-events";
+import { learnFrom } from "./handoff-learning";
 import { addDays, appendHandoffLog, handoffFor, handoffLogLine, isWaiting, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
 
 export const OUTCOMES = ["applied", "declined", "done", "later", "reverted"] as const;
@@ -92,12 +94,16 @@ export async function appliedHandoff(user: ApplyUser, filename: string, args: An
 
 /**
  * Marks the handoff applied, and counts it only when this call set the row,
- * so a retry after a failed write counts it once. Best-effort: false when
- * HANDOFFS.md couldn't be written.
+ * so a retry after a failed write counts it once. Then learns from `content`,
+ * the capture as just written with the apply's log line. Best-effort: false
+ * when HANDOFFS.md couldn't be written.
  */
-export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<boolean> {
+export async function closeHandoff(
+  user: ApplyUser, path: string, content: string, handoff: AppliedHandoff, withCommit: boolean, today: string,
+): Promise<boolean> {
   const set = await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
   if (set?.length) await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
+  await learnFrom(user, path, content, today);
   return set !== null;
 }
 
@@ -152,12 +158,16 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
 
   const reason = outcome === "declined" ? reasonOf(args.reason) : undefined;
   const confidence = confidenceOf(args.confidence);
-  const files = repo ? await mappedFiles(user.id, repo, args.files) : [];
+  const changed = repo ? await mappedFiles(user.id, repo, args.files) : [];
+  // A wrong-files decline names the files it turned down: what xkg suggested
+  const files = reason === "wrong-files" && !changed.length && row ? row.files : changed;
   const commit = outcome === "reverted" ? args.commit_sha : undefined;
   const line = handoffLogLine({ date: today, repo, outcome, reason, confidence, commit, files });
-  await githubPut(token, knowledge, path, appendHandoffLog(file.content, line), `handoff: ${outcome} ${filename}`, file.sha);
+  const content = appendHandoffLog(file.content, line);
+  await githubPut(token, knowledge, path, content, `handoff: ${outcome} ${filename}`, file.sha);
   const marked = outcome === "reverted" ? await markLedgerReverted(token, knowledge, filename, args.commit_sha!, today) : true;
   if (repo) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
+  await learnFrom(user, path, content, today);
 
   if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted${ledgerNote(marked)}.`;
   if (outcome === "later" && (set.length || row?.status === status)) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;

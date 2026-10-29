@@ -27,6 +27,7 @@ let afterHandoffsRead: (() => void) | null = null;
 const recordApplyEvent = vi.fn();
 const recordHandoffEvent = vi.fn();
 const codeMapPaths = vi.fn();
+const learnFrom = vi.fn();
 
 vi.mock("../rate-limit", () => ({ consumeQuota: vi.fn() }));
 vi.mock("../llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), formatDate: () => "2026-10-30" }));
@@ -48,6 +49,7 @@ vi.mock("../github", () => ({
 vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), codeMapPaths: (...a: unknown[]) => codeMapPaths(...a) }));
 vi.mock("../apply-events", async (orig) => ({ ...(await orig<typeof import("../apply-events")>()), recordApplyEvent: (...a: unknown[]) => recordApplyEvent(...a) }));
 vi.mock("../handoff-events", () => ({ recordHandoffEvent: (...a: unknown[]) => recordHandoffEvent(...a) }));
+vi.mock("../handoff-learning", () => ({ learnFrom: (...a: unknown[]) => learnFrom(...a) }));
 vi.mock("../surface-events", () => ({ recordSurfaceEvents: vi.fn(), recordWhereEvent: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
@@ -81,6 +83,7 @@ beforeEach(() => {
   afterHandoffsRead = null;
   recordApplyEvent.mockReset();
   recordHandoffEvent.mockReset();
+  learnFrom.mockReset();
   codeMapPaths.mockReset().mockResolvedValue(new Set(["src/llm.ts", "src/briefing.ts"]));
   return () => vi.useRealTimers();
 });
@@ -137,6 +140,33 @@ describe("answers that aren't applies", () => {
   });
 });
 
+describe("learning from answers", () => {
+  // protects: spec M2d, every answer kept in the log updates what xkg learned; fails_when: an answer or an apply isn't learned from, or is learned from before its log line is written; no_claim: the scores themselves (handoff-learning tests)
+  it("learns from the capture as written after each answer and each closed handoff", async () => {
+    setup();
+    await handleApplyCapture(user, { filename: NAME, outcome: "declined", repo: "acme/app", reason: "doesnt-fit" });
+    expect(learnFrom).toHaveBeenCalledWith(user, `inbox/${NAME}`, files[`inbox/${NAME}`]!.content, "2026-10-30");
+    expect(files[`inbox/${NAME}`]!.content).toContain("declined (doesnt-fit)");
+
+    setup();
+    learnFrom.mockReset();
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", files: ["src/llm.ts"] });
+    expect(learnFrom).toHaveBeenCalledWith(user, `applied/${NAME}`, files[`applied/${NAME}`]!.content, "2026-10-30");
+
+    setup([row({ repo: "acme/web" })]);
+    learnFrom.mockReset();
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" });
+    expect(learnFrom).not.toHaveBeenCalled();
+  });
+
+  // protects: a wrong-files answer names the files it turned down, so they can become dead ends; fails_when: the log line has no files; no_claim: none
+  it("logs the suggested files with a wrong-files decline", async () => {
+    setup([row({ files: ["src/llm.ts", "src/old.ts"] })]);
+    await handleApplyCapture(user, { filename: NAME, outcome: "declined", repo: "acme/app", reason: "wrong-files" });
+    expect(files[`inbox/${NAME}`]!.content).toContain("- 2026-10-30 · acme/app · declined (wrong-files) · files src/llm.ts, src/old.ts\n");
+  });
+});
+
 describe("answers after a handoff is finished", () => {
   // protects: an applied handoff is never reopened by a later answer; fails_when: "later" turns an applied row into a snooze (offered again) or "declined" overwrites it; no_claim: none
   it("keep an applied row applied, and still log the answer", async () => {
@@ -166,6 +196,7 @@ describe("when HANDOFFS.md can't be written", () => {
         .toBe("Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.");
       expect(files[`inbox/${NAME}`]!.content).not.toContain("Handoff log");
       expect(recordHandoffEvent).not.toHaveBeenCalled();
+      expect(learnFrom).not.toHaveBeenCalled();
       expect(handoffs()[0]!.status).toBe("pending");
     } finally {
       githubPut.mockImplementation(PUT);
