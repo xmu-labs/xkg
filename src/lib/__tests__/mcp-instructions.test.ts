@@ -48,6 +48,12 @@ describe("MCP server instructions", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/ask the user first/i);
   });
 
+  // protects: the session-start offer reaches agents that call briefing themselves; fails_when: the instructions don't pass the repo or don't say to ask the question; no_claim: agents follow it
+  it("has the agent pass the repo to briefing and ask the question it gives", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/call `briefing` with repo set to the origin's owner\/name/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/starts with captures waiting, ask the user the question it gives/i);
+  });
+
   it("stays short enough to sit in every agent's system prompt", () => {
     expect(SERVER_INSTRUCTIONS.length).toBeLessThan(2000);
   });
@@ -63,5 +69,15 @@ describe("briefing tool description", () => {
     const briefing = TOOLS.find((t) => t.name === "briefing")!;
     expect(briefing.description).toMatch(/candidates/i);
     expect(briefing.description).toMatch(/check[^.]*against the code/i);
+  });
+});
+
+describe("briefing tool schema", () => {
+  // protects: a session-start hook can ask for the offer alone; fails_when: briefing has no repo argument or still requires project_context; no_claim: none
+  it("takes an optional repo and no longer requires project_context", () => {
+    const briefing = TOOLS.find((t) => t.name === "briefing")!;
+    const schema = briefing.inputSchema as { properties: Record<string, unknown>; required?: string[] };
+    expect(schema.properties).toHaveProperty("repo");
+    expect(schema.required ?? []).not.toContain("project_context");
   });
 });

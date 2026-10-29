@@ -60,7 +60,7 @@ describe("sessionStart", () => {
 
   it("names itself xkg-session-start and counts the inbox in that session", async () => {
     const { sessionStart } = await import("../session-start.js");
-    await captureStdout(() => sessionStart("key"));
+    await captureStdout(() => sessionStart("key", { repo: null }));
     expect(sent()).toEqual([
       { method: "initialize", name: "xkg-session-start", session: undefined },
       { method: "tools/call", name: "list_inbox", session: "start-session" },
@@ -141,5 +141,64 @@ describe("sessionStart", () => {
     const started = Date.now();
     await captureStdout(() => sessionStart("key", { timeoutMs: 300 }));
     expect(Date.now() - started).toBeLessThan(450);
+  });
+
+  describe("in a repo with captures waiting for it", () => {
+    const OFFER = "xkg: 2 captures fit this repo (acme/app). Want to see them and apply one?\n\n## Waiting for you in acme/app\n1. A · Strong fit · inbox/a.md";
+
+    function serve(briefing: string) {
+      fetchSpy.mockImplementation((_url, init) => {
+        const body = JSON.parse(String((init as RequestInit).body)) as { method: string; params: { name?: string } };
+        if (body.method === "initialize") return Promise.resolve(reply("", { "mcp-session-id": "start-session" }));
+        return Promise.resolve(reply(body.params.name === "briefing" ? briefing : "3 capture(s) in inbox:\n\n- a\n- b\n- c"));
+      });
+    }
+
+    function args(): unknown[] {
+      return fetchSpy.mock.calls.map(([, init]) => (JSON.parse(String((init as RequestInit).body)) as { params: { arguments?: unknown } }).params.arguments).filter(Boolean);
+    }
+
+    // protects: AC20, the hook prints exactly what a briefing call with the same repo returns; fails_when: the text is reworded or wrapped differently from the server's; no_claim: the server's text (briefing test)
+    it("asks briefing with only the repo and prints its text as is", async () => {
+      serve(OFFER);
+      const { sessionStart } = await import("../session-start.js");
+      const out = await captureStdout(() => sessionStart("key", { repo: "acme/app" }));
+      expect(out).toBe(`${OFFER}\n`);
+      expect(args()[0]).toEqual({ repo: "acme/app" });
+    });
+
+    // protects: every agent's hook format carries the same offer; fails_when: an agent gets the inbox count instead; no_claim: none
+    it("wraps the offer for the agent's hook", async () => {
+      serve(OFFER);
+      const { sessionStart } = await import("../session-start.js");
+      const out = JSON.parse(await captureStdout(() => sessionStart("key", { repo: "acme/app", agent: "claude" }))) as { hookSpecificOutput: { additionalContext: string } };
+      expect(out.hookSpecificOutput.additionalContext).toBe(OFFER);
+    });
+
+    // protects: today's inbox offer stays when nothing waits for the repo; fails_when: the hook prints the "nothing waiting" line or nothing at all; no_claim: none
+    it("counts the inbox as before when nothing waits", async () => {
+      serve("No captures are waiting for acme/app.");
+      const { sessionStart } = await import("../session-start.js");
+      const out = await captureStdout(() => sessionStart("key", { repo: "acme/app" }));
+      expect(out).toContain("You have 3 new xkg captures.");
+      expect(out).not.toContain("No captures are waiting");
+    });
+  });
+
+  describe("currentRepo", () => {
+    // protects: the hook finds owner/name from the repo's origin, and nothing outside a repo; fails_when: a repo without origin, or a plain folder, yields a name; no_claim: unusual remote hosts (code-map test)
+    it("reads owner/name from origin", async () => {
+      const { mkdtempSync } = await import("fs");
+      const { tmpdir } = await import("os");
+      const { join } = await import("path");
+      const { execFileSync } = await import("child_process");
+      const { currentRepo } = await import("../session-start.js");
+      const dir = mkdtempSync(join(tmpdir(), "xkg-start-"));
+      expect(currentRepo(dir)).toBeNull();
+      execFileSync("git", ["init", "-q"], { cwd: dir });
+      expect(currentRepo(dir)).toBeNull();
+      execFileSync("git", ["remote", "add", "origin", "git@github.com:Acme/App.git"], { cwd: dir });
+      expect(currentRepo(dir)).toBe("Acme/App");
+    });
   });
 });

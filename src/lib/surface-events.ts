@@ -2,11 +2,12 @@
  * surface_events: each time a channel shows the user a capture.
  *
  * Channels: the capture card's "Where it applies" match (`where`), a briefing,
- * recall, and the vault scan. Like apply_events, a row holds a keyed hash of
- * the capture, never its name. A `where` row also keeps the matching call's
- * tokens, the model's own confidence (logged for the scorer work, never
- * shown), the scorer and the tier. Writes are best-effort: a failed insert
- * never fails the tool that surfaced the capture.
+ * recall, the vault scan, and the session-start handoff offer (`handoff`).
+ * Like apply_events, a row holds a keyed hash of the capture, never its name.
+ * A `where` row also keeps the matching call's tokens, the model's own
+ * confidence (logged for the scorer work, never shown), the scorer and the
+ * tier. Writes are best-effort: a failed insert never fails the tool that
+ * surfaced the capture.
  *
  *   capture card / briefing / recall / vault ──> surface_events ──┐
  *   apply_capture ──> apply_events ───────────────────────────────┴──> applySourceStats ──> admin route
@@ -18,7 +19,7 @@ import { captureKey } from "./apply-events";
 import { weekStart } from "./ledger";
 import type { WhereResult } from "./where";
 
-export type SurfaceChannel = "briefing" | "recall" | "vault";
+export type SurfaceChannel = "briefing" | "recall" | "vault" | "handoff";
 
 /** Records that `channel` showed these captures (each counted once per call). */
 export async function recordSurfaceEvents(userId: number, filenames: string[], channel: SurfaceChannel): Promise<void> {

@@ -191,9 +191,10 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
-    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent)
+    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent);
+                                                               keeps .xkg/ (handoff specs) out of git
     xkg map [--key KEY]                                        Send this repo's code map now (file paths and exported names, never code)
-    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer new captures
+    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else new ones
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
     xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree

@@ -283,6 +283,17 @@ describe("map sync hooks (any agent, or plain git)", () => {
     expect(readFileSync(join(repo, ".git", "hooks", "post-checkout"), "utf-8")).toBe(
       '#!/bin/sh\n[ "$3" = "1" ] && npx -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n');
   });
+
+  // protects: D3, a handoff spec the agent writes in .xkg/ is never committed; fails_when: git would track .xkg/handoffs/*.md, or the line is added twice or replaces the user's own; no_claim: agents that commit with --force
+  it("keeps .xkg/ out of git, once, next to the user's own excludes", async () => {
+    const { installGitHooks } = await import("../git-hook.js");
+    const exclude = join(repo, ".git", "info", "exclude");
+    writeFileSync(exclude, "*.log\n");
+    installGitHooks(repo, "1.8.0");
+    installGitHooks(repo, "1.8.0");
+    expect(readFileSync(exclude, "utf-8")).toBe("*.log\n.xkg/\n");
+    expect(run(repo, "check-ignore", ".xkg/handoffs/2026-10-29-llm-memory.md")).toBe(".xkg/handoffs/2026-10-29-llm-memory.md");
+  });
 });
 
 describe("checkHookConnection", () => {
