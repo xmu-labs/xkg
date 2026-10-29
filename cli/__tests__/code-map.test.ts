@@ -1,6 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "fs";
 import { execFileSync } from "child_process";
+
+// git gives a longer prefix than asked when the short one is ambiguous; a test
+// turns this on to stand in for a repo with such a commit.
+const abbrev = vi.hoisted(() => ({ ambiguous: false }));
+vi.mock("child_process", async (orig) => {
+  const real = await orig<typeof import("child_process")>();
+  const execFileSync = ((cmd: string, args: readonly string[], opts: object) => {
+    const out = real.execFileSync(cmd, args, opts);
+    if (!abbrev.ambiguous || cmd !== "git" || !args.some((a) => a.startsWith("--short"))) return out;
+    const sha = real.execFileSync("git", ["rev-parse", "HEAD"], { ...opts, encoding: "utf-8" }).trim();
+    return `${sha.slice(0, 9)}\n`;
+  }) as typeof real.execFileSync;
+  return { ...real, execFileSync };
+});
 import { tmpdir } from "os";
 import { join, dirname } from "path";
 
@@ -176,6 +190,38 @@ describe("buildCodeMap", () => {
     expect(parseCodeMap(map).ok).toBe(true);
   });
 
+  // Regression: Codex review on #126 — git lengthens --short=7 when 7 characters are ambiguous, and the server takes exactly 7
+  it("gives head7 as the first 7 characters of HEAD even when git would abbreviate it longer", async () => {
+    const { buildCodeMap } = await import("../code-map.js");
+    git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "first");
+    abbrev.ambiguous = true;
+    try {
+      expect(buildCodeMap(repo)!.head7).toBe(git(repo, "rev-parse", "HEAD").slice(0, 7));
+    } finally {
+      abbrev.ambiguous = false;
+    }
+  });
+
+  // Regression: Codex review on #126 — one path the server refuses made it reject the whole map
+  // protects: a repo with an odd path still syncs; fails_when: a path over 512 characters or with a backslash is sent, or an import points at it; no_claim: other server checks
+  it("leaves out paths the server would refuse, and imports of them", async () => {
+    const { buildCodeMap } = await import("../code-map.js");
+    const { parseCodeMap } = await import("../../src/lib/code-map.js");
+    const long = `src/${"a".repeat(200)}/${"b".repeat(200)}/${"c".repeat(200)}.ts`;
+    write(repo, {
+      [long]: "export const deep = 1;\n",
+      "src/odd\\name.ts": "export const odd = 1;\n",
+      "src/uses.ts": `import { deep } from "./${"a".repeat(200)}/${"b".repeat(200)}/${"c".repeat(200)}";\nexport const uses = deep;\n`,
+    });
+    const map = buildCodeMap(repo)!;
+    const paths = map.files.map((f) => f.p);
+    expect(paths).toContain("src/uses.ts");
+    expect(paths).not.toContain(long);
+    expect(paths.some((p) => p.includes("\\"))).toBe(false);
+    expect(map.files.find((f) => f.p === "src/uses.ts")!.i).toBeUndefined();
+    expect(parseCodeMap(map).ok).toBe(true);
+  });
+
   it("returns null when the repo has no origin remote", async () => {
     const { buildCodeMap } = await import("../code-map.js");
     const bare = makeRepo({ "a.ts": "export const a = 1;\n" }, null);
@@ -306,6 +352,24 @@ describe("syncCodeMap", () => {
     expect(await syncCodeMap("key-2", repo, { cachePath })).toMatchObject({ status: "synced" });
     expect(posted().map((p) => p.auth)).toEqual(["Bearer key-1", "Bearer key-2"]);
     expect(readFileSync(cachePath, "utf8")).not.toContain("key-2");
+  });
+
+  // Regression: Codex review on #126 — an unchanged map was never sent again, so the server's copy aged out or was dropped for good
+  // protects: the server's map stays current while the repo is in use; fails_when: an unchanged map is not re-sent after a day; no_claim: the exact interval
+  it("sends an unchanged map again once a day", async () => {
+    const { syncCodeMap } = await import("../code-map.js");
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-10-29T10:00:00Z"));
+      await syncCodeMap("key-1", repo, { cachePath });
+      vi.setSystemTime(new Date("2026-10-30T09:00:00Z"));
+      expect(await syncCodeMap("key-1", repo, { cachePath })).toMatchObject({ status: "unchanged" });
+      vi.setSystemTime(new Date("2026-10-30T10:00:01Z"));
+      expect(await syncCodeMap("key-1", repo, { cachePath })).toMatchObject({ status: "synced" });
+      expect(posted()).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("syncs an unchanged map when forced", async () => {

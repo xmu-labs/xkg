@@ -22,6 +22,7 @@ export const MAX_FILES = 3000;
 export const MAX_BYTES = 120 * 1024;
 const MAP_URL = "https://xkg.xmu.sh/api/code-map";
 const SYNC_TIMEOUT_MS = 3000;
+const RESEND_AFTER_MS = 24 * 60 * 60 * 1000;
 /** Larger files are mapped by path only: they are almost always generated. */
 const MAX_SOURCE_BYTES = 1024 * 1024;
 
@@ -32,6 +33,7 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 // make it refuse the whole map.
 const MAX_EXPORTS_PER_FILE = 1000;
 const MAX_NAME_LENGTH = 200;
+const MAX_PATH_LENGTH = 512;
 
 type Lang = "js" | "py" | "go" | "rs";
 const JS_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
@@ -213,7 +215,7 @@ function resolvePy(from: string, spec: string, files: Set<string>): string | nul
 }
 
 type BlobEntry = { e?: string[]; s?: string[]; r?: Resolver };
-export type MapCache = { repos?: Record<string, { hash?: string; blobs?: Record<string, BlobEntry> }> };
+export type MapCache = { repos?: Record<string, { hash?: string; sentAt?: number; blobs?: Record<string, BlobEntry> }> };
 
 /** Blob contents by id, in one `git cat-file` pass. Blobs over 1 MB come back empty. */
 export function readBlobs(cwd: string, ids: string[]): Map<string, string> {
@@ -266,7 +268,9 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
     if (!m || m[1] === "160000" || tracked.has(m[3]!)) continue;
     tracked.set(m[3]!, m[2]!);
   }
-  const paths = [...tracked.keys()].filter((p) => !SKIP_DIR.test(p) && !SKIP_FILE.test(p));
+  // Paths the server refuses (see parseCodeMap) would fail the whole map.
+  const paths = [...tracked.keys()].filter((p) =>
+    !SKIP_DIR.test(p) && !SKIP_FILE.test(p) && p.length <= MAX_PATH_LENGTH && !p.includes("\\"));
   const mapped = new Set(paths);
 
   const cache = opts.cache ?? {};
@@ -314,7 +318,8 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
 
   let head7 = "";
   try {
-    head7 = git(cwd, "rev-parse", "--short=7", "HEAD");
+    // --short can return more than 7 characters; the server takes exactly 7.
+    head7 = git(cwd, "rev-parse", "HEAD").slice(0, 7);
   } catch {
     // No commit yet
   }
@@ -407,7 +412,8 @@ export async function syncCodeMap(apiKey: string, cwd: string = process.cwd(), o
     // Keying the stamp with the API key changes it per account without storing the key.
     const hash = createHmac("sha256", apiKey).update(mapHash(map)).digest("hex");
     const entry = cache.repos![map.repo]!;
-    if (!opts.force && entry.hash === hash) {
+    // Re-send daily so the server's copy stays fresh and comes back if it was dropped.
+    if (!opts.force && entry.hash === hash && Date.now() - (entry.sentAt ?? 0) < RESEND_AFTER_MS) {
       saveCache(cachePath, cache);
       return { status: "unchanged", repo: map.repo, files: map.files.length };
     }
@@ -429,6 +435,7 @@ export async function syncCodeMap(apiKey: string, cwd: string = process.cwd(), o
       return { status: "failed", repo: map.repo, reason: `xkg answered HTTP ${res.status}.` };
     }
     entry.hash = hash;
+    entry.sentAt = Date.now();
     saveCache(cachePath, cache);
     return { status: "synced", repo: map.repo, files: map.files.length };
   } catch (err) {

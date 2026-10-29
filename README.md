@@ -279,7 +279,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
    ```
 
-   The same setup keeps a **code map** of the repo: file paths, exported function and class names, and which files import which. Never file contents, comments or package names. It is sent after a commit, a pull or a branch switch, only when a name changed, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
+   The same setup keeps a **code map** of the repo: file paths, exported function and class names, and which files import which. Never file contents, comments or package names. It is sent after a commit, a pull or a branch switch when a name changed, and at most once a day otherwise, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
 
    Ask *apply stats* to see how many captures you applied each week.
 
