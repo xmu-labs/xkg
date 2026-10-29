@@ -134,7 +134,8 @@ async function reportTrailers(apiKey: string, sha: string, cwd: string): Promise
 
     const trailers = captureTrailers(message);
     if (trailers.length) {
-      const files = git(cwd, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full).split("\n").filter(Boolean);
+      // NUL-separated, so paths come as they are and not as git quotes them ("caf\303\251.ts")
+      const files = git(cwd, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", full).split("\0").filter(Boolean);
       const target = files.slice(0, 5).join(", ") + (files.length > 5 ? ` and ${files.length - 5} more` : "");
       for (const filename of trailers) reports.push({ filename, commit_sha: full, target_file: target, files: files.slice(0, MAX_FILES), ...inRepo });
     }
