@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, createHmac } from "crypto";
 import { execFileSync } from "child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { homedir } from "os";
@@ -404,8 +404,8 @@ export async function syncCodeMap(apiKey: string, cwd: string = process.cwd(), o
       };
     }
     // The server keeps a map per account, so a new key means a new upload.
-    // Only a hash of the key is stored.
-    const hash = `${mapHash(map)}:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
+    // Keying the stamp with the API key changes it per account without storing the key.
+    const hash = createHmac("sha256", apiKey).update(mapHash(map)).digest("hex");
     const entry = cache.repos![map.repo]!;
     if (!opts.force && entry.hash === hash) {
       saveCache(cachePath, cache);
