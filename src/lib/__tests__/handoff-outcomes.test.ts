@@ -193,6 +193,58 @@ describe("when HANDOFFS.md can't be written", () => {
   });
 });
 
+describe("when the capture can't be written", () => {
+  const failCapture = (times: number) => {
+    let left = times;
+    githubPut.mockImplementation(async (_t, _r, path, content, _m, sha) => {
+      if (path === `inbox/${NAME}` && left-- > 0) throw new Error(`GitHub PUT ${path}: HTTP 409`);
+      return PUT(_t, _r, path, content, _m, sha);
+    });
+  };
+
+  // protects: a conflicting edit of the capture doesn't lose the answer; fails_when: one 409 loses the log line or the event; no_claim: none
+  it("retries the log line once from a fresh read", async () => {
+    setup();
+    failCapture(1);
+    try {
+      expect(await handleApplyCapture(user, { filename: NAME, outcome: "declined", reason: "doesnt-fit", repo: "acme/app" }))
+        .toBe(`Recorded: ${NAME} declined in acme/app (doesnt-fit). It doesn't count as an apply.`);
+      expect(files[`inbox/${NAME}`]!.content).toContain("- 2026-10-30 · acme/app · declined (doesnt-fit)\n");
+      expect(recordHandoffEvent).toHaveBeenCalledTimes(1);
+    } finally {
+      githubPut.mockImplementation(PUT);
+    }
+  });
+
+  // protects: an answer whose row was set but whose log line failed can be finished by repeating it, even without repo; fails_when: the repeat says "Pass repo", or the answer is counted twice; no_claim: a repeat on a later day without repo
+  it("says so, and the same answer repeated finishes it", async () => {
+    setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failCapture(2);
+    try {
+      expect(await handleApplyCapture(user, { filename: NAME, outcome: "declined", reason: "doesnt-fit", repo: "acme/app" }))
+        .toBe(`HANDOFFS.md says ${NAME} was declined in acme/app, but its Handoff log couldn't be written. Report the same answer again to finish recording it.`);
+      expect(handoffs()[0]!.status).toBe("declined");
+      expect(recordHandoffEvent).not.toHaveBeenCalled();
+    } finally {
+      githubPut.mockImplementation(PUT);
+      spy.mockRestore();
+    }
+    expect(await handleApplyCapture(user, { filename: NAME, outcome: "declined", reason: "doesnt-fit" }))
+      .toBe(`Recorded: ${NAME} declined in acme/app (doesnt-fit). It doesn't count as an apply.`);
+    expect(files[`inbox/${NAME}`]!.content).toContain("- 2026-10-30 · acme/app · declined (doesnt-fit)\n");
+    expect(recordHandoffEvent).toHaveBeenCalledTimes(1);
+  });
+
+  // protects: a retried call doesn't count an answer twice; fails_when: the same answer adds a second line or event; no_claim: none
+  it("keeps one line and one event for the same answer repeated", async () => {
+    setup();
+    for (let i = 0; i < 2; i++) await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" });
+    expect(files[`inbox/${NAME}`]!.content.match(/· later/g)).toHaveLength(1);
+    expect(recordHandoffEvent).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("an answer that crosses another change", () => {
   // protects: an apply that lands between an answer's read and its write wins; fails_when: the answer overwrites the applied row, or the reply claims a snooze; no_claim: none
   it("leaves the row as the other change left it", async () => {

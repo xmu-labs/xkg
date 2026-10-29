@@ -19,7 +19,7 @@ import { formatDate } from "./llm";
 import { repoName } from "./code-repos";
 import { LEDGER_PATH, markReverted } from "./ledger";
 import { recordHandoffEvent } from "./handoff-events";
-import { addDays, appendHandoffLog, handoffFor, handoffLogLine, isWaiting, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
+import { addDays, appendHandoffLog, captureName, handoffFor, handoffLogLine, isWaiting, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
 
 export const OUTCOMES = ["applied", "declined", "done", "later", "reverted"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
@@ -130,11 +130,15 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
   }
   if (!file) return `File not found: inbox/${filename} or applied/${filename}. Use list_inbox to see available captures.`;
 
-  const row = handoffFor(await readHandoffs(token, knowledge), filename, asked);
+  const today = formatDate();
+  const until = addDays(today, SNOOZE_DAYS);
+  const status = { declined: "declined", done: "done", later: `snoozed:${until}`, reverted: null }[outcome];
+  const rows = await readHandoffs(token, knowledge);
+  // A repeat of an answer whose log line failed finds the row it already set today
+  const row = handoffFor(rows, filename, asked) ?? (asked || !status ? null : answeredToday(rows, filename, status, today));
   const repo = asked ?? row?.repo.toLowerCase() ?? null;
   if (!repo && outcome !== "reverted") return "Pass repo (owner/name of the code repo) so xkg knows which handoff this answers. Nothing was recorded.";
 
-  const today = formatDate();
   const short = args.commit_sha?.slice(0, 7);
   const ledgerNote = (marked: boolean) => (marked ? "" : ", but APPLIED.md couldn't be updated. Report it again to fix that");
   // A repeat report also repairs an APPLIED.md mark that failed the first time
@@ -145,8 +149,6 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
   // HANDOFFS.md first: when it can't be written nothing is recorded, so the
   // agent can simply try again. Only a waiting row takes the answer, and only
   // if it's still as read: an applied or dead row stays as it is.
-  const until = addDays(today, SNOOZE_DAYS);
-  const status = { declined: "declined", done: "done", later: `snoozed:${until}`, reverted: null }[outcome];
   const set = row && status && isWaiting(row.status) ? await setHandoffStatus(token, knowledge, [row], status, today) : [];
   if (!set) return "Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.";
 
@@ -155,9 +157,15 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
   const files = repo ? await mappedFiles(user.id, repo, args.files) : [];
   const commit = outcome === "reverted" ? args.commit_sha : undefined;
   const line = handoffLogLine({ date: today, repo, outcome, reason, confidence, commit, files });
-  await githubPut(token, knowledge, path, appendHandoffLog(file.content, line), `handoff: ${outcome} ${filename}`, file.sha);
+  const added = await logAnswer(token, knowledge, path, file, line, `handoff: ${outcome} ${filename}`);
+  if (added === null) {
+    if (!set.length) return "Nothing was recorded: the capture's Handoff log couldn't be written. Try again in a moment.";
+    const now = { declined: "was declined", done: "was already done", later: `is snoozed until ${until}` }[outcome as Exclude<Outcome, "applied" | "reverted">];
+    return `HANDOFFS.md says ${filename} ${now} in ${repo}, but its Handoff log couldn't be written. Report the same answer again to finish recording it.`;
+  }
   const marked = outcome === "reverted" ? await markLedgerReverted(token, knowledge, filename, args.commit_sha!, today) : true;
-  if (repo) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
+  // Counted once: a repeated answer finds its line already in the log
+  if (repo && added) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
 
   if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted${ledgerNote(marked)}.`;
   if (outcome === "later" && (set.length || row?.status === status)) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
@@ -167,6 +175,35 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
     later: `not now for ${filename} in ${repo}`,
   }[outcome];
   return `Recorded: ${said}. It doesn't count as an apply.`;
+}
+
+/** The capture's only row set to `status` today: an answer whose log line still has to be written. */
+function answeredToday(rows: HandoffRow[], filename: string, status: string, today: string): HandoffRow | null {
+  const mine = rows.filter((r) => captureName(r.capture) === captureName(filename) && r.status === status && r.since === today);
+  return mine.length === 1 ? mine[0]! : null;
+}
+
+/**
+ * Adds `line` to the capture's Handoff log, retrying once from a fresh read.
+ * True when added, false when the log already has it (a repeated answer),
+ * null when the capture couldn't be written.
+ */
+async function logAnswer(
+  token: string, knowledge: string, path: string, first: { content: string; sha: string }, line: string, message: string,
+): Promise<boolean | null> {
+  let file: { content: string; sha: string } | null = first;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      if (attempt) file = await readFile(token, knowledge, path);
+      if (!file) return null;
+      if (file.content.split("\n").includes(line)) return false;
+      await githubPut(token, knowledge, path, appendHandoffLog(file.content, line), message, file.sha);
+      return true;
+    } catch (err) {
+      if (attempt === 1) console.error("[handoff] log write failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  return null;
 }
 
 /**
