@@ -1,5 +1,5 @@
 /**
- * kos — xkg's Knowledge Operations orchestrator.
+ * xkg agent — runs a saved plan with the user's own coding agent.
  *
  * Drives whatever AI assistant the user configured (`xkg config set agent ...`)
  * to implement a generated plan in an isolated git worktree. xkg owns the
@@ -40,20 +40,23 @@ export function parseChecklist(planText: string): string[] {
     .map((l) => l.replace(/^- \[[ x]\]\s*/i, ""));
 }
 
-/** Build a unique, sortable branch name for a kos run. */
-export function buildKosBranch(now: Date = new Date()): string {
+/** Build a unique, sortable branch name for an agent run. */
+export function buildAgentBranch(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[:.]/g, "-").replace("T", "-").slice(0, 19);
-  return `xkg/kos-${stamp}`;
+  return `xkg/agent-${stamp}`;
 }
 
-/** Where kos drops the plan inside the worktree. Never committed — see excludePlanFiles. */
+/** Printed when the command is run under its old name, `kos`. */
+export const RENAMED_NOTE = "`xkg kos` is now `xkg agent`. The old name will stop working in a later release.";
+
+/** Where the agent run drops the plan inside the worktree. Never committed — see excludePlanFiles. */
 export const PLAN_FILE = "XKG_PLAN.md";
 
 /** Plan filenames written by earlier releases; still excluded so an old worktree can't leak one. */
 const LEGACY_PLAN_FILES = ["MNEMOS_PLAN.md"] as const;
 
 /** The instruction handed to the assistant. The plan file is the real contract. */
-export const KOS_PROMPT =
+export const AGENT_PROMPT =
   `Implement the plan in ${PLAN_FILE} in this repository. ` +
   "Follow the Codebase Mapping table exactly — change only the files it lists. " +
   "For each step apply the thinking effort named in its Effort column " +
@@ -100,7 +103,7 @@ function run(cmd: string, cwd?: string): string {
   return execSync(cmd, { cwd, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
 }
 
-export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise<void> {
+export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Promise<void> {
   const cfg = readConfig();
   if (!cfg.agent) {
     console.error("No agent configured. Tell xkg which AI worker to drive:\n");
@@ -127,13 +130,13 @@ export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise
   try {
     repoRoot = run("git rev-parse --show-toplevel");
   } catch {
-    console.error("xkg kos must be run inside a git repository.");
+    console.error("xkg agent must be run inside a git repository.");
     process.exit(1);
     return;
   }
 
   // 3. Isolated worktree on a fresh branch
-  const branch = buildKosBranch();
+  const branch = buildAgentBranch();
   const worktreePath = join(tmpdir(), branch.replace(/\//g, "-"));
   console.log(`Creating isolated worktree on branch ${branch}...`);
   run(`git worktree add -b ${branch} "${worktreePath}"`, repoRoot);
@@ -143,7 +146,7 @@ export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise
   try {
     excludePlanFiles(worktreePath);
   } catch (err) {
-    console.error(`Could not keep ${PLAN_FILE} out of git, so kos stopped before writing it.`);
+    console.error(`Could not keep ${PLAN_FILE} out of git, so xkg agent stopped before writing it.`);
     console.error(err instanceof Error ? err.message : String(err));
     console.error(`The empty worktree is at ${worktreePath}.`);
     process.exit(1);
@@ -153,7 +156,7 @@ export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise
   // 5. Hand off to the user's assistant, running inside the worktree
   console.log(`Launching: ${cfg.agent}\n`);
   try {
-    execSync(`${cfg.agent} ${JSON.stringify(KOS_PROMPT)}`, { cwd: worktreePath, stdio: "inherit" });
+    execSync(`${cfg.agent} ${JSON.stringify(AGENT_PROMPT)}`, { cwd: worktreePath, stdio: "inherit" });
   } catch {
     console.error("\nThe agent exited with an error. The worktree is preserved for inspection.");
   }
@@ -161,7 +164,7 @@ export async function kos(apiKey: string, opts: { plan?: string } = {}): Promise
   // 6. Report — branch + the plan's own checklist as the review gate
   const checklist = parseChecklist(planText);
   console.log(`\n${"─".repeat(60)}`);
-  console.log(`kos finished. Plan: ${planFile}`);
+  console.log(`xkg agent finished. Plan: ${planFile}`);
   console.log(`Branch:   ${branch}`);
   console.log(`Worktree: ${worktreePath}`);
   if (checklist.length > 0) {
