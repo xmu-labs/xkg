@@ -1,18 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { execSync } from "child_process";
 import {
   parsePlanFilenames,
   latestPlanFilename,
   parseChecklist,
-  buildKosBranch,
+  buildAgentBranch,
+  newWorktreePath,
   withPlanExcludes,
   excludePlanFiles,
   PLAN_FILE,
-  KOS_PROMPT,
-} from "../kos.js";
+  AGENT_PROMPT,
+} from "../agent.js";
 
 const LIST_PLANS = `3 plan(s):
 
@@ -77,14 +78,31 @@ Not part of the checklist.`;
   });
 });
 
-describe("buildKosBranch", () => {
+describe("buildAgentBranch", () => {
   it("produces a deterministic, sortable branch name from a date", () => {
-    const branch = buildKosBranch(new Date("2026-06-05T10:30:45.000Z"));
-    expect(branch).toBe("xkg/kos-2026-06-05-10-30-45");
+    const branch = buildAgentBranch(new Date("2026-06-05T10:30:45.000Z"));
+    expect(branch).toBe("xkg/agent-2026-06-05-10-30-45");
   });
 
-  it("always starts with the xkg/kos- prefix", () => {
-    expect(buildKosBranch()).toMatch(/^xkg\/kos-/);
+  it("always starts with the xkg/agent- prefix", () => {
+    expect(buildAgentBranch()).toMatch(/^xkg\/agent-/);
+  });
+});
+
+describe("newWorktreePath", () => {
+  // protects: two runs started in the same second, in any repos, each get a worktree; fails_when: the folder is derived from the branch name alone, so the second run's `git worktree add` fails with "already exists"; no_claim: two runs in one repo in the same second (same branch name)
+  it("gives each run its own empty folder, even for the same branch name", () => {
+    const a = newWorktreePath("xkg/agent-2026-06-05-10-30-45");
+    const b = newWorktreePath("xkg/agent-2026-06-05-10-30-45");
+    try {
+      expect(a).not.toBe(b);
+      expect(readdirSync(a)).toEqual([]);
+      expect(basename(a)).toMatch(/^xkg-agent-2026-06-05-10-30-45-/);
+      expect(dirname(a)).toBe(tmpdir());
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
   });
 });
 
@@ -118,7 +136,7 @@ describe("excludePlanFiles", () => {
     execSync(`git ${cmd}`, { cwd, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
 
   beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), "xkg-kos-"));
+    dir = mkdtempSync(join(tmpdir(), "xkg-agent-"));
     git("init -q -b main repo");
     const repo = join(dir, "repo");
     git("-c user.name=t -c user.email=t@t commit -q --allow-empty -m init", repo);
@@ -129,7 +147,7 @@ describe("excludePlanFiles", () => {
   it("keeps the plan untracked in a worktree of a normal repository", () => {
     const repo = join(dir, "repo");
     const wt = join(dir, "wt");
-    git(`worktree add -q -b xkg/kos-test "${wt}"`, repo);
+    git(`worktree add -q -b xkg/agent-test "${wt}"`, repo);
     excludePlanFiles(wt);
     writeFileSync(join(wt, PLAN_FILE), "secret plan");
     git("add -A", wt);
@@ -138,12 +156,12 @@ describe("excludePlanFiles", () => {
 
   // The old code wrote to <root>/.git/info/exclude, which does not exist when
   // <root> is itself a linked worktree (.git is a file). The plan got committed.
-  it("keeps the plan untracked when kos runs from a linked worktree", () => {
+  it("keeps the plan untracked when the agent runs from a linked worktree", () => {
     const repo = join(dir, "repo");
     const outer = join(dir, "outer");
     const wt = join(dir, "wt");
     git(`worktree add -q -b outer "${outer}"`, repo);
-    git(`worktree add -q -b xkg/kos-test "${wt}"`, outer);
+    git(`worktree add -q -b xkg/agent-test "${wt}"`, outer);
     excludePlanFiles(wt);
     writeFileSync(join(wt, PLAN_FILE), "secret plan");
     git("add -A", wt);
@@ -168,9 +186,9 @@ describe("excludePlanFiles", () => {
   });
 });
 
-describe("KOS_PROMPT", () => {
+describe("AGENT_PROMPT", () => {
   it("points the agent at the plan file and forbids committing it", () => {
-    expect(KOS_PROMPT).toContain(PLAN_FILE);
-    expect(KOS_PROMPT).toMatch(/never commit/);
+    expect(AGENT_PROMPT).toContain(PLAN_FILE);
+    expect(AGENT_PROMPT).toMatch(/never commit/);
   });
 });

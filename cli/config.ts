@@ -1,5 +1,5 @@
 /**
- * xkg CLI config — stores which AI assistant kos should drive, and an
+ * xkg CLI config — stores which AI assistant `xkg agent` should drive, and an
  * optional API key, in ~/.xkg/config.json.
  * Falls back to ~/.xmu/config.json then ~/.mnemos/config.json.
  */
@@ -43,7 +43,7 @@ function readPath(): string {
 export interface XkgConfig {
   /** Shell command that launches the user's AI assistant, e.g. "claude -p". */
   agent?: string;
-  /** Optional stored MCP API key so kos can run without --key. */
+  /** Optional stored MCP API key so `xkg agent` can run without --key. */
   key?: string;
 }
 

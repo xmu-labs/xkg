@@ -38,8 +38,9 @@ xkg is the knowledge graph for AI workers that bridges human knowledge into cont
     - [Anything MCP](#anything-mcp)
 - [Workflow](#workflow)
 - [What's inside](#whats-inside)
-- [Your context stays in GitHub](#your-context-stays-in-github)
 - [CLI](#cli)
+- [Your context stays in GitHub](#your-context-stays-in-github)
+- [Cost](#cost)
 - [Roadmap](#roadmap)
 - [License](#license)
 
@@ -128,7 +129,7 @@ npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 
 Register that command in the tool you use.
 
-When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. There's nothing to paste into `AGENTS.md` or rules files.
+When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own, so there's nothing to paste into rules files. Codex CLI doesn't read it yet: see [Codex](#codex) for the lines to add.
 
 #### Cursor
 
@@ -175,6 +176,15 @@ args = ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
 ```
 
 Codex App: Settings → MCP → add the same `npx` command.
+
+Codex CLI doesn't read the instructions xkg sends when it connects, so add these lines to `~/.codex/AGENTS.md` (all projects) or the repo's `AGENTS.md`:
+
+```markdown
+## xkg
+- At the start of a coding session, call the xkg `briefing` tool with the repo name, branch, and last few commit messages. Check each capture it returns against the code before naming a file.
+- When the user shares something worth keeping, call `capture`.
+- When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, and one line on why.
+```
 
 #### Gemini CLI
 
@@ -258,10 +268,10 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "claude -p"
-   npx -y @xmu-labs/xkg@latest kos --key YOUR_API_KEY
+   npx -y @xmu-labs/xkg@latest agent --key YOUR_API_KEY
    ```
 
-   `kos` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
+   `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes. Older CLI versions call it `xkg kos`, and that name still works for now.
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "codex exec"
@@ -371,8 +381,8 @@ npx -y @xmu-labs/xkg@latest <command>
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
 | `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer, and keep the repo's code map up to date after commits, pulls and branch switches (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once; the hooks run the CLI version that installed them (run setup again to update) |
 | `map [--key YOUR_API_KEY]` | In a repo: send its code map now (file paths and exported names, never code) |
-| `config set agent "claude -p"` | Set which assistant `kos` should drive |
-| `kos --key YOUR_API_KEY` | Implement the latest plan in an isolated worktree |
+| `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
+| `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
 | `vault-check --key YOUR_API_KEY` | Debug the vault hook |
 | `help` | Show help |
