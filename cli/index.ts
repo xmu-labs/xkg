@@ -48,7 +48,8 @@ async function main(): Promise<void> {
   }
 
   if (command === "setup-git-hook") {
-    const { installPostCommitHook, checkHookConnection } = await import("./git-hook.js");
+    const { installGitHooks, checkHookConnection } = await import("./git-hook.js");
+    const { syncCodeMap } = await import("./code-map.js");
     const { readConfig, setConfigField } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const keyArg = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
@@ -59,9 +60,10 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     try {
-      const path = installPostCommitHook();
-      console.log(`xkg git hook installed: ${path}`);
+      const paths = installGitHooks();
+      console.log(`xkg git hooks installed: ${paths.join(", ")}`);
       console.log("Commits with an `xkg-capture: <filename>` trailer are now recorded as applied.");
+      console.log("Commits, pulls and branch switches keep this repo's code map (file and function names, never code) up to date.");
     } catch (err) {
       console.error(err instanceof Error && err.message.includes("not a shell script")
         ? err.message
@@ -76,6 +78,35 @@ async function main(): Promise<void> {
       console.error(`The hook is installed but can't report yet: ${check.reason}`);
       process.exit(1);
     }
+    console.log(syncMessage(await syncCodeMap(readConfig().key!, process.cwd(), { force: true })));
+    return;
+  }
+
+  if (command === "map") {
+    const { syncCodeMap } = await import("./code-map.js");
+    const { readConfig } = await import("./config.js");
+    const keyIdx = args.indexOf("--key");
+    const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
+    if (!apiKey) {
+      console.error("No API key. Pass --key YOUR_KEY or store it: xkg config set key YOUR_KEY");
+      process.exit(1);
+    }
+    const result = await syncCodeMap(apiKey, process.cwd(), { force: true });
+    if (result.status === "synced") {
+      console.log(syncMessage(result));
+    } else {
+      console.error(syncMessage(result));
+      process.exit(1);
+    }
+    return;
+  }
+
+  if (command === "sync-map") {
+    const { syncCodeMap } = await import("./code-map.js");
+    const { readConfig } = await import("./config.js");
+    const apiKey = readConfig().key;
+    if (!apiKey) process.exit(0); // silent fail in hook context
+    await syncCodeMap(apiKey);
     return;
   }
 
@@ -143,6 +174,12 @@ async function main(): Promise<void> {
   exec(`${openCmd} ${HOSTED_URL}`);
 }
 
+function syncMessage(result: import("./code-map.js").SyncResult): string {
+  if (result.status === "synced" || result.status === "unchanged") return `Synced ${result.repo}: ${result.files} files`;
+  if (result.status === "skipped") return `Code map not synced: ${result.reason}`;
+  return `Code map not synced${result.repo ? ` for ${result.repo}` : ""}: ${result.reason} Run \`xkg map\` to try again.`;
+}
+
 function printHelp(): void {
   console.log(`
   xkg — A knowledge graph for your AI workers
@@ -154,7 +191,8 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
-    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer (any agent)
+    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent)
+    xkg map [--key KEY]                                        Send this repo's code map now (file paths and exported names, never code)
     xkg session-start [--agent NAME]                           For an agent's session-start hook: offer new captures
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives

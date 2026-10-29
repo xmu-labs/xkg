@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, mkdirSync, chmodSync, existsSync } from "fs";
 import { execFileSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -121,10 +121,10 @@ describe("postCommit", () => {
   });
 
   type Sent = { method: string; params: { name: string; arguments: Record<string, unknown>; clientInfo?: { name: string } } };
-  function sent(): Array<{ body: Sent; session: string | undefined }> {
+  function sent(): Array<{ url: unknown; body: Sent; session: string | undefined }> {
     return fetchSpy.mock.calls.map((c: unknown[]) => {
       const init = c[1] as { body: string; headers: Record<string, string> };
-      return { body: JSON.parse(init.body) as Sent, session: init.headers["Mcp-Session-Id"] };
+      return { url: c[0], body: JSON.parse(init.body) as Sent, session: init.headers["Mcp-Session-Id"] };
     });
   }
   function calls(): Array<{ name: string; arguments: Record<string, unknown> }> {
@@ -175,12 +175,113 @@ describe("postCommit", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  // protects: the map follows the code after each commit; fails_when: a commit without a trailer skips the sync, or the sync runs before the applies are reported; no_claim: the hash gate (code-map tests)
+  it("syncs the code map after reporting, even for a commit without a trailer", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    const home = mkdtempSync(join(tmpdir(), "xkg-home-"));
+    const origHome = process.env["HOME"];
+    process.env["HOME"] = home;
+    try {
+      git(repo, "remote", "add", "origin", "git@github.com:acme/widgets.git");
+      const plain = commit(repo, "src/a.ts", "Plain commit");
+      await postCommit("key", plain, repo);
+      expect(sent().map((s) => String(s.url))).toEqual(["https://xkg.xmu.sh/api/code-map"]);
+
+      const applied = commit(repo, "src/b.ts", "Fix\n\nxkg-capture: a.md");
+      await postCommit("key", applied, repo);
+      expect(sent().slice(1).map((s) => s.body.method ?? String(s.url))).toEqual(["initialize", "tools/call", "https://xkg.xmu.sh/api/code-map"]);
+    } finally {
+      process.env["HOME"] = origHome;
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it("never throws, so a commit is never disturbed", async () => {
     const { postCommit } = await import("../git-hook.js");
     const sha = commit(repo, "a.ts", "Fix\n\nxkg-capture: c.md");
     fetchSpy.mockRejectedValue(new Error("offline"));
     await expect(postCommit("key", sha, repo)).resolves.toBeUndefined();
     await expect(postCommit("key", "not-a-sha", repo)).resolves.toBeUndefined();
+  });
+});
+
+describe("map sync hooks (any agent, or plain git)", () => {
+  let repo: string;
+  let bin: string;
+  let log: string;
+  beforeEach(() => {
+    repo = makeRepo();
+    bin = mkdtempSync(join(tmpdir(), "xkg-fake-npx-"));
+    log = join(bin, "calls.log");
+    // A stand-in npx that records what the hooks ask it to run
+    writeFileSync(join(bin, "npx"), `#!/bin/sh\necho "$*" >> "${log}"\n`);
+    chmodSync(join(bin, "npx"), 0o755);
+  });
+  afterEach(() => {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(bin, { recursive: true, force: true });
+  });
+
+  const env = () => ({ ...process.env, PATH: `${bin}:${process.env["PATH"]}` });
+  const run = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf-8", env: env() }).trim();
+  async function calls(count: number): Promise<string[]> {
+    // The hooks run in the background, so wait for their lines to land
+    for (let t = 0; t < 100; t++) {
+      const lines = existsSync(log) ? readFileSync(log, "utf-8").split("\n").filter(Boolean) : [];
+      if (lines.length >= count) return lines;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    return existsSync(log) ? readFileSync(log, "utf-8").split("\n").filter(Boolean) : [];
+  }
+
+  // protects: every agent (or none) keeps the map fresh the same way; fails_when: a commit, pull or branch switch made with plain git does not reach the sync; no_claim: what the sync sends (code-map tests)
+  it("runs the hash-gated sync after a plain git commit, branch switch and pull", async () => {
+    const { installGitHooks } = await import("../git-hook.js");
+    installGitHooks(repo, "1.8.0");
+
+    writeFileSync(join(repo, "a.ts"), "export const a = 1;\n");
+    run(repo, "add", "-A");
+    run(repo, "commit", "-q", "-m", "First");
+    const sha = run(repo, "rev-parse", "HEAD");
+    expect(await calls(1)).toEqual([`-y @xmu-labs/xkg@1.8.0 post-commit --sha ${sha}`]);
+
+    run(repo, "checkout", "-q", "-b", "feature");
+    expect((await calls(2))[1]).toBe("-y @xmu-labs/xkg@1.8.0 sync-map");
+
+    const clone = mkdtempSync(join(tmpdir(), "xkg-clone-"));
+    try {
+      execFileSync("git", ["clone", "-q", repo, clone], { encoding: "utf-8" });
+      installGitHooks(clone, "1.8.0");
+      writeFileSync(join(repo, "b.ts"), "export const b = 1;\n");
+      execFileSync("git", ["add", "-A"], { cwd: repo });
+      execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "-m", "Second"], { cwd: repo });
+      run(clone, "-c", "pull.rebase=false", "pull", "-q", "origin", "feature");
+      expect((await calls(3))[2]).toBe("-y @xmu-labs/xkg@1.8.0 sync-map");
+    } finally {
+      rmSync(clone, { recursive: true, force: true });
+    }
+  });
+
+  it("skips a checkout of files that doesn't switch branches", async () => {
+    const { installGitHooks } = await import("../git-hook.js");
+    commit(repo, "a.ts", "First");
+    installGitHooks(repo, "1.8.0");
+    writeFileSync(join(repo, "a.ts"), "changed\n");
+    run(repo, "checkout", "--", "a.ts");
+    await new Promise((r) => setTimeout(r, 200));
+    expect(existsSync(log)).toBe(false);
+  });
+
+  it("installs each hook once, keeping the user's own lines", async () => {
+    const { installGitHooks } = await import("../git-hook.js");
+    const merge = join(repo, ".git", "hooks", "post-merge");
+    writeFileSync(merge, "#!/bin/sh\necho mine\n");
+    installGitHooks(repo, "1.7.0");
+    const paths = installGitHooks(repo, "1.8.0");
+    expect(paths).toEqual(["post-commit", "post-merge", "post-checkout"].map((h) => join(repo, ".git", "hooks", h)));
+    expect(readFileSync(merge, "utf-8")).toBe("#!/bin/sh\necho mine\nnpx -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n");
+    expect(readFileSync(join(repo, ".git", "hooks", "post-checkout"), "utf-8")).toBe(
+      '#!/bin/sh\n[ "$3" = "1" ] && npx -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n');
   });
 });
 

@@ -15,6 +15,8 @@ const PUBLIC_PATHS = [
   // Operator endpoints check the x-admin-secret header themselves.
   "/api/admin",
   "/api/mcp",
+  // The CLI's code map sync; the route checks the xkg API key itself.
+  "/api/code-map",
   // OAuth 2.1 for MCP remote connectors. These endpoints manage their own auth
   // (bearer tokens, PKCE, or a login redirect from the authorize page), so they
   // must not be gated by the session-cookie middleware.
