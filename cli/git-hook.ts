@@ -73,11 +73,6 @@ export function installPostCommitHook(cwd: string = process.cwd(), version: stri
   return installHookLine(hooksDirOf(cwd), "post-commit", line, (l) => l.includes(" post-commit "));
 }
 
-/**
- * Installs the post-commit hook, plus post-merge and post-checkout lines that sync the
- * code map after a pull or a branch switch (not after a checkout of single files),
- * and keeps `.xkg/` out of git. Returns the three hooks' paths.
- */
 /** Where an agent writes a handoff spec in the code repo. Kept out of git locally, never committed. */
 const LOCAL_DIR = ".xkg/";
 
@@ -90,6 +85,11 @@ export function excludeLocalDir(cwd: string): void {
   writeFileSync(path, `${current.replace(/\n*$/, current ? "\n" : "")}${LOCAL_DIR}\n`);
 }
 
+/**
+ * Installs the post-commit hook, plus post-merge and post-checkout lines that sync the
+ * code map after a pull or a branch switch (not after a checkout of single files),
+ * and keeps `.xkg/` out of git. Returns the three hooks' paths.
+ */
 export function installGitHooks(cwd: string = process.cwd(), version: string = getCurrentVersion()): string[] {
   excludeLocalDir(cwd);
   const commit = installPostCommitHook(cwd, version);
