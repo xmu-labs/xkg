@@ -314,6 +314,19 @@ describe("syncCodeMap", () => {
     }
   });
 
+  // Regression: ISSUE-001 — outside a git repo, `xkg map` blamed a missing origin remote
+  // Found by /qa on 2026-10-29
+  it("says when the folder is not a git repo at all, without contacting xkg", async () => {
+    const { syncCodeMap } = await import("../code-map.js");
+    const plain = mkdtempSync(join(tmpdir(), "xkg-not-a-repo-"));
+    try {
+      expect(await syncCodeMap("key-1", plain, { cachePath })).toEqual({ status: "skipped", reason: "Not a git repository. Run this inside the repo you code in." });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
   it("keeps the cache next to the CLI config, never in the repo", async () => {
     const { syncCodeMap } = await import("../code-map.js");
     await syncCodeMap("key-1", repo, { cachePath });

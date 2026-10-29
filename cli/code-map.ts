@@ -383,7 +383,20 @@ export async function syncCodeMap(apiKey: string, cwd: string = process.cwd(), o
   try {
     const cache = loadCache(cachePath);
     const map = buildCodeMap(cwd, { cache });
-    if (!map) return { status: "skipped", reason: "This repo has no origin remote, so xkg can't tell which repo it is." };
+    if (!map) {
+      let inRepo = true;
+      try {
+        git(cwd, "rev-parse", "--is-inside-work-tree");
+      } catch {
+        inRepo = false;
+      }
+      return {
+        status: "skipped",
+        reason: inRepo
+          ? "This repo has no origin remote, so xkg can't tell which repo it is."
+          : "Not a git repository. Run this inside the repo you code in.",
+      };
+    }
     const hash = mapHash(map);
     const entry = cache.repos![map.repo]!;
     if (!opts.force && entry.hash === hash) {
