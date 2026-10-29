@@ -6,6 +6,7 @@ import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
+import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -101,6 +102,10 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
+  // Where it applies: one more LLM call, started now so it runs alongside
+  // writing and linking instead of after them. Never throws.
+  const matching = matchCapture(user, capture);
+
   // Build Markdown and commit to user's repo
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
@@ -130,5 +135,13 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ capture, filename, fileUrl: captureFileUrl(user.github_repo, filename) });
+  const where = await matching;
+  if (where) await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where);
+
+  return NextResponse.json({
+    capture,
+    filename,
+    fileUrl: captureFileUrl(user.github_repo, filename),
+    ...(where ? { where: whereCard(where) } : {}),
+  });
 }

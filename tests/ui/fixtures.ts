@@ -39,6 +39,19 @@ export const WORST_CAPTURE = {
     inferredType: "podcast-episode-transcript",
   },
   filename: "2026-10-24-why-retrieval-augmented-generation-pipelines-fail-in-production-a-field-guide.md",
+  where: {
+    fit: "Strong fit",
+    repo: WORST_REPO,
+    files: [
+      {
+        path: "packages/retrieval-augmented-generation-evaluation-harness/src/pipelines/production/retrievalRecallAtKEvaluator.ts",
+        why: "`retrievalRecallAtKEvaluatorWithSemanticChunkBoundaries` measures recall before prompts are tuned",
+      },
+      { path: "src/lib/rerank.ts" },
+    ],
+    also: [{ repo: WORST_REPO.replace("xkg-knowledge", "northwind"), fit: "Possible fit" }],
+    note: "From file names, not yet checked in your code · map from 2026-10-29 (abc1234)",
+  },
 };
 
 /** Signs the page in (the middleware only checks the cookie exists) and mocks the API. */

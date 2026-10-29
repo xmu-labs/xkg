@@ -23,6 +23,7 @@ import { consumeQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
+import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
@@ -45,6 +46,8 @@ export async function handleCapture(user: User, args: { content: string; title?:
 
   const sourceType = detectSourceType(args.content);
   const capture: ExtractedCapture = await extractCapture(user.llm_api_key, args.content, args.title, llmSettings(user));
+  // Runs alongside writing and linking; never throws.
+  const matching = matchCapture(user, capture);
 
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
@@ -109,6 +112,9 @@ export async function handleCapture(user: User, args: { content: string; title?:
     }
   }
 
+  const where = await matching;
+  const wrote = where ? await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where) : false;
+
   // Append inbox count as a nudge
   const inboxRes = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
   const inboxCount = inboxRes.ok && inboxRes.data
@@ -119,6 +125,8 @@ export async function handleCapture(user: User, args: { content: string; title?:
   if (linkedCount > 0) {
     result += `\nLinked to ${linkedCount} related capture(s).`;
   }
+  const line = wrote && where ? whereLine(where) : null;
+  if (line) result += `\n${line}`;
   if (inboxCount > 0) {
     result += `\n\n---\n📬 You have ${inboxCount} item(s) in your inbox. Use list_inbox to review and apply them.`;
   }

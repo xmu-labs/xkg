@@ -2,7 +2,7 @@ import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
 import { isLegacyPinHash, wrapLegacyHash } from "./pin";
 import type { LlmEffort, LlmProvider } from "./types";
-import type { CodeMapPayload } from "./code-map";
+import type { CodeMapPayload, MapFile, StoredCodeMap } from "./code-map";
 
 export type { LlmProvider };
 
@@ -221,6 +221,16 @@ export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: 
       SELECT id FROM code_maps WHERE user_id = ${userId} ORDER BY synced_at DESC, id DESC LIMIT ${MAX_CODE_MAPS}
     )
   `;
+}
+
+/** The user's most recently synced maps, newest first. */
+export async function listCodeMaps(userId: number, limit: number): Promise<StoredCodeMap[]> {
+  await ensureCodeMapTable();
+  const { rows } = await sql<{ repo: string; map: MapFile[]; head7: string | null; truncated: boolean; synced_at: Date }>`
+    SELECT repo, map, head7, truncated, synced_at FROM code_maps WHERE user_id = ${userId}
+    ORDER BY synced_at DESC, id DESC LIMIT ${limit}
+  `;
+  return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, syncedAt: new Date(r.synced_at) }));
 }
 
 /**

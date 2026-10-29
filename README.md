@@ -248,7 +248,9 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    capture "The Mom Test: don't ask if your idea is good. Ask about the person's real behavior, current workflow, and past spending."
    ```
 
-2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code, so it doesn't guess where a capture lands: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
+   If you sync a **code map** (see step 5), the capture also gets a **Where it applies** section: the repo and up to 3 files where it may change something, picked by your LLM from file and function names only and labeled as not yet checked in your code. Every path is checked against your map, a reason that names a function the file doesn't export is dropped, and the fit (Strong or Possible) comes from how well the names match, never from the model rating itself. When nothing fits, it says why in one line. With no map, the capture is saved exactly as before.
+
+2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
 3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
 
@@ -426,7 +428,7 @@ The whole point of this repo being public is that you can check these claims rat
 When you capture, the server talks to exactly three kinds of destination:
 
 1. **GitHub** — to write the capture into your repo
-2. **Your LLM provider**, with *your* key: the one you picked in Settings
+2. **Your LLM provider**, with *your* key: the one you picked in Settings. If you sync code maps, the maps of your 5 most recently synced repos (names only) go along, so it can say where the capture applies
 3. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.

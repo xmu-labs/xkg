@@ -110,11 +110,12 @@ export default function PrivacyPage() {
           [
             "Your LLM provider (Anthropic, OpenAI or Google)",
             <>
-              Capture content, relevant knowledge-base entries, and the context sent for briefings,
+              Capture content, relevant knowledge-base entries, the code maps of your 5 most recently
+              synced repositories when a new capture is matched to your code, and the context sent for briefings,
               plans and suggestions (such as project name, branch, recent commit messages, file paths,
               task descriptions and code), sent with <strong>your</strong> API key
             </>,
-            "Extracting and ranking insights, writing briefings, plans and suggestions",
+            "Extracting and ranking insights, finding where a capture applies in your code, writing briefings, plans and suggestions",
             "Your provider's infrastructure",
           ],
           ["Websites you capture", "A request from xkg's servers, not from your device", "Reading the page you submitted", "Anywhere"],

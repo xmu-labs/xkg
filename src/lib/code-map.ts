@@ -13,6 +13,15 @@ export interface CodeMapPayload {
   truncated: boolean;
 }
 
+/** A map as read back from storage, for matching captures to code. */
+export interface StoredCodeMap {
+  repo: string;
+  files: MapFile[];
+  head7: string | null;
+  truncated: boolean;
+  syncedAt: Date;
+}
+
 export const MAX_MAP_FILES = 3000;
 export const MAX_MAP_BODY_BYTES = 150 * 1024;
 export const CODE_MAP_QUOTA = 60;
