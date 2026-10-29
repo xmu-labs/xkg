@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
-import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserProfile } from "@/lib/db";
+import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserProfile, updateUserRepo } from "@/lib/db";
+import { currentRepoName } from "@/lib/github";
 import { LLM_EFFORTS, LLM_PROVIDERS, defaultModel, validateLlmModel, verifyLlmKey } from "@/lib/llm";
 import type { LlmEffort, LlmProvider } from "@/lib/types";
 import {
@@ -30,6 +31,7 @@ function mePayload(user: {
   llm_api_key?: string | null;
   llm_model?: string | null;
   llm_effort?: LlmEffort | null;
+  github_repo?: string | null;
 }) {
   return {
     githubUsername: user.github_username,
@@ -44,6 +46,7 @@ function mePayload(user: {
     llmModel: user.llm_model ?? null,
     llmEffort: user.llm_effort ?? null,
     defaultModel: defaultModel(user.llm_provider),
+    knowledgeRepo: user.github_repo ?? null,
     version: appVersion(),
   };
 }
@@ -54,6 +57,15 @@ export async function GET(): Promise<NextResponse> {
     if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     await ensureProfileColumns();
     await ensureLlmColumns();
+    // Follow a rename on GitHub, so xkg doesn't rely on the redirect from the
+    // old name, which stops working if a new repo takes that name.
+    if (user.github_repo) {
+      const current = await currentRepoName(user.github_token, user.github_repo);
+      if (current && current !== user.github_repo) {
+        await updateUserRepo(user.id, current);
+        user.github_repo = current;
+      }
+    }
     return NextResponse.json(mePayload(user));
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load profile";

@@ -5,6 +5,10 @@ import { test as base, type Page } from "@playwright/test";
  * handle at the 39-character limit, an avatar URL that 404s, and a capture
  * whose fields carry unbroken URLs and an invented content type.
  */
+/** A GitHub handle at the limit plus a long repo name. */
+export const WORST_REPO =
+  "aleksandra-wisniewska-kowalczyk-0123456/xkg-knowledge-retrieval-augmented-generation-evaluation-harness";
+
 export const WORST_ME = {
   githubUsername: "aleksandra-wisniewska-kowalczyk-0123456",
   displayName: "Aleksandra Wiśniewska-Kowalczyk 1234",
@@ -17,6 +21,7 @@ export const WORST_ME = {
   llmModel: "ft:gpt-4o-mini-2024-07-18:northwind-industries-holdings:retrieval-eval-harness:9xYzAbCd",
   llmEffort: "high" as const,
   defaultModel: "gpt-4o-mini",
+  knowledgeRepo: WORST_REPO as string | null,
   version: "1.6.1",
 };
 

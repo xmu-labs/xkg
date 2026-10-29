@@ -18,6 +18,8 @@ export interface Me {
   llmModel?: string | null;
   llmEffort?: Effort | null;
   defaultModel?: string;
+  /** `owner/name` of the GitHub repo that holds the captures; null before onboarding. */
+  knowledgeRepo?: string | null;
   version: string;
 }
 
@@ -683,6 +685,20 @@ export default function SettingsDrawer({
                       <p className="text-xs mt-2" style={{ color: "var(--danger)" }}>{profileError}</p>
                     )}
                   </div>
+                  {me?.knowledgeRepo && (
+                    <div>
+                      <p className="text-xs mb-1" style={{ color: "var(--fg-muted)" }}>Captures are saved in</p>
+                      <a
+                        href={`https://github.com/${me.knowledgeRepo}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium break-all"
+                        style={{ color: "var(--gold)" }}
+                      >
+                        {me.knowledgeRepo} <span aria-hidden="true">↗</span>
+                      </a>
+                    </div>
+                  )}
                 </div>
               </section>
 

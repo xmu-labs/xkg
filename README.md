@@ -62,7 +62,7 @@ Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub.
 
 xkg will:
 
-1. Create a **private** GitHub repo for your knowledge (you can opt to make it public)
+1. Create a **private** GitHub repo for your knowledge on your account, named `xkg-knowledge` unless you pick another name (you can opt to make it public)
 2. Ask for your LLM provider and API key: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral or Groq. Your key, your cost. Change the provider, model or reasoning effort any time in Settings → AI model.
 3. Let you set a PIN (6+ characters) for quick unlock on this device
 4. Show your **xkg API key** once — save it if you want to connect an AI worker
@@ -382,6 +382,21 @@ Captures live as structured Markdown in **your** GitHub repository. Private by d
 - **Any tool can read it** — anything that reads Git or speaks MCP
 - **BYOK** — your provider, your key, your cost
 - **Never commit your xkg API key** to source control
+
+### Find your repo
+
+Settings → Account shows the repo your captures are saved in, with a link to it on GitHub. Inside it:
+
+| Path | What it holds |
+| --- | --- |
+| `inbox/YYYY-MM-DD-<slug>.md` | one Markdown file per capture |
+| `applied/` | captures that have been applied in a commit |
+| `archived/` | captures you archived |
+| `plans/` | plans you generated |
+| `INDEX.md` | a table of every capture: date, title, keywords, tags |
+| `APPLIED.md` | which capture went into which commit |
+
+**Renaming it.** Rename the repo on GitHub as usual, then open xkg once. xkg reads the new name from GitHub, saves it, and shows it in Settings. Until then, GitHub's redirect from the old name keeps captures working. Don't create a new repo with the old name before you've opened xkg, because GitHub drops the redirect when you do. You don't need to onboard again, and doing so would replace your PIN and keys.
 
 ### What xkg stores, and where
 

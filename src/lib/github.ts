@@ -154,6 +154,28 @@ export async function revokeGithubGrant(
   return res.status === 204;
 }
 
+/** Settings waits at most this long for GitHub to name the knowledge repo. */
+export const GITHUB_REPO_LOOKUP_TIMEOUT_MS = 3000;
+
+/**
+ * The repo's current `owner/name` as GitHub reports it. After a rename GitHub
+ * redirects the old name, and `full_name` in the answer is the new one. Returns
+ * null when GitHub can't be reached or answers with an error.
+ */
+export async function currentRepoName(token: string, repo: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${GITHUB_API}/repos/${repo}`, {
+      headers: authHeaders(token),
+      signal: AbortSignal.timeout(GITHUB_REPO_LOOKUP_TIMEOUT_MS),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { full_name?: unknown };
+    return typeof data.full_name === "string" && data.full_name.includes("/") ? data.full_name : null;
+  } catch {
+    return null;
+  }
+}
+
 // ── High-level helpers ──
 
 /** Read a file's decoded UTF-8 content and sha from a repo. */
