@@ -258,11 +258,16 @@ function resolveJs(from: string, spec: string, files: Set<string>, resolver: Res
   if (spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../")) {
     bases.push(posix.join(posix.dirname(from), spec));
   } else {
-    for (const a of resolver.aliases) {
-      if (a.wildcard ? spec.startsWith(a.prefix) && spec.endsWith(a.suffix) && spec.length >= a.prefix.length + a.suffix.length : spec === a.prefix) {
-        const match = a.wildcard ? spec.slice(a.prefix.length, spec.length - a.suffix.length) : "";
-        for (const t of a.targets) bases.push(posix.normalize(t.replaceAll("*", match)));
-      }
+    // One alias applies, as in the compiler (matchPatternOrExact): an exact
+    // pattern, else the wildcard with the longest prefix, the first on a tie.
+    const best =
+      resolver.aliases.find((a) => !a.wildcard && spec === a.prefix) ??
+      resolver.aliases
+        .filter((a) => a.wildcard && spec.startsWith(a.prefix) && spec.endsWith(a.suffix) && spec.length >= a.prefix.length + a.suffix.length)
+        .reduce<Alias | undefined>((b, a) => (!b || a.prefix.length > b.prefix.length ? a : b), undefined);
+    if (best) {
+      const match = best.wildcard ? spec.slice(best.prefix.length, spec.length - best.suffix.length) : "";
+      for (const t of best.targets) bases.push(posix.normalize(t.replaceAll("*", match)));
     }
     if (resolver.baseUrl !== null) bases.push(posix.join(resolver.baseUrl, spec));
   }

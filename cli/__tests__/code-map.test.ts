@@ -219,6 +219,20 @@ describe("buildCodeMap", () => {
     expect(files.find((f) => f.p === "src/e.ts")?.i).toEqual(["src/f.tsx"]);
   });
 
+  // protects: with overlapping aliases, links follow the alias the compiler picks; fails_when: "@/lib/db" resolves through the broader "@/*" listed first; no_claim: aliases spread over several config files
+  it("resolves an import through the most specific matching path alias", async () => {
+    write(repo, {
+      "tsconfig.json": '{ "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/*"], "@/lib/*": ["lib/*"], "@/exact": ["lib/exact"] } } }\n',
+      "lib/db.ts": "export const db = 1;\n",
+      "lib/exact.ts": "export const exact = 1;\n",
+      "src/exact.ts": "export const exact = 1;\n",
+      "src/uses.ts": 'import { db } from "@/lib/db";\nimport { exact } from "@/exact";\nexport const u = db + exact;\n',
+    });
+    const { buildCodeMap } = await import("../code-map.js");
+    const files = buildCodeMap(repo)!.files;
+    expect(files.find((f) => f.p === "src/uses.ts")?.i).toEqual(["lib/db.ts", "lib/exact.ts"]);
+  });
+
   // protects: the names-only promise; fails_when: any value in the payload is file content; no_claim: nothing about the server's own check
   it("sends no file contents: every value is a tracked path or an identifier", async () => {
     const { buildCodeMap } = await import("../code-map.js");
