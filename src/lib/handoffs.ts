@@ -40,6 +40,8 @@ export interface HandoffFile {
   /** Text before the table (the intro, or what the user wrote there). */
   head: string;
   rows: HandoffRow[];
+  /** Table lines xkg can't read (a row the user typed, a kind from a later version), kept as written. */
+  other: string[];
   /** Text after the table. */
   tail: string;
 }
@@ -66,22 +68,26 @@ export function parseHandoffs(content: string): HandoffFile {
   const lines = content.split("\n");
   const start = lines.findIndex((l) => /^\|\s*capture\s*\|\s*repo\s*\|/.test(l.trim()));
   // No table (the user removed it): keep their text and start a new table below it.
-  if (start < 0) return { head: content.trim() ? content.replace(/\n*$/, "\n\n") : INTRO, rows: [], tail: "" };
+  if (start < 0) return { head: content.trim() ? content.replace(/\n*$/, "\n\n") : INTRO, rows: [], other: [], tail: "" };
   let end = start + 1;
   while (end < lines.length && lines[end]!.trim().startsWith("|")) end++;
-  const rows = lines
-    .slice(start + 1, end)
-    .map((l) => rowOf(splitRow(l.trim())))
-    .filter((r): r is HandoffRow => r !== null);
+  const rows: HandoffRow[] = [];
+  const other: string[] = [];
+  for (const line of lines.slice(start + 1, end)) {
+    const row = rowOf(splitRow(line.trim()));
+    if (row) rows.push(row);
+    else if (!/^\|[\s|:-]*$/.test(line.trim())) other.push(line);
+  }
   const head = lines.slice(0, start).join("\n");
-  return { head: head ? `${head}\n` : "", rows, tail: lines.slice(end).join("\n") };
+  return { head: head ? `${head}\n` : "", rows, other, tail: lines.slice(end).join("\n") };
 }
 
-export function renderHandoffs(rows: HandoffRow[], around: Pick<HandoffFile, "head" | "tail"> = { head: INTRO, tail: "" }): string {
+export function renderHandoffs(rows: HandoffRow[], around: Omit<HandoffFile, "rows"> = { head: INTRO, other: [], tail: "" }): string {
   const body = rows
     .map((r) => `| ${[r.capture, r.repo, r.kind, r.files.join(", "), r.fit, r.status, r.since, r.source].map((v) => cell(v)).join(" | ")} |\n`)
     .join("");
-  return `${around.head}${TABLE_HEAD}${body}${around.tail}`;
+  const other = around.other.map((l) => `${l}\n`).join("");
+  return `${around.head}${TABLE_HEAD}${body}${other}${around.tail}`;
 }
 
 const sameRow = (a: HandoffRow, b: HandoffRow) => JSON.stringify(a) === JSON.stringify(b);
@@ -122,7 +128,7 @@ export async function queueHandoff(token: string, repo: string, row: HandoffRow)
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const file = await readFile(token, repo, HANDOFFS_PATH);
-      const parsed = file ? parseHandoffs(file.content) : { head: INTRO, rows: [], tail: "" };
+      const parsed = file ? parseHandoffs(file.content) : { head: INTRO, rows: [], other: [], tail: "" };
       const result = upsertHandoff(parsed.rows, row);
       if (!result.changed) return { row: result.row, changed: false };
       await githubPut(token, repo, HANDOFFS_PATH, renderHandoffs(result.rows, parsed), `handoff: queue ${captureName(row.capture)} for ${row.repo}`, file?.sha);

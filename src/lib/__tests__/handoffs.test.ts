@@ -79,6 +79,23 @@ describe("HANDOFFS.md format", () => {
   });
 });
 
+describe("HANDOFFS.md rows xkg can't read", () => {
+  // Regression: ISSUE-001 — a write dropped table rows xkg couldn't read (a row the user typed, a kind from a later version)
+  // Found by /qa on 2026-10-29
+  // Report: .gstack/qa-reports/run-20261029T201121Z/qa-report-handoffs-2026-10-29.md
+  // protects: rows the user typed in the table survive xkg's next write; fails_when: an unreadable table line is dropped on render; no_claim: GitHub's behavior (in-memory fake)
+  it("keeps them, as written, below its own rows", () => {
+    const theirs = ["| inbox/2026-10-02-flow.md | acme/app | workflow | — | strong | pending | 2026-10-02 | auto |", "| my own note about acme/app | | | | | | | |"];
+    const text = `${renderHandoffs([row()])}${theirs.join("\n")}\n`;
+    const parsed = parseHandoffs(text);
+    expect(parsed.rows).toEqual([row()]);
+    const { rows } = upsertHandoff(parsed.rows, row({ repo: "acme/web" }));
+    const again = renderHandoffs(rows, parsed);
+    for (const line of theirs) expect(again).toContain(`${line}\n`);
+    expect(parseHandoffs(again).rows.map((r) => r.repo)).toEqual(["acme/web", "acme/app"]);
+  });
+});
+
 describe("upsertHandoff", () => {
   // protects: AC2, one row per capture and repo, newest first; fails_when: queuing the same pair twice leaves two rows; no_claim: none
   it("updates the row for the same capture and repo and moves it to the top", () => {
