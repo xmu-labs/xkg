@@ -128,8 +128,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "kos") {
-    const { kos } = await import("./kos.js");
+  if (command === "agent" || command === "kos") {
+    const { runAgent, RENAMED_NOTE } = await import("./agent.js");
+    if (command === "kos") console.error(RENAMED_NOTE);
     const { readConfig } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
@@ -139,7 +140,7 @@ async function main(): Promise<void> {
     }
     const planIdx = args.indexOf("--plan");
     const plan = planIdx !== -1 ? args[planIdx + 1] : undefined;
-    await kos(apiKey, { plan });
+    await runAgent(apiKey, { plan });
     return;
   }
 
@@ -180,8 +181,8 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
     xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent)
     xkg map [--key KEY]                                        Send this repo's code map now (file paths and exported names, never code)
-    xkg config set agent "claude -p"                           Set which AI worker kos drives
-    xkg kos --key KEY [--plan FILE]                            Implement a plan in an isolated worktree
+    xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
+    xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree
     xkg help                                                   Show this help
 
     npx -y @xmu-labs/xkg@latest …                              Same CLI, via the published package
@@ -194,12 +195,12 @@ function printHelp(): void {
     apply_stats       — Captures applied per week, and how many came with a commit
     curate            — Validate URLs and flag stale captures
 
-  kos — implement plans with your own AI worker (model-agnostic):
+  xkg agent — implement plans with your own AI worker (model-agnostic):
     1. Tell xkg which assistant to drive (once):
          xkg config set agent "claude -p"      # or "codex exec", "aider --yes --message"
     2. Generate a plan via the generate_plan MCP tool.
-    3. Run: xkg kos --key YOUR_KEY
-       kos creates an isolated git worktree, hands the plan to your assistant,
+    3. Run: xkg agent --key YOUR_KEY
+       It creates an isolated git worktree, hands the plan to your assistant,
        and reports the branch + the plan's Verification Checklist when done.
 
   Get started:
