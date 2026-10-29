@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
+import CodeRepos from "./CodeRepos";
 
 export interface Me {
   githubUsername: string;
@@ -1003,6 +1004,9 @@ export default function SettingsDrawer({
                 </div>
               </section>
               )}
+
+              {/* Code repos */}
+              <CodeRepos cardStyle={CARD_STYLE} inputClass={INPUT_CLASS} />
 
               {/* 4. System */}
               <section>

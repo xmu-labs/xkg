@@ -59,6 +59,7 @@ export async function signIn(page: Page, me = WORST_ME) {
   await page.context().addCookies([{ name: "xkg_session", value: "test", domain: "localhost", path: "/" }]);
   await page.route("**/api/me", (r) => r.fulfill({ json: me }));
   await page.route("**/api/version", (r) => r.fulfill({ json: { buildId: "test" } }));
+  await page.route("**/api/code-repos", (r) => r.fulfill({ json: { repos: [] } }));
 }
 
 export async function setTheme(page: Page, theme: "light" | "dark") {
