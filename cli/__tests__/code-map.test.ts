@@ -199,6 +199,26 @@ describe("buildCodeMap", () => {
     expect(files.find((f) => f.p === "src/c.js")?.i).toEqual(["src/b.js"]);
   });
 
+  // protects: mixed ESM/CommonJS repos link the module actually imported; fails_when: "./b.mjs" links b.ts while b.mts is tracked, "./d.cjs" links d.ts while d.cts is, or "./f.jsx" links f.ts before f.tsx; no_claim: .d.ts files, which are not mapped
+  it("substitutes the TypeScript source that matches the imported extension", async () => {
+    write(repo, {
+      "src/b.ts": "export const b = 1;\n",
+      "src/b.mts": "export const b = 1;\n",
+      "src/a.mts": 'import { b } from "./b.mjs";\nexport const a = b;\n',
+      "src/d.ts": "export const d = 1;\n",
+      "src/d.cts": "export const d = 1;\n",
+      "src/c.cts": 'import { d } from "./d.cjs";\nexport const c = d;\n',
+      "src/f.ts": "export const f = 1;\n",
+      "src/f.tsx": "export const f = 1;\n",
+      "src/e.ts": 'import { f } from "./f.jsx";\nexport const e = f;\n',
+    });
+    const { buildCodeMap } = await import("../code-map.js");
+    const files = buildCodeMap(repo)!.files;
+    expect(files.find((f) => f.p === "src/a.mts")?.i).toEqual(["src/b.mts"]);
+    expect(files.find((f) => f.p === "src/c.cts")?.i).toEqual(["src/d.cts"]);
+    expect(files.find((f) => f.p === "src/e.ts")?.i).toEqual(["src/f.tsx"]);
+  });
+
   // protects: the names-only promise; fails_when: any value in the payload is file content; no_claim: nothing about the server's own check
   it("sends no file contents: every value is a tracked path or an identifier", async () => {
     const { buildCodeMap } = await import("../code-map.js");

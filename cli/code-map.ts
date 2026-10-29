@@ -234,13 +234,17 @@ function stripJsonComments(text: string): string {
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
+// The sources the TypeScript compiler tries for an import that names a
+// JavaScript extension, in its order (tryAddingExtensions).
+const TS_SOURCES: Record<string, string[]> = { ".js": [".ts", ".tsx"], ".jsx": [".tsx", ".ts"], ".mjs": [".mts"], ".cjs": [".cts"] };
+
 /** Files an import of `base` can mean; from a TypeScript file, `./b.js` means b.ts first, as the compiler resolves it. */
 function jsCandidates(base: string, fromTs: boolean): string[] {
   const out = [base];
   const ext = posix.extname(base);
-  if ([".js", ".jsx", ".mjs", ".cjs"].includes(ext)) {
+  if (TS_SOURCES[ext]) {
     const stem = base.slice(0, -ext.length);
-    const source = [`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`];
+    const source = TS_SOURCES[ext].map((e) => stem + e);
     if (fromTs) out.unshift(...source);
     else out.push(...source);
   }
