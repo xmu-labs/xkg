@@ -33,6 +33,14 @@ describe("readWhereSection", () => {
     });
   });
 
+  // protects: a file name with backticks is queued as the file the card showed; fails_when: a path is cut at its first backtick, or loses a leading or trailing backtick or space; no_claim: none
+  it("reads back paths with backticks whole", () => {
+    const paths = ["src/a`b.ts", "src/a``b`.ts", "`lead.ts", "trail.ts`", " space.ts", "plain.ts"];
+    const odd: WhereResult = { ...where, files: paths.map((path) => ({ path, why: "uses `x`" })) };
+    expect(readWhereSection(saved(odd))?.files).toEqual(paths);
+    expect(whereSection(where)).toContain("- `src/llm.ts`: `rank` sends the whole index\n");
+  });
+
   // protects: a no-fit section offers nothing to queue; fails_when: a no-fit line reads as a repo; no_claim: none
   it("reads a no-fit section as no repo", () => {
     const none: WhereResult = { repo: null, tier: "none", files: [], also: [], noFit: { reason: "weak" }, scorer: "evidence", modelConf: null };
