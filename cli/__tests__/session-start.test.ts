@@ -129,4 +129,17 @@ describe("sessionStart", () => {
     expect(await captureStdout(() => sessionStart("key", { timeoutMs: 50 }))).toBe("");
     expect(Date.now() - started).toBeLessThan(1000);
   });
+
+  // Regression: ISSUE-001 — each call got the full time limit, so a hung server held the session twice as long
+  // Found by /qa on 2026-10-29
+  // Report: .gstack/qa-reports/qa-report-session-start-2026-10-29.md
+  it("shares one time limit across both calls", async () => {
+    fetchSpy.mockImplementation((_url, init) => new Promise((_resolve, reject) => {
+      (init as RequestInit).signal?.addEventListener("abort", () => reject(new Error("aborted")));
+    }));
+    const { sessionStart } = await import("../session-start.js");
+    const started = Date.now();
+    await captureStdout(() => sessionStart("key", { timeoutMs: 300 }));
+    expect(Date.now() - started).toBeLessThan(450);
+  });
 });

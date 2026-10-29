@@ -40,12 +40,14 @@ export async function sessionStart(
   apiKey: string,
   opts: { agent?: string; timeoutMs?: number } = {},
 ): Promise<void> {
-  const timeoutMs = opts.timeoutMs ?? 3000;
+  // One limit for the whole command, so a hung server can't hold the session twice as long.
+  const deadline = Date.now() + (opts.timeoutMs ?? 3000);
+  const remaining = () => Math.max(1, deadline - Date.now());
   try {
-    const session = await initializeMcp(apiKey, SESSION_START_CLIENT, timeoutMs)
+    const session = await initializeMcp(apiKey, SESSION_START_CLIENT, remaining())
       .then((res) => (res.ok ? res.headers.get("mcp-session-id") : null))
       .catch(() => null);
-    const text = await callMcp(apiKey, "list_inbox", {}, timeoutMs, session);
+    const text = await callMcp(apiKey, "list_inbox", {}, remaining(), session);
     const count = parseInt(text?.match(/^(\d+)\s+capture/)?.[1] ?? "0", 10);
     if (count <= 0) return;
 
