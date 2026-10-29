@@ -28,7 +28,11 @@ const NO_ANSWER = "GitHub didn't answer. Try again in a minute.";
 
 /** `owner/name` in lowercase, as the map route stores it, from what the user typed (a pasted github.com URL works too), or null. */
 export function repoName(input: string): string | null {
-  const name = input.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
+  const trimmed = input.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "");
+  // Trailing slashes are cut with a loop: a regex like /\/+$/ is quadratic on a long run of slashes
+  let end = trimmed.length;
+  while (end > 0 && trimmed[end - 1] === "/") end--;
+  const name = trimmed.slice(0, end).toLowerCase();
   const parts = name.split("/");
   if (parts.length !== 2 || !parts.every((s) => /^[\w.-]+$/.test(s) && s !== "." && s !== "..")) return null;
   return name.length <= 200 ? name : null;

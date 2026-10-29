@@ -61,6 +61,14 @@ describe("HANDOFFS.md format", () => {
     expect(text).toContain("| inbox/2026-10-28-review.md | acme/app | code | — | possible | snoozed:2026-11-05 | 2026-10-28 | button |");
     expect(parseHandoffs(text).rows).toEqual(rows);
   });
+  // protects: a file name with ", " or "%" stays one file; fails_when: a round trip splits or changes a path; no_claim: none
+  it("keeps paths with commas and percent signs whole", () => {
+    const odd = row({ files: ["src/a, b.ts", "docs/50%,off.md", "src/plain.ts"] });
+    const text = renderHandoffs([odd]);
+    expect(parseHandoffs(text).rows).toEqual([odd]);
+    expect(text).toContain("src/plain.ts");
+  });
+
 
   // protects: a pipe in a path can't break the table; fails_when: a cell with "|" splits into two; no_claim: none
   it("escapes table characters in cells", () => {
