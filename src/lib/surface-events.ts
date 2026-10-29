@@ -112,9 +112,10 @@ export async function applySourceStats(today: string, weeks: number): Promise<So
     });
 }
 
-export type MatchingWeek = { userId: number; weekStart: string; matches: number; suggestions: number; medianTokens: number | null };
+/** Per account, week and engine: Jev's tokens are xkg's cost, the model's are the user's, so they are never mixed. */
+export type MatchingWeek = { userId: number; weekStart: string; scorer: string | null; matches: number; suggestions: number; medianTokens: number | null };
 
-type MatchRow = { user_id: number; tier: string | null; shown: boolean | null; tokens_in: number | null; tokens_out: number | null; surfaced_at: string | Date };
+type MatchRow = { user_id: number; tier: string | null; shown: boolean | null; tokens_in: number | null; tokens_out: number | null; scorer: string | null; surfaced_at: string | Date };
 
 function median(values: number[]): number | null {
   if (!values.length) return null;
@@ -130,18 +131,18 @@ function median(values: number[]): number | null {
 export async function matchingStats(today: string, weeks: number): Promise<MatchingWeek[]> {
   await ensureSurfaceEventTable();
   const { rows } = await sql<MatchRow>`
-    SELECT user_id, tier, shown, tokens_in, tokens_out, surfaced_at
+    SELECT user_id, tier, shown, tokens_in, tokens_out, scorer, surfaced_at
     FROM surface_events
     WHERE channel = 'where' AND surfaced_at >= ${windowStart(today, weeks)}
   `;
 
-  const groups = new Map<string, { userId: number; weekStart: string; matches: number; suggestions: number; tokens: number[] }>();
+  const groups = new Map<string, { userId: number; weekStart: string; scorer: string | null; matches: number; suggestions: number; tokens: number[] }>();
   for (const row of rows) {
     const week = weekStart(new Date(row.surfaced_at).toISOString().slice(0, 10));
-    const id = `${row.user_id}|${week}`;
+    const id = `${row.user_id}|${week}|${row.scorer}`;
     let g = groups.get(id);
     if (!g) {
-      g = { userId: row.user_id, weekStart: week, matches: 0, suggestions: 0, tokens: [] };
+      g = { userId: row.user_id, weekStart: week, scorer: row.scorer, matches: 0, suggestions: 0, tokens: [] };
       groups.set(id, g);
     }
     g.matches++;
@@ -150,6 +151,6 @@ export async function matchingStats(today: string, weeks: number): Promise<Match
   }
 
   return [...groups.values()]
-    .sort((a, b) => a.userId - b.userId || b.weekStart.localeCompare(a.weekStart))
-    .map((g) => ({ userId: g.userId, weekStart: g.weekStart, matches: g.matches, suggestions: g.suggestions, medianTokens: median(g.tokens) }));
+    .sort((a, b) => a.userId - b.userId || b.weekStart.localeCompare(a.weekStart) || (a.scorer ?? "").localeCompare(b.scorer ?? ""))
+    .map((g) => ({ userId: g.userId, weekStart: g.weekStart, scorer: g.scorer, matches: g.matches, suggestions: g.suggestions, medianTokens: median(g.tokens) }));
 }

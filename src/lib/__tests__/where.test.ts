@@ -200,7 +200,7 @@ describe("matchCapture: tiers", () => {
 
   // protects: AC23, the scorer is a slot; fails_when: a different scorer can't change the tier, or the default isn't the evidence scorer; no_claim: a TypeSafe scorer works
   it("takes tiers from whatever scorer it is given, and uses the evidence scorer by default", async () => {
-    const fixed = (p: number): Scorer => ({ name: "double", score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p })) });
+    const fixed = (p: number): Scorer => ({ name: "double", cutoffs: { strong: 0.7, possible: 0.4 }, score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p })) });
     expect((await matchCapture(user, capture, deps(strongReply, { scorer: fixed(0.95) }).d))!.tier).toBe("strong");
     const low = (await matchCapture(user, capture, deps(strongReply, { scorer: fixed(0.1) }).d))!;
     expect(low.tier).toBe("none");
@@ -210,7 +210,7 @@ describe("matchCapture: tiers", () => {
 
   // protects: files below the shown threshold are hidden; fails_when: a file scored under 0.4 is listed; no_claim: none
   it("lists only files scored as at least a possible fit", async () => {
-    const scorer: Scorer = { name: "double", score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.path === LLM_TS ? 0.9 : 0.2 })) };
+    const scorer: Scorer = { name: "double", cutoffs: { strong: 0.7, possible: 0.4 }, score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.path === LLM_TS ? 0.9 : 0.2 })) };
     const where = (await matchCapture(user, capture, deps({ repo: "xmu-labs/xkg", files: [{ path: LLM_TS }, { path: LINKING_TS }] }, { scorer }).d))!;
     expect(where.files.map((f) => f.path)).toEqual([LLM_TS]);
   });
@@ -220,7 +220,7 @@ describe("matchCapture: tiers", () => {
     const reply = { ...strongReply, also: [{ repo: "acme/notes" }] };
     const where = (await matchCapture(user, capture, deps(reply).d))!;
     expect(where.also).toEqual([{ repo: "acme/notes", tier: expect.stringMatching(/strong|possible/) }]);
-    const none: Scorer = { name: "double", score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.repo === "acme/notes" ? 0.1 : 0.9 })) };
+    const none: Scorer = { name: "double", cutoffs: { strong: 0.7, possible: 0.4 }, score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.repo === "acme/notes" ? 0.1 : 0.9 })) };
     expect((await matchCapture(user, capture, deps(reply, { scorer: none }).d))!.also).toEqual([]);
   });
 });
@@ -259,7 +259,7 @@ describe("whereSection and whereCard", () => {
   // protects: the section format in the capture file; fails_when: the tier, repo, provenance label, map date or a file line is missing; no_claim: rendering in GitHub
   it("writes tier, repo, provenance, map date and one line per file", async () => {
     const reply = { repo: "xmu-labs/xkg", files: [{ path: LLM_TS, why: "`rankByRelevance` sends the whole index on every call" }, { path: LINKING_TS, why: "`notAnExport` runs on empty captures" }], also: [{ repo: "acme/notes" }] };
-    const scorer: Scorer = { name: "double", score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.repo === "acme/notes" ? 0.5 : 0.8 })) };
+    const scorer: Scorer = { name: "double", cutoffs: { strong: 0.7, possible: 0.4 }, score: async (_c, cands) => cands.map((c) => ({ repo: c.repo, path: c.path, p: c.repo === "acme/notes" ? 0.5 : 0.8 })) };
     const where = (await matchCapture(user, capture, deps(reply, { scorer }).d))!;
     expect(whereSection(where)).toBe(
       "## Where it applies\n" +

@@ -103,8 +103,9 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
-  // Where it applies: one more LLM call, started now so it runs alongside
-  // writing and linking instead of after them. Never throws.
+  // Where it applies: one more call (Jev, or the user's model when Jev can't
+  // answer), started now so it runs alongside writing and linking instead of
+  // after them. Never throws.
   const matching = matchCapture(user, capture);
 
   // Build Markdown and commit to user's repo

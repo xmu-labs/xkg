@@ -158,28 +158,41 @@ describe("matchingStats", () => {
   // protects: AC21, median tokens per match; fails_when: unknown counts skew the median or no-fit matches go uncounted; no_claim: none
   it("counts matches and suggestions per week, with the median tokens of the calls that reported them", async () => {
     rows = [
-      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, surfaced_at: "2026-10-27T10:00:00Z" },
-      { user_id: 7, tier: "possible", shown: true, tokens_in: 300, tokens_out: 30, surfaced_at: "2026-10-28T10:00:00Z" },
-      { user_id: 7, tier: "none", shown: true, tokens_in: 200, tokens_out: 20, surfaced_at: "2026-10-28T11:00:00Z" },
-      { user_id: 7, tier: "none", shown: false, tokens_in: null, tokens_out: null, surfaced_at: "2026-10-29T10:00:00Z" },
-      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, surfaced_at: "2026-10-20T10:00:00Z" },
-      { user_id: 7, tier: "strong", shown: true, tokens_in: 200, tokens_out: 20, surfaced_at: "2026-10-21T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
+      { user_id: 7, tier: "possible", shown: true, tokens_in: 300, tokens_out: 30, scorer: "evidence", surfaced_at: "2026-10-28T10:00:00Z" },
+      { user_id: 7, tier: "none", shown: true, tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-28T11:00:00Z" },
+      { user_id: 7, tier: "none", shown: false, tokens_in: null, tokens_out: null, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-20T10:00:00Z" },
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 200, tokens_out: 20, scorer: "evidence", surfaced_at: "2026-10-21T10:00:00Z" },
     ];
     expect(await matchingStats("2026-10-29", 2)).toEqual([
-      { userId: 7, weekStart: "2026-10-26", matches: 4, suggestions: 2, medianTokens: 220 },
-      { userId: 7, weekStart: "2026-10-19", matches: 2, suggestions: 2, medianTokens: 165 },
+      { userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 4, suggestions: 2, medianTokens: 220 },
+      { userId: 7, weekStart: "2026-10-19", scorer: "evidence", matches: 2, suggestions: 2, medianTokens: 165 },
     ]);
-    expect(selects()[0]!.text).toMatch(/^SELECT user_id, tier, shown, tokens_in, tokens_out, surfaced_at FROM surface_events WHERE channel = 'where' AND surfaced_at >= \?/);
+    expect(selects()[0]!.text).toMatch(/^SELECT user_id, tier, shown, tokens_in, tokens_out, scorer, surfaced_at FROM surface_events WHERE channel = 'where' AND surfaced_at >= \?/);
   });
 
   // protects: a suggestion is a fit the user saw; fails_when: a fit whose section never reached the agent counts as a suggestion; no_claim: none
   it("counts a fit the user never saw as a match but not a suggestion", async () => {
-    rows = [{ user_id: 7, tier: "strong", shown: false, tokens_in: 100, tokens_out: 10, surfaced_at: "2026-10-29T10:00:00Z" }];
-    expect(await matchingStats("2026-10-29", 1)).toEqual([{ userId: 7, weekStart: "2026-10-26", matches: 1, suggestions: 0, medianTokens: 110 }]);
+    rows = [{ user_id: 7, tier: "strong", shown: false, tokens_in: 100, tokens_out: 10, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" }];
+    expect(await matchingStats("2026-10-29", 1)).toEqual([{ userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 1, suggestions: 0, medianTokens: 110 }]);
+  });
+
+  // protects: Jev's cost (xkg's) and the model's (the user's) are never mixed; fails_when: matches from both engines share one median; no_claim: none
+  it("counts each engine separately", async () => {
+    rows = [
+      { user_id: 7, tier: "strong", shown: true, tokens_in: 3300, tokens_out: 200, scorer: "evidence", surfaced_at: "2026-10-27T10:00:00Z" },
+      { user_id: 7, tier: "possible", shown: true, tokens_in: 6000, tokens_out: 400, scorer: "jev", surfaced_at: "2026-10-28T10:00:00Z" },
+      { user_id: 7, tier: "none", shown: true, tokens_in: 5000, tokens_out: 300, scorer: "jev", surfaced_at: "2026-10-28T11:00:00Z" },
+    ];
+    expect(await matchingStats("2026-10-29", 1)).toEqual([
+      { userId: 7, weekStart: "2026-10-26", scorer: "evidence", matches: 1, suggestions: 1, medianTokens: 3500 },
+      { userId: 7, weekStart: "2026-10-26", scorer: "jev", matches: 2, suggestions: 1, medianTokens: 5850 },
+    ]);
   });
 
   it("gives a null median when no call reported tokens", async () => {
-    rows = [{ user_id: 7, tier: "none", tokens_in: null, tokens_out: null, surfaced_at: "2026-10-29T10:00:00Z" }];
+    rows = [{ user_id: 7, tier: "none", tokens_in: null, tokens_out: null, scorer: "evidence", surfaced_at: "2026-10-29T10:00:00Z" }];
     expect((await matchingStats("2026-10-29", 1))[0]!.medianTokens).toBeNull();
   });
 });

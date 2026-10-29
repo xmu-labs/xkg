@@ -61,6 +61,24 @@ export function terms(text: string): string[] {
   return words(text).filter((w) => !STOP.has(w) && w.length > 2).map(stem);
 }
 
+/**
+ * Up to `max` names the file exports that share a word with the capture. Names
+ * sharing a word that few files in `repo` export come first (in an LLM app,
+ * "llm" is everywhere and says nothing); export order breaks ties.
+ */
+export function sharedNames(file: MapFile, capture: string, repo: MapFile[] = [file], max = 3): string[] {
+  const wanted = new Set(terms(capture));
+  const df = new Map<string, number>();
+  for (const f of repo) for (const t of new Set(terms((f.e ?? []).join(" ")))) if (wanted.has(t)) df.set(t, (df.get(t) ?? 0) + 1);
+  const rarest = (name: string) => Math.min(...terms(name).filter((t) => wanted.has(t)).map((t) => df.get(t) ?? 1));
+  return (file.e ?? [])
+    .filter((name) => terms(name).some((t) => wanted.has(t)))
+    .map((name) => ({ name, df: rarest(name) }))
+    .sort((a, b) => a.df - b.df)
+    .slice(0, max)
+    .map((n) => n.name);
+}
+
 const WEIGHTS = { e: 3, n: 2, d: 1 } as const;
 const IGNORED_DIRS = new Set(["src", "lib", "app"]);
 

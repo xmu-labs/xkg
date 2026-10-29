@@ -19,6 +19,16 @@ describe("tierOf", () => {
     expect(tierOf(0.4)).toBe("possible");
     expect(tierOf(0.39)).toBe("none");
   });
+
+  // protects: each scorer's p is read against its own cutoffs; fails_when: a scorer's cutoffs are ignored; no_claim: none
+  it("uses a scorer's own cutoffs when given", () => {
+    const cutoffs = { strong: 0.6, possible: 0.3 };
+    expect(tierOf(0.6, cutoffs)).toBe("strong");
+    expect(tierOf(0.59, cutoffs)).toBe("possible");
+    expect(tierOf(0.3, cutoffs)).toBe("possible");
+    expect(tierOf(0.29, cutoffs)).toBe("none");
+    expect(evidenceScorer.cutoffs).toEqual({ strong: 0.7, possible: 0.4 });
+  });
 });
 
 describe("evidenceScorer", () => {
