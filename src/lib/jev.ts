@@ -127,8 +127,12 @@ export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
         const a = answers[r]!;
         byRepo.get(repo)!.forEach((f, i) => p.set(`${repo}\n${f.p}`, Math.min(a.fits[i]!, a.anythingFits)));
       });
-      const sum = (k: "tokensIn" | "tokensOut") => answers.reduce((n, a) => n + (a[k] ?? 0), 0);
-      onUsage?.({ tokensIn: sum("tokensIn"), tokensOut: sum("tokensOut") });
+      // Like the model path, usage is reported only when every count is known:
+      // a missing count is unknown, not zero.
+      if (answers.every((a) => a.tokensIn !== null && a.tokensOut !== null)) {
+        const sum = (k: "tokensIn" | "tokensOut") => answers.reduce((n, a) => n + a[k]!, 0);
+        onUsage?.({ tokensIn: sum("tokensIn"), tokensOut: sum("tokensOut") });
+      }
       return candidates.map((c) => ({ repo: c.repo, path: c.path, p: p.get(`${c.repo}\n${c.path}`)! }));
     },
   };

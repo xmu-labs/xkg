@@ -126,6 +126,20 @@ describe("jevScorer", () => {
     expect(scorer.cutoffs).toEqual(JEV_CUTOFFS);
   });
 
+  // protects: matching-cost stats never count a call as free; fails_when: a reply without token counts adds 0 to the total; no_claim: none
+  it("reports no usage when any repo's reply leaves out a token count, like the model path", async () => {
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const repo = JSON.parse(init.body as string).state.repo.name as string;
+      const answers = repo === "acme/app" ? { fit_0: noul(0.79), fit_1: noul(0.2), anything_fits: noul(0.73) } : { fit_0: noul(0.5), anything_fits: noul(0.1) };
+      return repo === "acme/app"
+        ? reply(answers)
+        : new Response(JSON.stringify({ model: JEV_MODEL, answers, usage: { input_tokens: 900 } }), { status: 200 });
+    });
+    const onUsage = vi.fn();
+    await jevScorer("ts-key", fetch).score(capture, [cand("acme/app", files[0]!), cand("acme/app", files[1]!), cand("acme/notes", { p: "src/memory.ts", e: ["recall"] })], onUsage);
+    expect(onUsage).not.toHaveBeenCalled();
+  });
+
   // protects: a candidate without its map entry can't be asked about; fails_when: Jev is asked about a file with no names; no_claim: none
   it("throws when a candidate comes without its map entry", async () => {
     await expect(jevScorer("ts-key", fetchOf(() => reply({}))).score(capture, [{ repo: "acme/app", path: "a.ts", rel: 0, whyKept: false, fresh: true }])).rejects.toThrow(/jev/i);
