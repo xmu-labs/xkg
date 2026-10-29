@@ -245,18 +245,32 @@ export default function SettingsDrawer({
     }
   }, [cleanup]);
 
+  // The profile the form was last filled from; null until one has loaded.
+  const filledFrom = useRef<Me | null>(null);
+
+  const fillForm = useCallback((from: Me | null) => {
+    filledFrom.current = from;
+    setDisplayName(from?.displayName ?? "");
+    setLlmProvider(from?.llmProvider ?? "anthropic");
+    setLlmModel(from?.llmModel ?? "");
+    setCustomModel(isCustomModel(from));
+    setLlmEffort(from?.llmEffort ?? null);
+  }, []);
+
+  // Opened before /api/me answered: fill the form once the profile arrives,
+  // instead of keeping the empty defaults (which read as Anthropic).
+  useEffect(() => {
+    if (open && me && !filledFrom.current) fillForm(me);
+  }, [open, me, fillForm]);
+
   const openDrawer = useCallback(() => {
-    setDisplayName(me?.displayName ?? "");
-    setLlmProvider(me?.llmProvider ?? "anthropic");
-    setLlmModel(me?.llmModel ?? "");
-    setCustomModel(isCustomModel(me));
-    setLlmEffort(me?.llmEffort ?? null);
+    fillForm(me);
     closing.current = false;
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
     openedFromPop.current = true;
     window.history.pushState({ xkgDrawer: true }, "");
-  }, [me]);
+  }, [me, fillForm]);
 
   useEffect(() => {
     if (!open) return;

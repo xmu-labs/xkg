@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME } from "./fixtures";
 
 // M2 (XKG-10): motion and the Android back gesture.
 
@@ -109,4 +109,18 @@ test("Saved pops in from slightly smaller", async ({ page }) => {
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
   await expect(page.getByText("Saved to GitHub ✓")).toHaveCSS("animation-name", "xkg-pop");
+});
+
+// Regression (XKG-55): Settings opened before /api/me answered showed Anthropic.
+test("Settings opened before the profile loads still shows the saved AI provider", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/me", async (r) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await r.fulfill({ json: WORST_ME });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Open settings" }).tap();
+  const provider = page.getByRole("dialog").getByLabel("Provider");
+  await expect(provider).toHaveValue("openai");
+  await expect(page.getByRole("dialog").getByText(/Paste your .* key to switch/)).toHaveCount(0);
 });
