@@ -453,7 +453,7 @@ The whole point of this repo being public is that you can check these claims rat
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
 | code maps (`code_maps`) | per repo you sync with the git hooks or add in Settings (at most 20): file paths, exported function and class names, and which mapped files import which; for a repo added from GitHub, file paths only (`source = 'github'`). Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it, `src/lib/code-repos.ts` reads GitHub's file list) |
-| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`) and the fit shown. Never the capture's name or content |
+| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly four kinds of destination:

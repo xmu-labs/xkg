@@ -114,12 +114,10 @@ export async function handleCapture(user: User, args: { content: string; title?:
   }
 
   const where = await matching;
-  const [wrote] = where
-    ? await Promise.all([
-        writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
-        recordWhereEvent(user.id, `inbox/${filename}`, where),
-      ])
-    : [false];
+  const wrote = where ? await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where) : false;
+  // The agent only sees the fit once the section is written.
+  const line = wrote && where ? whereLine(where) : null;
+  if (where) await recordWhereEvent(user.id, `inbox/${filename}`, where, line !== null);
 
   // Append inbox count as a nudge
   const inboxRes = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
@@ -131,7 +129,6 @@ export async function handleCapture(user: User, args: { content: string; title?:
   if (linkedCount > 0) {
     result += `\nLinked to ${linkedCount} related capture(s).`;
   }
-  const line = wrote && where ? whereLine(where) : null;
   if (line) result += `\n${line}`;
   if (inboxCount > 0) {
     result += `\n\n---\n📬 You have ${inboxCount} item(s) in your inbox. Use list_inbox to review and apply them.`;
