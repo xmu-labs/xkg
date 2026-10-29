@@ -79,6 +79,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "session-start") {
+    const { sessionStart } = await import("./session-start.js");
+    const { readConfig } = await import("./config.js");
+    const keyIdx = args.indexOf("--key");
+    const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
+    const agentIdx = args.indexOf("--agent");
+    const agent = agentIdx !== -1 ? args[agentIdx + 1] : undefined;
+    if (!apiKey) return process.exit(0); // silent fail in hook context
+    await sessionStart(apiKey, { agent });
+    return;
+  }
+
   if (command === "post-commit") {
     const { postCommit } = await import("./git-hook.js");
     const { readConfig } = await import("./config.js");
@@ -143,6 +155,8 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
     xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer (any agent)
+    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer new captures
+                                                               (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
     xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree
     xkg help                                                   Show this help
