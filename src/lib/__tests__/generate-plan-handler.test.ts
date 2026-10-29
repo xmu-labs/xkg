@@ -2,10 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { User } from "../db";
 
 /**
- * generate_plan turns captures into a plan. Code context comes from the agent,
- * which runs next to the code and sends the files it opened. xkg never reads
- * code: `user.github_repo` is the knowledge repo, so a code path looked up
- * there was never found and the plan was written without any code.
+ * generate_plan turns captures into a plan. xkg never reads code:
+ * `user.github_repo` is the knowledge repo, so a code path looked up there was
+ * never found and the plan was written without any code. The agent names the
+ * files it has in view, and only those paths reach the plan; the agent checks
+ * the plan against the code itself.
  *
  * Not covered: the plan's content (the LLM call is mocked).
  */
@@ -58,34 +59,27 @@ const plan = (codebase_files?: unknown) =>
 
 describe("generate_plan code context", () => {
   // protects: AC1, no code path is looked up in the knowledge repo; fails_when: readFile is called with a codebase path; no_claim: none
-  it("uses the file contents the agent sent and never reads code from the knowledge repo", async () => {
-    await plan([{ path: "src/lib/llm.ts", content: "export function rank() {}" }]);
+  it("passes the paths the agent named and never reads code from the knowledge repo", async () => {
+    await plan(["src/lib/llm.ts", "src/lib/where.ts"]);
     expect(readFile.mock.calls.map((c) => c[2])).toEqual([CAPTURE]);
-    expect(generatePlan.mock.calls[0]![3]).toEqual([{ path: "src/lib/llm.ts", content: "export function rank() {}" }]);
+    expect(generatePlan.mock.calls[0]![3]).toEqual(["src/lib/llm.ts", "src/lib/where.ts"]);
   });
 
-  // protects: agents still sending paths get a plan and a pointer instead of a silent guess; fails_when: a path is read, or the plan says nothing about it; no_claim: none
-  it("skips bare paths without reading them, and says to send contents", async () => {
-    const text = await plan(["src/lib/llm.ts"]);
-    expect(readFile.mock.calls.map((c) => c[2])).toEqual([CAPTURE]);
+  // protects: code never passes through xkg; fails_when: file contents an agent sends reach the model; no_claim: what the agent itself does with code
+  it("never forwards file contents, even when an agent sends them", async () => {
+    await plan([{ path: "src/a.ts", content: "const secret = 1" }, "src/b.ts", "export const leaked = 1;\nexport const more = 2;"]);
+    expect(JSON.stringify(generatePlan.mock.calls[0])).not.toMatch(/secret|leaked/);
+    expect(generatePlan.mock.calls[0]![3]).toEqual(["src/b.ts"]);
+  });
+
+  it("keeps at most 5 paths and drops empty or overlong ones", async () => {
+    const paths = Array.from({ length: 7 }, (_, i) => `src/f${i}.ts`);
+    await plan(["", "a/".repeat(300) + "x.ts", ...paths]);
+    expect(generatePlan.mock.calls[0]![3]).toEqual(paths.slice(0, 5));
+  });
+
+  it("sends no file list when the agent names none", async () => {
+    await plan(undefined);
     expect(generatePlan.mock.calls[0]![3]).toBeUndefined();
-    expect(text).toContain("xkg never reads your code");
-    expect(text).toContain("src/lib/llm.ts");
-  });
-
-  // Regression: ISSUE-001 — a path sent without its content was dropped with no note
-  // Found by /qa on 2026-10-29
-  // Report: .gstack/qa-reports/run-20261029T145411Z/functional/qa-report-generate-plan-2026-10-29.md
-  // protects: an agent that sends { path } alone learns to send contents; fails_when: a path-only entry is dropped without a note; no_claim: none
-  it("names a path sent without its content in the reply", async () => {
-    const text = await plan([{ path: "src/lib/rate-limit.ts" }]);
-    expect(readFile.mock.calls.map((c) => c[2])).toEqual([CAPTURE]);
-    expect(text).toContain("Not included: `src/lib/rate-limit.ts`");
-  });
-
-  it("keeps at most 5 files and drops entries without a path and text content", async () => {
-    const files = Array.from({ length: 7 }, (_, i) => ({ path: `src/f${i}.ts`, content: `export const f${i} = ${i};` }));
-    await plan([{ path: "src/bad.ts" }, { content: "no path" }, ...files]);
-    expect(generatePlan.mock.calls[0]![3]).toEqual(files.slice(0, 5));
   });
 });

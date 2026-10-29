@@ -529,25 +529,18 @@ export async function handleGeneratePlan(
 
   if (selectedCaptures.length === 0) return "None of the specified captures could be found.";
 
-  // Code context is what the agent already opened: xkg never reads code, and
-  // github_repo is the knowledge repo, where code paths don't exist.
-  const sent = Array.isArray(args.codebase_files) ? args.codebase_files : [];
-  const codebaseFiles = sent
-    .filter((f): f is { path: string; content: string } =>
-      typeof (f as { path?: unknown })?.path === "string" && typeof (f as { content?: unknown })?.content === "string")
-    .slice(0, 5)
-    .map((f) => ({ path: f.path, content: f.content }));
-  // Paths sent without contents, as a string or as { path } alone, are named in the reply.
-  const bare = sent
-    .map((f) => (typeof f === "string" ? f : (f as { path?: unknown; content?: unknown })?.path))
-    .filter((p, i): p is string =>
-      typeof p === "string" && typeof (sent[i] as { content?: unknown })?.content !== "string");
+  // xkg never reads code (github_repo is the knowledge repo, where code paths
+  // don't exist). Only the paths the agent names reach the plan; anything that
+  // isn't a short one-line path, such as pasted code, is dropped.
+  const codebasePaths = (Array.isArray(args.codebase_files) ? args.codebase_files : [])
+    .filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= 512 && !/[\r\n]/.test(p))
+    .slice(0, 5);
 
   const planText = await generatePlan(
     user.llm_api_key,
     selectedCaptures,
     args.project_context,
-    codebaseFiles.length > 0 ? codebaseFiles : undefined,
+    codebasePaths.length > 0 ? codebasePaths : undefined,
     llmSettings(user),
   );
 
