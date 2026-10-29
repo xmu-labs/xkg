@@ -159,6 +159,17 @@ describe("learning from answers", () => {
     expect(learnFrom).not.toHaveBeenCalled();
   });
 
+  // protects: files the hook fills in after the agent's apply reach what xkg learned; fails_when: the filled line isn't learned from; no_claim: none
+  it("learns from the line a repeat report filled in", async () => {
+    setup();
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" });
+    learnFrom.mockReset();
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", files: ["src/llm.ts"] });
+    const content = files[`applied/${NAME}`]!.content;
+    expect(content).toContain(`· applied · commit ${SHA} · files src/llm.ts\n`);
+    expect(learnFrom).toHaveBeenCalledWith(user, `applied/${NAME}`, content, "2026-10-30");
+  });
+
   // protects: a wrong-files answer names the files it turned down, so they can become dead ends; fails_when: the log line has no files; no_claim: none
   it("logs the suggested files with a wrong-files decline", async () => {
     setup([row({ files: ["src/llm.ts", "src/old.ts"] })]);
@@ -431,6 +442,56 @@ describe("applied", () => {
     // A third report changes nothing more
     await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" });
     expect(files[`applied/${NAME}`]!.content.match(/· applied ·/g)).toHaveLength(1);
+  });
+
+  // protects: the agent and the hook each report one apply, in either order, and the later report fills in what the first left out; fails_when: the hook's files never reach the Handoff log after the agent closed the handoff, a second applied line or event appears, or a line that has them is changed; no_claim: none
+  it("fills in the changed files a first report left out, once", async () => {
+    setup();
+    // The agent first, without files
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", confidence: "high" });
+    // Then the hook, with the changed files and no confidence
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", files: ["src/llm.ts", "src/made-up.ts"] }))
+      .toBe(`Already recorded: ${NAME} (a1b2c3d). Its Handoff log line now has the changed files.`);
+    const capture = files[`applied/${NAME}`]!.content;
+    expect(capture).toContain(`## Handoff log\n- 2026-10-30 · acme/app · applied · commit ${SHA} · confidence high · files src/llm.ts\n`);
+    expect(capture.match(/· applied ·/g)).toHaveLength(1);
+    expect(recordHandoffEvent.mock.calls.filter((c) => c[3] === "applied")).toHaveLength(1);
+
+    // A report that adds nothing new leaves the line as it is
+    const writes = () => githubPut.mock.calls.filter((c) => c[2] === `applied/${NAME}`).length;
+    const before = writes();
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", files: ["src/briefing.ts"], confidence: "low" }))
+      .toBe(`Already recorded: ${NAME} (a1b2c3d)`);
+    expect(writes()).toBe(before);
+  });
+
+  // protects: the hook's report first, then the agent's confidence, matched on a short sha with no repo; fails_when: the confidence is dropped, or another repo's line or commit is changed; no_claim: none
+  it("fills in the confidence when the hook reported first", async () => {
+    setup([row(), row({ repo: "acme/web" })]);
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", files: ["src/llm.ts"] });
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA.slice(0, 7), confidence: "Medium" }))
+      .toBe(`Already recorded: ${NAME} (a1b2c3d). Its Handoff log line now has your confidence.`);
+    expect(files[`applied/${NAME}`]!.content).toContain(`- 2026-10-30 · acme/app · applied · commit ${SHA} · confidence medium · files src/llm.ts\n`);
+    expect(handoffs().map((r) => r.status)).toEqual(["applied", "pending"]);
+  });
+
+  // protects: filling in is best-effort; fails_when: a failed write throws, claims the line was filled, or changes it; no_claim: none
+  it("leaves the line as it was when filling it in fails", async () => {
+    setup();
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" });
+    const before = files[`applied/${NAME}`]!.content;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    githubPut.mockImplementation(async (...a: Parameters<typeof PUT>) => {
+      if (a[2] === `applied/${NAME}`) throw new Error("GitHub PUT: HTTP 409");
+      return PUT(...a);
+    });
+    try {
+      expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", confidence: "high" })).toBe(`Already recorded: ${NAME} (a1b2c3d)`);
+    } finally {
+      githubPut.mockImplementation(PUT);
+      spy.mockRestore();
+    }
+    expect(files[`applied/${NAME}`]!.content).toBe(before);
   });
 
   // protects: older clients that describe what changed in outcome still record an apply; fails_when: free text is treated as an answer; no_claim: none

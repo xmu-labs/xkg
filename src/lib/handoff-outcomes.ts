@@ -21,7 +21,7 @@ import { repoName } from "./code-repos";
 import { LEDGER_PATH, markReverted } from "./ledger";
 import { recordHandoffEvent } from "./handoff-events";
 import { learnFrom } from "./handoff-learning";
-import { addDays, appendHandoffLog, captureName, handoffFor, handoffLogLine, isWaiting, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
+import { addDays, appendHandoffLog, captureName, handoffFor, handoffLogLine, isWaiting, parseHandoffLogLine, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
 
 export const OUTCOMES = ["applied", "declined", "done", "later", "reverted"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
@@ -125,6 +125,49 @@ async function setApplied(user: ApplyUser, path: string, handoff: AppliedHandoff
     row = now;
   }
   return { closed: false, status: row.status, failed: true };
+}
+
+/** A repeat report's apply, as already logged: the capture's content, the line's repo, and what the reply says about filling it in. */
+export interface LoggedApply {
+  content: string;
+  repo: string;
+  note: string;
+}
+
+/**
+ * A repeat report of an apply that's already in the capture's Handoff log
+ * (the agent's and the hook's, in either order): fills in the files or the
+ * confidence its line left out, without logging the apply again. Null when
+ * the log has no apply of this commit (in `repo`, when named). Best-effort:
+ * when the write fails, the line stays as it was.
+ */
+export async function fillApply(user: ApplyUser, path: string, file: { content: string; sha: string }, args: AnswerArgs): Promise<LoggedApply | null> {
+  const sha = args.commit_sha?.toLowerCase();
+  const asked = args.repo ? repoOf(args.repo)?.toLowerCase() : null;
+  const section = file.content.match(/## Handoff log\n[\s\S]*?(?=\n## |$)/);
+  if (!sha || !section) return null;
+  for (const line of section[0].split("\n")) {
+    const e = parseHandoffLogLine(line);
+    if (e?.outcome !== "applied" || !e.repo || !e.commit) continue;
+    const logged = e.commit.toLowerCase();
+    if (!(logged.startsWith(sha) || sha.startsWith(logged)) || (asked && e.repo.toLowerCase() !== asked)) continue;
+    const kept = { content: file.content, repo: e.repo, note: "" };
+    const confidence = e.confidence ? undefined : confidenceOf(args.confidence);
+    const files = e.files?.length ? [] : await mappedFiles(user.id, e.repo.toLowerCase(), args.files);
+    if (!confidence && !files.length) return kept;
+    const filled = handoffLogLine({ ...e, ...(confidence ? { confidence } : {}), ...(files.length ? { files } : {}) });
+    const content = file.content.replace(section[0], () => section[0].replace(line, () => filled));
+    try {
+      await githubPut(user.github_token, user.github_repo!, path, content, `handoff: details for ${captureName(path)}`, file.sha);
+    } catch (err) {
+      console.error("[handoff] filling in an apply failed:", err instanceof Error ? err.message : err);
+      return kept;
+    }
+    await learnFrom(user, path, content, formatDate());
+    const added = [files.length ? "the changed files" : "", confidence ? "your confidence" : ""].filter(Boolean).join(" and ");
+    return { content, repo: e.repo, note: `. Its Handoff log line now has ${added}.` };
+  }
+  return null;
 }
 
 /** What the reply says about the handoff an apply closed. */
