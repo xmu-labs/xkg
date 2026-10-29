@@ -138,10 +138,11 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   }
 
   const where = await matching;
+  const card = where ? whereCard(where) : null;
   if (where) {
     await Promise.all([
       writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
-      recordWhereEvent(user.id, `inbox/${filename}`, where),
+      recordWhereEvent(user.id, `inbox/${filename}`, where, card !== null),
     ]);
   }
 
@@ -149,6 +150,6 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     capture,
     filename,
     fileUrl: captureFileUrl(user.github_repo, filename),
-    ...(where ? { where: whereCard(where) } : {}),
+    ...(card ? { where: card } : {}),
   });
 }

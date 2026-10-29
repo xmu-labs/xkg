@@ -256,9 +256,11 @@ export async function ensureSurfaceEventTable(): Promise<void> {
       model_conf REAL,
       scorer TEXT,
       tier TEXT,
+      shown BOOLEAN,
       surfaced_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_user_capture ON surface_events (user_id, capture_key)`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_surfaced_at ON surface_events (surfaced_at)`;
   surfaceEventTableReady = true;

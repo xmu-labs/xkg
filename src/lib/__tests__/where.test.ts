@@ -8,6 +8,7 @@ import {
   whereSection,
   insertWhereSection,
   whereCard,
+  whereLine,
   type StoredCodeMap,
   type WhereDeps,
 } from "../where";
@@ -81,11 +82,23 @@ describe("matchCapture: when it runs", () => {
     expect(complete).not.toHaveBeenCalled();
   });
 
-  // protects: matching never breaks capture; fails_when: a provider error or a garbled reply throws; no_claim: retries
-  it("returns null when the model call fails or its reply isn't JSON", async () => {
+  // protects: matching never breaks capture; fails_when: a provider error or a db error throws; no_claim: retries
+  it("returns null when the model call or the map lookup fails", async () => {
     expect(await matchCapture(user, capture, deps("", { complete: async () => { throw new Error("429"); } }).d)).toBeNull();
-    expect(await matchCapture(user, capture, deps("I think llm.ts").d)).toBeNull();
     expect(await matchCapture(user, capture, deps(strongReply, { listMaps: async () => { throw new Error("db down"); } }).d)).toBeNull();
+  });
+
+  // protects: AC21, a paid call whose reply can't be read is still counted; fails_when: its tokens are lost, or the reply shows on the card, the file or the tool result; no_claim: none
+  it("keeps the cost of a reply it can't read, and shows nothing for it", async () => {
+    const complete = vi.fn(async (_s: string, _p: string, onUsage?: (u: { tokensIn: number; tokensOut: number }) => void) => {
+      onUsage?.({ tokensIn: 3301, tokensOut: 600 });
+      return "I think llm.ts";
+    });
+    const where = (await matchCapture(user, capture, { ...deps("").d, complete }))!;
+    expect(where).toMatchObject({ repo: null, tier: "none", files: [], noFit: { reason: "unreadable" }, tokens: { in: 3301, out: 600 } });
+    expect(whereSection(where)).toBeNull();
+    expect(whereLine(where)).toBeNull();
+    expect(whereCard(where)).toBeNull();
   });
 
   // protects: the prompt shape (maps first, so repeat matches reuse the cached prefix); fails_when: the capture comes before the maps or a map is missing; no_claim: prompt quality
@@ -217,7 +230,7 @@ describe("no-fit reasons", () => {
   const old = new Date(NOW.getTime() - 30 * 86_400_000);
   const lineFor = async (maps: StoredCodeMap[], reply: unknown, cap = capture) => {
     const where = (await matchCapture(user, cap, deps(reply, { listMaps: async () => maps }).d))!;
-    return { reason: where.noFit?.reason, card: whereCard(where).note, section: whereSection(where) };
+    return { reason: where.noFit?.reason, card: whereCard(where)!.note, section: whereSection(where) };
   };
 
   // protects: AC20, each reason has its own line on the card; fails_when: two reasons share a line, or a reason has none; no_claim: the copy is the best wording
@@ -260,7 +273,7 @@ describe("whereSection and whereCard", () => {
   // protects: AC24, the card shows labels, never numbers; fails_when: a score or the model's confidence reaches the browser; no_claim: none
   it("gives the card labels and no numbers", async () => {
     const where = (await matchCapture(user, capture, deps({ ...strongReply, confidence: 0.97 }).d))!;
-    const card = whereCard(where);
+    const card = whereCard(where)!;
     expect(card.fit).toBe("Strong fit");
     expect(card.repo).toBe("xmu-labs/xkg");
     expect(card.note).toContain("not yet checked in your code");

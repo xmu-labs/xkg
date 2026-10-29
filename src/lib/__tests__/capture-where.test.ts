@@ -17,7 +17,9 @@ const capture = {
 const files = new Map<string, { content: string; sha: string }>();
 const order: string[] = [];
 let shaN = 0;
+let failWhereWrite = false;
 const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string) => {
+  if (failWhereWrite && content.includes("## Where it applies")) throw new Error("GitHub 409");
   order.push(`put:${path}`);
   files.set(path, { content, sha: `sha${++shaN}` });
   return { ok: true };
@@ -82,6 +84,7 @@ beforeEach(() => {
   githubPut.mockClear();
   matchCapture.mockClear();
   recordWhereEvent.mockClear();
+  failWhereWrite = false;
 });
 
 describe("web capture", () => {
@@ -98,7 +101,7 @@ describe("web capture", () => {
   it("logs the match against the saved file", async () => {
     matchResult = strong;
     await post();
-    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong);
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
   });
 
   // protects: AC9, matching runs alongside writing and linking; fails_when: matching starts after the file is written or blocks linking; no_claim: real latency
@@ -119,6 +122,15 @@ describe("web capture", () => {
     expect(body.where.note).toBe("No code repos synced yet.");
   });
 
+  // protects: a reply that can't be read changes nothing the user sees but keeps its cost; fails_when: the card or file changes, or the call goes unlogged; no_claim: none
+  it("when the reply can't be read, shows nothing and logs the call as not shown", async () => {
+    matchResult = { repo: null, tier: "none", files: [], also: [], noFit: { reason: "unreadable" }, scorer: "evidence", modelConf: null, tokens: { in: 3301, out: 600 } };
+    const body = await (await post()).json();
+    expect(body.where).toBeUndefined();
+    expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), matchResult, false);
+  });
+
   // protects: a failed match changes nothing; fails_when: the response or file changes when matching returns null; no_claim: none
   it("when matching fails, saves the capture as before with no where", async () => {
     matchResult = null;
@@ -135,7 +147,16 @@ describe("MCP capture", () => {
     const result = await handleCapture(user as never, { content: "notes" });
     expect(files.get(capturePath())!.content).toContain("## Where it applies\n**Strong fit** · acme/app");
     expect(result).toContain("Where it applies: Strong fit in acme/app: src/llm.ts");
-    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong);
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
+  });
+
+  // protects: card credit only for a fit the agent was shown; fails_when: a fit whose section write failed is logged as shown; no_claim: none
+  it("when the section can't be written, leaves it out of the result and logs it as not shown", async () => {
+    matchResult = strong;
+    failWhereWrite = true;
+    const result = await handleCapture(user as never, { content: "notes" });
+    expect(result).not.toContain("Where it applies");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, false);
   });
 
   // protects: AC3 on the MCP path; fails_when: a user with no maps gets a second write or a new result line; no_claim: none
