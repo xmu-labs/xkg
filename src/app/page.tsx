@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
+import PolicyNotice from "@/components/PolicyNotice";
 import type { WhereCard } from "@/lib/where";
 
 interface CaptureResult {
@@ -177,6 +178,8 @@ export default function CapturePage() {
           Learn it once. Your AI applies it.
         </p>
       </div>
+
+      <PolicyNotice />
 
       {/* Capture form */}
       {status !== "done" && (
