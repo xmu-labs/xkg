@@ -2,7 +2,7 @@ import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
 import { isLegacyPinHash, wrapLegacyHash } from "./pin";
 import type { LlmEffort, LlmProvider } from "./types";
-import type { CodeMapPayload, MapFile, StoredCodeMap } from "./code-map";
+import type { CodeMapPayload, CodeMapSource, MapFile, StoredCodeMap } from "./code-map";
 
 export type { LlmProvider };
 
@@ -203,36 +203,69 @@ export async function ensureCodeMapTable(): Promise<void> {
   codeMapTableReady = true;
 }
 
-/** Stores a repo's map (replacing the previous one), then keeps the user's 20 most recent repos. */
-export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: string): Promise<void> {
+/**
+ * Stores a repo's map, then keeps the user's 20 most recent repos. A map from
+ * the user's machine replaces any row; one fetched from GitHub (names only)
+ * never replaces a map from the machine. False when nothing was stored.
+ */
+export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: string, source: CodeMapSource = "local"): Promise<boolean> {
   await ensureCodeMapTable();
-  await sql`
+  const { rowCount } = await sql`
     INSERT INTO code_maps (user_id, repo, map, map_hash, head7, file_count, truncated, source, synced_at)
-    VALUES (${userId}, ${map.repo}, ${JSON.stringify(map.files)}::jsonb, ${mapHash}, ${map.head7 || null}, ${map.files.length}, ${map.truncated}, 'local', NOW())
+    VALUES (${userId}, ${map.repo}, ${JSON.stringify(map.files)}::jsonb, ${mapHash}, ${map.head7 || null}, ${map.files.length}, ${map.truncated}, ${source}, NOW())
     ON CONFLICT (user_id, repo) DO UPDATE SET
       map = EXCLUDED.map,
       map_hash = EXCLUDED.map_hash,
       head7 = EXCLUDED.head7,
       file_count = EXCLUDED.file_count,
       truncated = EXCLUDED.truncated,
-      source = 'local',
+      source = EXCLUDED.source,
       synced_at = NOW()
+    WHERE EXCLUDED.source = 'local' OR code_maps.source = 'github'
+    RETURNING id
   `;
+  if (!rowCount) return false;
   await sql`
     DELETE FROM code_maps WHERE user_id = ${userId} AND id NOT IN (
       SELECT id FROM code_maps WHERE user_id = ${userId} ORDER BY synced_at DESC, id DESC LIMIT ${MAX_CODE_MAPS}
     )
   `;
+  return true;
 }
 
 /** The user's most recently synced maps, newest first. */
 export async function listCodeMaps(userId: number, limit: number): Promise<StoredCodeMap[]> {
   await ensureCodeMapTable();
-  const { rows } = await sql<{ repo: string; map: MapFile[]; head7: string | null; truncated: boolean; synced_at: Date }>`
-    SELECT repo, map, head7, truncated, synced_at FROM code_maps WHERE user_id = ${userId}
+  const { rows } = await sql<{ repo: string; map: MapFile[]; head7: string | null; truncated: boolean; source: CodeMapSource; synced_at: Date }>`
+    SELECT repo, map, head7, truncated, source, synced_at FROM code_maps WHERE user_id = ${userId}
     ORDER BY synced_at DESC, id DESC LIMIT ${limit}
   `;
-  return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, syncedAt: new Date(r.synced_at) }));
+  return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, source: r.source, syncedAt: new Date(r.synced_at) }));
+}
+
+export interface CodeRepo {
+  repo: string;
+  source: CodeMapSource;
+  files: number;
+  truncated: boolean;
+  syncedAt: Date;
+}
+
+/** The user's code repos for Settings, newest first, without their maps. */
+export async function listCodeRepos(userId: number): Promise<CodeRepo[]> {
+  await ensureCodeMapTable();
+  const { rows } = await sql<{ repo: string; source: CodeMapSource; file_count: number; truncated: boolean; synced_at: Date }>`
+    SELECT repo, source, file_count, truncated, synced_at FROM code_maps WHERE user_id = ${userId}
+    ORDER BY synced_at DESC, id DESC
+  `;
+  return rows.map((r) => ({ repo: r.repo, source: r.source, files: r.file_count, truncated: r.truncated, syncedAt: new Date(r.synced_at) }));
+}
+
+/** Removes one repo's map. False when the user had no such repo. */
+export async function deleteCodeMap(userId: number, repo: string): Promise<boolean> {
+  await ensureCodeMapTable();
+  const { rowCount } = await sql`DELETE FROM code_maps WHERE user_id = ${userId} AND repo = ${repo} RETURNING id`;
+  return rowCount > 0;
 }
 
 // ── Surface events (counts only; see lib/surface-events.ts) ──
