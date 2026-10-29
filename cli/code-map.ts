@@ -23,6 +23,8 @@ export const MAX_BYTES = 120 * 1024;
 const MAP_URL = "https://xkg.xmu.sh/api/code-map";
 const SYNC_TIMEOUT_MS = 3000;
 const RESEND_AFTER_MS = 24 * 60 * 60 * 1000;
+/** Bump when what is read from a file changes, so entries cached by an older CLI are read again. */
+const CACHE_VERSION = 2;
 /** Larger files are mapped by path only: they are almost always generated. */
 const MAX_SOURCE_BYTES = 1024 * 1024;
 
@@ -70,10 +72,74 @@ const EXPORT_PATTERNS: Record<Lang, RegExp[]> = {
   rs: [/^\s*pub\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)/gm],
 };
 
+type Syntax = { line: string; block: boolean; multi: string[]; single: string[]; char?: RegExp };
+const SYNTAX: Record<Lang, Syntax> = {
+  js: { line: "//", block: true, multi: ["`"], single: ["'", '"'] },
+  py: { line: "#", block: false, multi: ['"""', "'''"], single: ["'", '"'] },
+  go: { line: "//", block: true, multi: ["`"], single: ["'", '"'] },
+  // ' starts a char ('"') or a lifetime ('a), so only a whole char is skipped.
+  rs: { line: "//", block: true, multi: ['"'], single: [], char: /'(?:\\.[^']*|[^\\'])'/y },
+};
+
+/**
+ * The source with comments and multi-line strings blanked (newlines kept), so a
+ * declaration or import in a comment or docstring is not taken for a real one.
+ * Single-line strings are kept, since import paths are in them. Regex literals
+ * are not parsed: one with a quote or backtick can blank code until the next.
+ */
+function maskComments(lang: Lang, source: string): string {
+  const { line, block, multi, single, char } = SYNTAX[lang];
+  const out = source.split("");
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  for (let i = 0; i < source.length;) {
+    const c = source[i]!;
+    let end = -1;
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (char) {
+      char.lastIndex = i;
+      if (char.test(source)) {
+        i = char.lastIndex;
+        continue;
+      }
+    }
+    if (source.startsWith(line, i)) {
+      end = source.indexOf("\n", i);
+    } else if (block && source.startsWith("/*", i)) {
+      end = source.indexOf("*/", i + 2);
+      if (end >= 0) end += 2;
+    } else {
+      const quote = multi.find((q) => source.startsWith(q, i));
+      if (quote) {
+        let j = i + quote.length;
+        while (j < source.length && !source.startsWith(quote, j)) j += source[j] === "\\" ? 2 : 1;
+        end = Math.min(source.length, j + quote.length);
+      } else if (single.includes(c)) {
+        let j = i + 1;
+        while (j < source.length && source[j] !== c && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
+        i = j + 1;
+        continue;
+      } else {
+        i++;
+        continue;
+      }
+    }
+    if (end < 0) end = source.length;
+    blank(i, end);
+    i = end;
+  }
+  return out.join("");
+}
+
 /** The top-level names a file exports, in source order. Empty for languages without a pattern. */
 export function exportedNames(path: string, source: string): string[] {
   const lang = langOf(path);
   if (!lang) return [];
+  source = maskComments(lang, source);
   const found: Array<[number, string]> = [];
   for (const re of EXPORT_PATTERNS[lang]) {
     for (const m of source.matchAll(re)) found.push([m.index!, m[1]!]);
@@ -92,6 +158,7 @@ export function exportedNames(path: string, source: string): string[] {
 
 /** Raw import specifiers of a file. Kept only in the local cache; only resolved paths are ever sent. */
 function importSpecifiers(lang: Lang, source: string): string[] {
+  source = maskComments(lang, source);
   const out: string[] = [];
   if (lang === "js") {
     for (const re of [/\bfrom\s+['"]([^'"\n]+)['"]/g, /^\s*import\s+['"]([^'"\n]+)['"]/gm, /\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g]) {
@@ -163,12 +230,15 @@ function stripJsonComments(text: string): string {
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
-function jsCandidates(base: string): string[] {
+/** Files an import of `base` can mean; from a TypeScript file, `./b.js` means b.ts first, as the compiler resolves it. */
+function jsCandidates(base: string, fromTs: boolean): string[] {
   const out = [base];
   const ext = posix.extname(base);
   if ([".js", ".jsx", ".mjs", ".cjs"].includes(ext)) {
     const stem = base.slice(0, -ext.length);
-    out.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`);
+    const source = [`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`];
+    if (fromTs) out.unshift(...source);
+    else out.push(...source);
   }
   for (const e of JS_EXTS) out.push(base + e);
   for (const e of JS_EXTS) out.push(`${base}/index${e}`);
@@ -190,7 +260,7 @@ function resolveJs(from: string, spec: string, files: Set<string>, resolver: Res
   }
   for (const base of bases) {
     if (base.startsWith("..") || base.startsWith("/")) continue;
-    const hit = jsCandidates(base).find((c) => files.has(c));
+    const hit = jsCandidates(base, /\.[mc]?tsx?$/.test(from)).find((c) => files.has(c));
     if (hit) return hit;
   }
   return null;
@@ -277,7 +347,7 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
   cache.repos ??= {};
   const previous = cache.repos[repo]?.blobs ?? {};
   const blobs: Record<string, BlobEntry> = {};
-  const keyOf = (path: string, kind: string) => `${tracked.get(path)}:${kind}`;
+  const keyOf = (path: string, kind: string) => `${tracked.get(path)}:${kind}:${CACHE_VERSION}`;
 
   const configPath = ["tsconfig.json", "jsconfig.json"].find((p) => tracked.has(p));
   const toRead = new Map<string, string>();

@@ -108,6 +108,30 @@ describe("exportedNames", () => {
     expect(exportedNames("src/lib.rs", src)).toEqual(["parse", "load", "Map"]);
   });
 
+  // protects: the no-comments promise; fails_when: a declaration inside a block comment, docstring or multi-line string is sent, or a real one after a comment-like string is missed; no_claim: regex literals with unescaped quotes or backticks
+  it("skips declarations inside comments, docstrings and multi-line strings", async () => {
+    const { exportedNames } = await import("../code-map.js");
+    const ts = [
+      "/*",
+      "export function removedInternalEndpoint() {}",
+      "*/",
+      "const doc = `",
+      "export function inTemplate() {}",
+      "`;",
+      'const glob = "src/**/*.ts";',
+      "export function afterGlob() {}",
+      "const re = /\\/\\*/;",
+      "export function afterRegex() {}",
+    ].join("\n");
+    expect(exportedNames("src/x.ts", ts)).toEqual(["afterGlob", "afterRegex"]);
+    const py = '"""Usage:\n\ndef fictitious():\n    pass\n"""\nx = "# not a comment"\ndef real():\n    pass\n\'\'\'\nclass Hidden:\n\'\'\'\n';
+    expect(exportedNames("app/main.py", py)).toEqual(["real"]);
+    const go = "/*\nfunc Removed() {}\n*/\nvar s = `\nfunc InRaw() {}\n`\nfunc Real() {}\n";
+    expect(exportedNames("main.go", go)).toEqual(["Real"]);
+    const rs = '/*\npub fn removed() {}\n*/\nconst S: &str = "\npub fn in_string() {}\n";\npub fn real() {}\nfn quote<\'a>(c: char) -> bool { c == \'"\' || c == \'\\\'\' }\npub fn after_chars() {}\n';
+    expect(exportedNames("src/lib.rs", rs)).toEqual(["real", "after_chars"]);
+  });
+
   it("reads nothing from other files", async () => {
     const { exportedNames } = await import("../code-map.js");
     expect(exportedNames("README.md", "export function looksLikeCode() {}")).toEqual([]);
@@ -152,6 +176,27 @@ describe("buildCodeMap", () => {
       { p: "src/lib/text.ts", e: ["segment"] },
       { p: "tsconfig.json" },
     ]);
+  });
+
+  // protects: links are real imports; fails_when: an import inside a comment becomes a link; no_claim: imports inside strings
+  it("links no imports that are commented out", async () => {
+    write(repo, { "src/lib/old.ts": '/*\nimport { db } from "./db";\n*/\n// import { segment } from "./text.js";\nexport const old = 1;\n' });
+    const { buildCodeMap } = await import("../code-map.js");
+    expect(buildCodeMap(repo)!.files.find((f) => f.p === "src/lib/old.ts")).toEqual({ p: "src/lib/old.ts", e: ["old"] });
+  });
+
+  // protects: links point at source, as the TypeScript compiler resolves them; fails_when: a .ts file importing "./b.js" links the emitted b.js while b.ts is tracked, or a .js file links b.ts; no_claim: moduleResolution modes beyond extension substitution
+  it("links a TypeScript import to the .ts source when the emitted .js is also tracked", async () => {
+    write(repo, {
+      "src/b.ts": "export const b = 1;\n",
+      "src/b.js": "export const b = 1;\n",
+      "src/a.ts": 'import { b } from "./b.js";\nexport const a = b;\n',
+      "src/c.js": 'import { b } from "./b.js";\nexport const c = b;\n',
+    });
+    const { buildCodeMap } = await import("../code-map.js");
+    const files = buildCodeMap(repo)!.files;
+    expect(files.find((f) => f.p === "src/a.ts")?.i).toEqual(["src/b.ts"]);
+    expect(files.find((f) => f.p === "src/c.js")?.i).toEqual(["src/b.js"]);
   });
 
   // protects: the names-only promise; fails_when: any value in the payload is file content; no_claim: nothing about the server's own check
@@ -252,6 +297,13 @@ describe("buildCodeMap", () => {
     const changed = buildCodeMap(repo, { cache, readBlobs: counting });
     expect(reads).toBe(1);
     expect(changed!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment", "tokens"] });
+  });
+  // protects: an upgrade fixes names cached by an older version; fails_when: a name cached before comments were skipped is sent again; no_claim: caches from other tools
+  it("rebuilds names cached by an older version", async () => {
+    const { buildCodeMap } = await import("../code-map.js");
+    const blob = git(repo, "rev-parse", ":src/lib/text.ts");
+    const cache = { repos: { "acme/widgets": { blobs: { [`${blob}:js`]: { e: ["fromAComment"] } } } } };
+    expect(buildCodeMap(repo, { cache })!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment"] });
   });
 });
 
