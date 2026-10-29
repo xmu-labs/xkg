@@ -17,8 +17,12 @@ export const JEV_URL = "https://api.typesafe.ai/v1/systemone";
 /** Pinned: the cutoffs below were set against this version's answers. */
 export const JEV_MODEL = "jev-1.14.0";
 export const JEV_TIMEOUT_MS = 5000;
-/** Provisional, from 10 captures on xkg's own repo; see the docs before changing. */
-export const JEV_CUTOFFS: Cutoffs = { strong: 0.6, possible: 0.3 };
+/**
+ * Set from 30 captures with known targets over two repos (12 with a code fit,
+ * 18 without): no card on any of the 18, at the cost of one fit missed. A
+ * shift of 0.05 moves one or two captures, so re-measure before changing.
+ */
+export const JEV_CUTOFFS: Cutoffs = { strong: 0.5, possible: 0.4 };
 
 const MAX_EXPORTS = 50;
 const MAX_IMPORTS = 20;
@@ -107,7 +111,9 @@ export async function askJev(apiKey: string, repo: string, capture: CaptureText,
 
 /**
  * Jev as a scorer: one request per repo, in parallel. A file can't fit better
- * than "anything in this repo fits", so its p is the lower of the two.
+ * than "anything in this repo fits", so its p is the product of the two: it
+ * stays under that gate and keeps Jev's order between files (taking the lower
+ * of the two flattens most files to the gate, and the ranker's order decides).
  */
 export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
   return {
@@ -125,7 +131,7 @@ export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
       const p = new Map<string, number>();
       repos.forEach((repo, r) => {
         const a = answers[r]!;
-        byRepo.get(repo)!.forEach((f, i) => p.set(`${repo}\n${f.p}`, Math.min(a.fits[i]!, a.anythingFits)));
+        byRepo.get(repo)!.forEach((f, i) => p.set(`${repo}\n${f.p}`, a.fits[i]! * a.anythingFits));
       });
       // Like the model path, usage is reported only when every count is known:
       // a missing count is unknown, not zero.
