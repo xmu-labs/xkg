@@ -151,12 +151,20 @@ const NAME = "2026-11-01-llm-memory.md";
 const capture = (log: HandoffLogEntry[], tags = "llm, memory") =>
   log.reduce((c, entry) => appendHandoffLog(c, handoffLogLine(entry)), `---\ntags: ${tags}\nstatus: applied\n---\n\n# LLM Memory\n\n## Core idea\nIdea.\n`);
 const user = { id: 7, github_token: "t", github_repo: "me/knowledge" };
-/** The statements that write a capture's scores. */
-const inserts = () => queries.filter((q) => q.text.startsWith("WITH incoming AS"));
-/** A write's values by name, from the order they appear in the statement. */
-const named = (q: { text: string; values: unknown[] }) => {
-  const [repos, paths, weights, negatives, userId, key, entries] = q.values;
-  return { repos, paths, weights, negatives, userId, key, entries, tagKeys: q.values.find((v, i) => i > 6 && Array.isArray(v)) };
+/** The statements that write scores. */
+const inserts = () => queries.filter((q) => q.text.startsWith("WITH caps AS"));
+/** The captures a write replaces, with the size of the log each came from. */
+const capsOf = (q: { values: unknown[] }) => {
+  const [keys, entries] = q.values as [string[], number[]];
+  return keys.map((key, i) => ({ key, entries: entries[i] }));
+};
+/** The rows a write installs. */
+const rowsOf = (q: { values: unknown[] }) => {
+  const [capKeys, capEntries, keys, repos, paths, weights, negatives, tags] = q.values as [string[], number[], string[], string[], string[], number[], number[], string[]];
+  return keys.map((key, i) => ({
+    key, repo: repos[i], path: paths[i], weight: weights[i], negatives: negatives[i],
+    tagKeys: tags[i]!.split(",").filter(Boolean), entries: capEntries[capKeys.indexOf(key)],
+  }));
 };
 
 describe("learnFrom", () => {
@@ -164,12 +172,16 @@ describe("learnFrom", () => {
   it("replaces the capture's rows with scores from its log", async () => {
     await learnFrom(user, `applied/${NAME}`, capture([e({ outcome: "applied", commit: "a".repeat(7), files: ["src/a.ts"] })]), TODAY);
     expect(inserts()).toHaveLength(1);
-    expect(named(inserts()[0]!)).toEqual({
-      repos: ["acme/app", "acme/app"], paths: ["", "src/a.ts"], weights: [1, 1], negatives: [0, 0],
-      userId: 7, key: captureKey(NAME), entries: 1, tagKeys: [tagKey("llm"), tagKey("memory")],
-    });
-    expect(inserts()[0]!.values).toContain(TODAY);
-    expect(JSON.stringify(inserts()[0]!.values)).not.toMatch(/llm-memory|"llm"|"memory"/);
+    const q = inserts()[0]!;
+    const tagKeys = [tagKey("llm"), tagKey("memory")];
+    expect(capsOf(q)).toEqual([{ key: captureKey(NAME), entries: 1 }]);
+    expect(rowsOf(q)).toEqual([
+      { key: captureKey(NAME), repo: "acme/app", path: "", weight: 1, negatives: 0, tagKeys, entries: 1 },
+      { key: captureKey(NAME), repo: "acme/app", path: "src/a.ts", weight: 1, negatives: 0, tagKeys, entries: 1 },
+    ]);
+    expect(q.values).toContain(7);
+    expect(q.values).toContain(TODAY);
+    expect(JSON.stringify(q.values)).not.toMatch(/llm-memory|"llm"|"memory"/);
   });
 
   // protects: two answers for one capture landing together never leave the older learning, and a failed write never drops the rows; fails_when: the old rows are deleted in a separate statement, or a write from a shorter log can replace one from a longer log; no_claim: Postgres row locking itself (checked against a real database in QA)
@@ -179,12 +191,12 @@ describe("learnFrom", () => {
     const writes = queries.filter((q) => /^(WITH|INSERT|DELETE|UPDATE)/.test(q.text));
     expect(writes).toHaveLength(1);
     const { text } = writes[0]!;
-    expect(named(writes[0]!).entries).toBe(2);
+    expect(capsOf(writes[0]!)).toEqual([{ key: captureKey(NAME), entries: 2 }]);
     // Rows the new snapshot no longer has go in the same statement, and only from a log no longer than this one
-    expect(text).toMatch(/DELETE FROM handoff_scores s WHERE s\.user_id = \? AND s\.capture_key = \? AND s\.log_entries <= \?/);
+    expect(text).toMatch(/DELETE FROM handoff_scores s USING caps c WHERE s\.user_id = \? AND s\.capture_key = c\.k AND s\.log_entries <= c\.e/);
     // Rows it has are upserted, never over a longer log
     expect(text).toMatch(/ON CONFLICT \(user_id, capture_key, repo, path\) DO UPDATE SET .* WHERE handoff_scores\.log_entries <= EXCLUDED\.log_entries$/);
-    expect(text).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM handoff_scores WHERE user_id = \? AND capture_key = \? AND log_entries > \?\)/);
+    expect(text).toMatch(/WHERE NOT EXISTS \(SELECT 1 FROM handoff_scores s WHERE s\.user_id = \? AND s\.capture_key = i\.k AND s\.log_entries > c\.e\)/);
   });
 
   // protects: spec rule 1, a capture turned down twice in a repo is never offered there again; fails_when: the row stays declined; no_claim: none
@@ -260,14 +272,27 @@ describe("rebuildHandoffIndex", () => {
 
     await learnFrom(user, `applied/${NAME}`, capture(logA), TODAY);
     await learnFrom(user, "inbox/b.md", capture(logB, "css"), TODAY);
-    const learned = inserts().map((q) => q.values);
+    const learned = inserts().flatMap(rowsOf);
     queries.length = 0;
 
     expect(await rebuildHandoffIndex(user, TODAY)).toEqual({ captures: 2, rows: 3 });
-    const wipe = queries.findIndex((q) => q.text.startsWith("DELETE FROM handoff_scores"));
-    expect(queries[wipe]!.text).toBe("DELETE FROM handoff_scores WHERE user_id = ?");
-    expect(wipe).toBeLessThan(queries.findIndex((q) => q.text.startsWith("WITH incoming AS")));
-    expect(inserts().map((q) => q.values)).toEqual(learned);
+    expect(inserts().flatMap(rowsOf)).toEqual(learned);
+  });
+
+  // protects: a rebuild is installed all at once and never discards answers learned while it ran; fails_when: it wipes the user's rows, writes in more than one statement, or replaces rows from a longer log; no_claim: Postgres row locking itself (checked against a real database in QA)
+  it("replaces the captures it read in one statement, keeping newer answers and other captures", async () => {
+    const rowFor = (capture: string): HandoffRow => ({ capture, repo: "acme/app", kind: "code", files: [], fit: "strong", status: "applied", since: TODAY, source: "auto" });
+    files["HANDOFFS.md"] = { content: renderHandoffs([rowFor(`inbox/${NAME}`), rowFor("inbox/b.md")]), sha: "h1" };
+    files[`inbox/${NAME}`] = { content: capture([e({ outcome: "applied", commit: "a".repeat(7), files: ["src/a.ts"] })]), sha: "a1" };
+    files["inbox/b.md"] = { content: capture([e({ outcome: "later" })], "css"), sha: "b1" };
+
+    await rebuildHandoffIndex(user, TODAY);
+    const writes = queries.filter((q) => /^(WITH|INSERT|DELETE|UPDATE)/.test(q.text));
+    expect(writes).toHaveLength(1);
+    // A capture with nothing to learn is still replaced, so its old rows go
+    expect(capsOf(writes[0]!)).toEqual([{ key: captureKey(NAME), entries: 1 }, { key: captureKey("b.md"), entries: 1 }]);
+    expect(writes[0]!.text).toMatch(/DELETE FROM handoff_scores s USING caps c WHERE s\.user_id = \? AND s\.capture_key = c\.k AND s\.log_entries <= c\.e/);
+    expect(writes[0]!.text).toMatch(/WHERE handoff_scores\.log_entries <= EXCLUDED\.log_entries$/);
   });
 
   // protects: a failed GitHub read never wipes what was learned; fails_when: an error reading HANDOFFS.md or a capture deletes the index or reports success; no_claim: none
@@ -279,7 +304,7 @@ describe("rebuildHandoffIndex", () => {
       failing[path] = 403;
       queries.length = 0;
       await expect(rebuildHandoffIndex(user, TODAY)).rejects.toThrow(/HTTP 403/);
-      expect(queries.some((q) => q.text.startsWith("DELETE"))).toBe(false);
+      expect(queries.some((q) => /^(WITH|INSERT|DELETE|UPDATE)/.test(q.text))).toBe(false);
       delete failing[path];
     }
   });

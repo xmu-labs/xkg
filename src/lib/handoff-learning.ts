@@ -153,27 +153,47 @@ export function provenFiles(rows: ScoreRow[], tagKeys: string[], today: string):
   return [...best.values()];
 }
 
+/** A capture's scores as learned from its log, ready to store. */
+interface CaptureScores {
+  key: string;
+  tagKeys: string[];
+  scores: Score[];
+  /** The size of the Handoff log the scores came from. */
+  entries: number;
+}
+
 /**
- * Replaces the capture's rows in one statement, so a failed write leaves the
- * old rows. Each row keeps the size of the log it came from, and a log only
- * grows: when two answers land together, a write from the shorter log never
- * replaces one from the longer (the upsert waits for the other's row locks).
+ * Replaces these captures' rows in one statement, so a failed write leaves
+ * the old rows. Each row keeps the size of the log it came from, and a log
+ * only grows: when two writes for a capture land together, the one from the
+ * shorter log never replaces the other's (the upsert waits for its row locks).
+ * Other captures' rows are left as they are.
  */
-async function replaceScores(userId: number, key: string, tagKeys: string[], scores: Score[], entries: number, today: string): Promise<void> {
+async function replaceScores(userId: number, captures: CaptureScores[], today: string): Promise<void> {
+  const rows = captures.flatMap((c) => c.scores.map((s) => ({ ...s, key: c.key, tags: c.tagKeys.join(",") })));
   await sql`
-    WITH incoming AS (
-      SELECT r, p, w, n FROM unnest(${scores.map((s) => s.repo)}::text[], ${scores.map((s) => s.path)}::text[], ${scores.map((s) => s.weight)}::float8[], ${scores.map((s) => s.negatives)}::int[]) AS t(r, p, w, n)
+    WITH caps AS (
+      SELECT k, e FROM unnest(${captures.map((c) => c.key)}::text[], ${captures.map((c) => c.entries)}::int[]) AS t(k, e)
+    ), incoming AS (
+      SELECT k, r, p, w, n, string_to_array(t, ',') AS tags
+      FROM unnest(${rows.map((r) => r.key)}::text[], ${rows.map((r) => r.repo)}::text[], ${rows.map((r) => r.path)}::text[], ${rows.map((r) => r.weight)}::float8[], ${rows.map((r) => r.negatives)}::int[], ${rows.map((r) => r.tags)}::text[]) AS t(k, r, p, w, n, t)
     ), gone AS (
-      DELETE FROM handoff_scores s WHERE s.user_id = ${userId} AND s.capture_key = ${key} AND s.log_entries <= ${entries}
-        AND NOT EXISTS (SELECT 1 FROM incoming i WHERE i.r = s.repo AND i.p = s.path)
+      DELETE FROM handoff_scores s USING caps c WHERE s.user_id = ${userId} AND s.capture_key = c.k AND s.log_entries <= c.e
+        AND NOT EXISTS (SELECT 1 FROM incoming i WHERE i.k = s.capture_key AND i.r = s.repo AND i.p = s.path)
     )
     INSERT INTO handoff_scores (user_id, capture_key, repo, path, weight, negatives, tag_keys, updated_at, log_entries)
-    SELECT ${userId}, ${key}, r, p, w, n, ${tagKeys}::text[], ${today}::date, ${entries}::int FROM incoming
-    WHERE NOT EXISTS (SELECT 1 FROM handoff_scores WHERE user_id = ${userId} AND capture_key = ${key} AND log_entries > ${entries})
+    SELECT ${userId}, i.k, i.r, i.p, i.w, i.n, i.tags, ${today}::date, c.e FROM incoming i JOIN caps c ON c.k = i.k
+    WHERE NOT EXISTS (SELECT 1 FROM handoff_scores s WHERE s.user_id = ${userId} AND s.capture_key = i.k AND s.log_entries > c.e)
     ON CONFLICT (user_id, capture_key, repo, path) DO UPDATE
       SET weight = EXCLUDED.weight, negatives = EXCLUDED.negatives, tag_keys = EXCLUDED.tag_keys, updated_at = EXCLUDED.updated_at, log_entries = EXCLUDED.log_entries
       WHERE handoff_scores.log_entries <= EXCLUDED.log_entries
   `;
+}
+
+/** The capture's scores from its content (the capture file as written). */
+function capturedScores(name: string, content: string, today: string): CaptureScores {
+  const entries = parseHandoffLog(content);
+  return { key: captureKey(name), tagKeys: tagsOf(content).map(tagKey), scores: scoresOf(entries, today), entries: entries.length };
 }
 
 type LearnUser = { id: number; github_token: string; github_repo: string | null };
@@ -185,10 +205,9 @@ type LearnUser = { id: number; github_token: string; github_repo: string | null 
  */
 export async function learnFrom(user: LearnUser, path: string, content: string, today: string): Promise<void> {
   try {
-    const entries = parseHandoffLog(content);
-    const scores = scoresOf(entries, today);
+    const { scores, ...learned } = capturedScores(captureName(path), content, today);
     await ensureHandoffScoreTable();
-    await replaceScores(user.id, captureKey(captureName(path)), tagsOf(content).map(tagKey), scores, entries.length, today);
+    await replaceScores(user.id, [{ ...learned, scores }], today);
     const dead = scores.filter((s) => !s.path && s.negatives >= DEAD_END).map((s) => s.repo);
     if (dead.length && user.github_repo) await markDead(user.github_token, user.github_repo, path, dead, today);
   } catch (err) {
@@ -259,30 +278,28 @@ async function readOrThrow(token: string, repo: string, path: string): Promise<s
 }
 
 /**
- * Makes the user's handoff_scores again from git: every capture with a row in
- * HANDOFFS.md, read from inbox/, applied/ or archived/. Captures whose
- * finished rows were pruned from HANDOFFS.md are left out. Everything is read
- * before the old rows are dropped, so a failed GitHub read throws and leaves
- * the index as it was.
+ * Makes the user's handoff_scores again from git for every capture with a
+ * row in HANDOFFS.md, read from inbox/, applied/ or archived/. Everything is
+ * read first, so a failed GitHub read throws and leaves the index as it was,
+ * and the rows are then replaced in one statement. A capture learned from a
+ * longer log while the rebuild ran keeps those rows. Rows of captures it
+ * didn't read (pruned from HANDOFFS.md, or whose file is gone) are kept.
  */
 export async function rebuildHandoffIndex(user: LearnUser, today: string): Promise<{ captures: number; rows: number }> {
   if (!user.github_repo) return { captures: 0, rows: 0 };
   const handoffs = await readOrThrow(user.github_token, user.github_repo, HANDOFFS_PATH);
   const names = [...new Set((handoffs ? parseHandoffs(handoffs).rows : []).map((r) => captureName(r.capture)))];
-  const rebuilt: { key: string; tagKeys: string[]; scores: Score[]; entries: number }[] = [];
+  const rebuilt: CaptureScores[] = [];
   for (const name of names) {
     let content: string | null = null;
     for (const dir of ["inbox", "applied", "archived"]) {
       content = await readOrThrow(user.github_token, user.github_repo, `${dir}/${name}`);
       if (content) break;
     }
-    if (!content) continue;
-    const entries = parseHandoffLog(content);
-    rebuilt.push({ key: captureKey(name), tagKeys: tagsOf(content).map(tagKey), scores: scoresOf(entries, today), entries: entries.length });
+    if (content) rebuilt.push(capturedScores(name, content, today));
   }
 
   await ensureHandoffScoreTable();
-  await sql`DELETE FROM handoff_scores WHERE user_id = ${user.id}`;
-  for (const c of rebuilt) await replaceScores(user.id, c.key, c.tagKeys, c.scores, c.entries, today);
+  if (rebuilt.length) await replaceScores(user.id, rebuilt, today);
   return { captures: rebuilt.length, rows: rebuilt.reduce((n, c) => n + c.scores.length, 0) };
 }

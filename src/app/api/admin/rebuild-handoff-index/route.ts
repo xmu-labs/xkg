@@ -3,9 +3,9 @@ import { adminAuthorized } from "@/lib/admin-auth";
 import { getUserById } from "@/lib/db";
 import { rebuildHandoffIndex } from "@/lib/handoff-learning";
 
-// Operator rebuild of what xkg learned from one user's handoff answers: drops
-// their handoff_scores rows and makes them again from git (HANDOFFS.md and the
-// captures' Handoff logs). Returns counts only.
+// Operator rebuild of what xkg learned from one user's handoff answers: makes
+// their handoff_scores rows again from git (HANDOFFS.md and the captures'
+// Handoff logs), in one statement. Returns counts only.
 // POST /api/admin/rebuild-handoff-index?user=<id> with the x-admin-secret header.
 export async function POST(req: NextRequest): Promise<NextResponse> {
   if (!adminAuthorized(req)) {
