@@ -112,6 +112,11 @@ describe("matchCapture with Jev", () => {
     expect(names.length).toBeLessThanOrEqual(3);
     for (const n of names) expect(exports).toContain(n);
     expect(why).toMatch(/^shares names with the capture: /);
+    // Five of xkg's files export an "llm" name; llm.ts has more than 3 names
+    // sharing rarer words ("model", "prompt", "relevance"), so none of the
+    // llm-only names is given.
+    expect(names).not.toContain("LLM_PROVIDERS");
+    expect(names).not.toContain("verifyLlmKey");
   });
 
   // protects: another repo's fit is still mentioned; fails_when: a second repo with a Possible file is dropped, or one under Possible is listed; no_claim: none

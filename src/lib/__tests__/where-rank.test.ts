@@ -47,11 +47,18 @@ describe("terms", () => {
 
 describe("sharedNames", () => {
   // protects: a reason built only from facts xkg can check; fails_when: a name the file doesn't export, or one sharing no word with the capture, is given; no_claim: that shared names explain the fit
-  it("gives up to 3 exported names that share a word with the capture, in export order", () => {
+  it("gives up to 3 exported names that share a word with the capture, in export order when no word is rarer", () => {
     const file = { p: "src/lib/llm.ts", e: ["callLlm", "rankByRelevance", "buildIndexRow", "llmSettings", "MAX_TOKENS", "relevanceFloor"] };
     expect(sharedNames(file, "Rank captures by relevance before calling the LLM")).toEqual(["callLlm", "rankByRelevance", "llmSettings"]);
     expect(sharedNames(file, "Pottery glaze")).toEqual([]);
     expect(sharedNames({ p: "README.md" }, "LLM relevance")).toEqual([]);
+  });
+
+  // protects: the card's reason names what is specific to the file, not the words every file shares; fails_when: a name sharing only a word common across the repo comes before one sharing a rare word; no_claim: that rarer means more relevant
+  it("names the ones sharing the repo's rarest words first, export order on ties", () => {
+    const file = { p: "src/lib/llm.ts", e: ["callLlm", "rankByRelevance", "buildIndexRow", "llmSettings", "MAX_TOKENS", "relevanceFloor"] };
+    const repo = [file, { p: "src/a.ts", e: ["llmA"] }, { p: "src/b.ts", e: ["useLlm"] }, { p: "src/c.ts", e: ["LLM_KEY"] }];
+    expect(sharedNames(file, "Rank captures by relevance before the LLM", repo)).toEqual(["rankByRelevance", "relevanceFloor", "callLlm"]);
   });
 });
 

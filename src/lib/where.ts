@@ -307,7 +307,7 @@ async function decideWithJev(
     .filter((r) => r.c.repo === map.repo && tier(r.p) !== "none")
     .slice(0, MAX_FILES)
     .map(({ c }) => {
-      const names = c.file ? sharedNames(c.file, query) : [];
+      const names = c.file ? sharedNames(c.file, query, map.files) : [];
       return names.length ? { path: c.path, why: `shares names with the capture: ${names.map((n) => `\`${n}\``).join(", ")}` } : { path: c.path };
     });
   const also = [...new Set(pool.map((c) => c.repo))]
