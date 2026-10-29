@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
+import type { WhereCard } from "@/lib/where";
 
 interface CaptureResult {
   capture: {
@@ -18,6 +19,13 @@ interface CaptureResult {
   filename: string;
   /** The capture on GitHub; older servers don't send it. */
   fileUrl?: string;
+  /** Where the capture applies in the user's code; absent when matching was skipped. */
+  where?: WhereCard;
+}
+
+/** Text with `backticked` names shown as code. */
+function withCode(text: string) {
+  return text.split("`").map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[12px]">{part}</code> : part));
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -289,9 +297,38 @@ export default function CapturePage() {
             </div>
           )}
 
+          {/* Where it applies in the user's code */}
+          {result.where && (
+            <div data-testid="where" data-reveal className="rounded-2xl p-4 stack-2" style={{ ...CARD_STYLE, ...reveal(5) }}>
+              <p className="eyebrow" style={{ color: "var(--gold)" }}>In your code</p>
+              {result.where.repo && (
+                <>
+                  <p className="text-sm leading-relaxed">
+                    <span className="font-medium" style={{ color: "var(--fg)" }}>{result.where.fit}</span>
+                    <span style={{ color: "var(--fg-muted)" }}> · {result.where.repo}</span>
+                  </p>
+                  <ul className="stack-2">
+                    {result.where.files.map((f) => (
+                      <li key={f.path} className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                        <code className="font-mono text-[12px]" style={{ color: "var(--fg)" }}>{f.path}</code>
+                        {f.why && <>: {withCode(f.why)}</>}
+                      </li>
+                    ))}
+                  </ul>
+                  {result.where.also.length > 0 && (
+                    <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                      Also fits: {result.where.also.map((a) => `${a.repo} (${a.fit})`).join(", ")}
+                    </p>
+                  )}
+                </>
+              )}
+              <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.where.note}</p>
+            </div>
+          )}
+
           {/* Applied to */}
           {result.capture.appliedTo && (
-            <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(5) }}>
+            <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(6) }}>
               <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Where to use it</p>
               <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.capture.appliedTo}</p>
             </div>

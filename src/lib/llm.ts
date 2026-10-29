@@ -117,7 +117,7 @@ export function resolveLlm(llm: LlmConfig): ResolvedLlm {
   return { provider: llm.provider, model: model || defaultModel(llm.provider), effort };
 }
 
-interface LlmCallOptions {
+export interface LlmCallOptions {
   llm: LlmConfig;
   apiKey: string;
   system: string;
@@ -126,7 +126,7 @@ interface LlmCallOptions {
 }
 
 /** Call the configured provider and return the raw text response (empty string on no content). */
-async function callLlm(opts: LlmCallOptions): Promise<string> {
+export async function callLlm(opts: LlmCallOptions): Promise<string> {
   const llm = resolveLlm(opts.llm);
   switch (llm.provider) {
     case "anthropic":

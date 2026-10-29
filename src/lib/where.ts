@@ -1,0 +1,304 @@
+/**
+ * "Where it applies": at capture, one LLM call picks the repo and up to 3
+ * files where the capture would change something, from the user's code maps
+ * (file and function names, never code). xkg then checks every path against
+ * the stored map, drops reasons that name functions the file doesn't export,
+ * and takes the tier from a scorer, never from the model's own confidence.
+ *
+ * Never throws: any failure returns null and the capture is saved as before.
+ */
+
+import type { MapFile, StoredCodeMap } from "./code-map";
+import { listCodeMaps, type User } from "./db";
+import { githubPut, readFile } from "./github";
+import { callLlm, llmSettings } from "./llm";
+import type { ExtractedCapture } from "./types";
+import { rankFiles, renderMaps, type RankedFile } from "./where-rank";
+import { evidenceScorer, tierOf, type CaptureText, type Candidate, type Scorer, type Tier } from "./where-score";
+
+export type { StoredCodeMap };
+
+/** Maps of this many most recently synced repos go into one match. */
+export const MATCH_REPOS = 5;
+const MAX_FILES = 3;
+const MAX_WHY_WORDS = 20;
+const FRESH_DAYS = 14;
+
+export type NoFitReason = "no-maps" | "stale" | "truncated" | "no-shared-words" | "weak";
+
+export interface WhereResult {
+  repo: string | null;
+  tier: Tier;
+  files: { path: string; why?: string }[];
+  also: { repo: string; tier: Tier }[];
+  /** The chosen repo's map: sync date (YYYY-MM-DD) and commit. */
+  map?: { date: string; head7: string | null };
+  noFit?: { reason: NoFitReason; repo?: string };
+  /** Which scorer set the tier. */
+  scorer: string;
+  /** The model's own confidence: logged only, never shown or used. */
+  modelConf: number | null;
+}
+
+/** What the capture card shows: labels only, never a number. */
+export interface WhereCard {
+  fit: string;
+  repo: string | null;
+  files: { path: string; why?: string }[];
+  also: { repo: string; fit: string }[];
+  note: string;
+}
+
+export interface WhereDeps {
+  listMaps?: (userId: number) => Promise<StoredCodeMap[]>;
+  complete?: (system: string, prompt: string) => Promise<string>;
+  scorer?: Scorer;
+  now?: () => Date;
+}
+
+type MatchUser = Pick<User, "id" | "llm_api_key" | "llm_provider" | "llm_model" | "llm_effort">;
+
+export const PROVENANCE = "from file names, not yet checked in your code";
+const FIT_LABEL: Record<Tier, string> = { strong: "Strong fit", possible: "Possible fit", none: "No clear fit" };
+
+const SYSTEM = `You match a saved piece of outside knowledge (a capture) to the user's code. You see only maps of the user's repos: file paths, the names each file exports, and the mapped files it imports. You never see code.
+
+Pick the one repo where the capture applies best, and up to ${MAX_FILES} files in it where applying it would change something. Use only repos and paths from the maps. For each file, say in ${MAX_WHY_WORDS} words or fewer why it applies; put in backticks only names that file exports. List other repos it also fits, if any.
+
+Return ONLY valid JSON, no markdown:
+{"repo":"owner/name","files":[{"path":"...","why":"..."}],"confidence":0.0,"also":[{"repo":"owner/name"}]}
+If nothing fits, return {"repo":null,"reason":"..."}`;
+
+function captureText(c: ExtractedCapture): CaptureText {
+  return { title: c.inferredTitle, coreIdea: c.coreIdea, takeaways: c.takeaways };
+}
+
+function prompt(maps: string, c: ExtractedCapture): string {
+  // Maps first: a repeat match against the same maps reuses the cached prefix.
+  return `CODE MAPS:
+${maps}
+CAPTURE:
+Title: ${c.inferredTitle}
+Core idea: ${c.coreIdea}
+Takeaways:
+${c.takeaways.map((t) => `- ${t}`).join("\n")}`;
+}
+
+function parseReply(raw: string): unknown {
+  const text = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  for (const candidate of [text, /\{[\s\S]*\}/.exec(text)?.[0]]) {
+    if (!candidate) continue;
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // try the next form
+    }
+  }
+  return undefined;
+}
+
+const NAME = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/;
+
+/**
+ * The reason, unless it names (in backticks) an identifier the file doesn't
+ * export. Spans that aren't names, or are the file's own path, aren't checked.
+ */
+export function nameCheck(why: string, file: MapFile): string | undefined {
+  const base = file.p.slice(file.p.lastIndexOf("/") + 1);
+  for (const [, span] of why.matchAll(/`([^`]+)`/g)) {
+    const name = span!.trim().replace(/\(\)$/, "");
+    if (name === file.p || name === base || !NAME.test(name)) continue;
+    if (!(file.e ?? []).includes(name.split(".")[0]!)) return undefined;
+  }
+  return why;
+}
+
+export interface CheckedWhere {
+  repo: string | null;
+  files: { path: string; why?: string }[];
+  also: string[];
+  modelConf: number | null;
+}
+
+/** The model's reply reduced to what the maps confirm: a mapped repo, mapped paths (at most 3), mapped also-fits repos. */
+export function checkWhere(reply: unknown, maps: StoredCodeMap[]): CheckedWhere {
+  const r = (reply && typeof reply === "object" ? reply : {}) as Record<string, unknown>;
+  const conf = typeof r.confidence === "number" && r.confidence >= 0 && r.confidence <= 1 ? r.confidence : null;
+  const map = maps.find((m) => m.repo === r.repo);
+  if (!map) return { repo: null, files: [], also: [], modelConf: conf };
+
+  const byPath = new Map(map.files.map((f) => [f.p, f]));
+  const files: CheckedWhere["files"] = [];
+  for (const item of Array.isArray(r.files) ? r.files : []) {
+    const { path, why } = (item ?? {}) as { path?: unknown; why?: unknown };
+    const file = typeof path === "string" ? byPath.get(path) : undefined;
+    if (!file || files.some((f) => f.path === file.p)) continue;
+    const words = typeof why === "string" ? why.replace(/\s+/g, " ").trim().split(" ").filter(Boolean) : [];
+    const kept = words.length ? nameCheck(words.slice(0, MAX_WHY_WORDS).join(" "), file) : undefined;
+    files.push(kept ? { path: file.p, why: kept } : { path: file.p });
+    if (files.length === MAX_FILES) break;
+  }
+
+  const also: string[] = [];
+  for (const item of Array.isArray(r.also) ? r.also : []) {
+    const repo = typeof item === "string" ? item : (item as { repo?: unknown } | null)?.repo;
+    if (typeof repo === "string" && repo !== map.repo && !also.includes(repo) && maps.some((m) => m.repo === repo)) also.push(repo);
+  }
+  return { repo: map.repo, files, also, modelConf: conf };
+}
+
+/** Why a match found nothing, from the repo it would most likely have been: an old map first, then a cut-short map, else a weak match. */
+function noFitOf(map: StoredCodeMap, fresh: (m: StoredCodeMap) => boolean): { reason: NoFitReason; repo: string } {
+  if (!fresh(map)) return { reason: "stale", repo: map.repo };
+  if (map.truncated) return { reason: "truncated", repo: map.repo };
+  return { reason: "weak", repo: map.repo };
+}
+
+export async function matchCapture(user: MatchUser, capture: ExtractedCapture, deps: WhereDeps = {}): Promise<WhereResult | null> {
+  if (capture.lowConfidence || !capture.coreIdea?.trim() || !user.llm_api_key) return null;
+  const apiKey = user.llm_api_key;
+  const scorer = deps.scorer ?? evidenceScorer;
+  const listMaps = deps.listMaps ?? ((id: number) => listCodeMaps(id, MATCH_REPOS));
+  const complete =
+    deps.complete ?? ((system: string, text: string) => callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600 }));
+  const now = (deps.now ?? (() => new Date()))();
+  const fresh = (m: StoredCodeMap) => now.getTime() - m.syncedAt.getTime() <= FRESH_DAYS * 86_400_000;
+  const none = (noFit: WhereResult["noFit"], modelConf: number | null = null): WhereResult => ({
+    repo: null,
+    tier: "none",
+    files: [],
+    also: [],
+    noFit,
+    scorer: scorer.name,
+    modelConf,
+  });
+
+  try {
+    const maps = await listMaps(user.id);
+    if (!maps.length) return none({ reason: "no-maps" });
+
+    const text = captureText(capture);
+    const ranked = rankFiles(maps, [text.title, text.coreIdea, ...text.takeaways].join("\n"));
+    if (!ranked.length) return none({ reason: "no-shared-words" });
+
+    const reply = parseReply(await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture)));
+    if (reply === undefined) return null;
+    const checked = checkWhere(reply, maps);
+    const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
+    if (!checked.repo || !checked.files.length) return none(noFitOf(mapOf(ranked[0]!.repo), fresh), checked.modelConf);
+
+    const map = mapOf(checked.repo);
+    const best = (repo: string): RankedFile | undefined => ranked.find((r) => r.repo === repo);
+    const top = best(map.repo)?.score ?? 0;
+    const rel = (score: number, against: number) => (against > 0 ? score / against : 0);
+    const candidates: Candidate[] = [
+      ...checked.files.map((f) => ({
+        repo: map.repo,
+        path: f.path,
+        rel: rel(ranked.find((r) => r.repo === map.repo && r.path === f.path)?.score ?? 0, top),
+        whyKept: Boolean(f.why),
+        fresh: fresh(map),
+      })),
+      // An also-fits repo is scored by its best file, against the chosen repo's best.
+      ...checked.also.map((repo) => ({ repo, path: best(repo)?.path ?? "", rel: rel(best(repo)?.score ?? 0, top), whyKept: false, fresh: fresh(mapOf(repo)) })),
+    ];
+    const scores = await scorer.score(text, candidates);
+    const pOf = (c: { repo: string; path: string }) => scores.find((s) => s.repo === c.repo && s.path === c.path)?.p ?? 0;
+
+    const shown = checked.files.filter((f) => tierOf(pOf({ repo: map.repo, path: f.path })) !== "none");
+    if (!shown.length) return none(noFitOf(map, fresh), checked.modelConf);
+    const tier = tierOf(Math.max(...shown.map((f) => pOf({ repo: map.repo, path: f.path }))));
+    const also = candidates
+      .slice(checked.files.length)
+      .map((c) => ({ repo: c.repo, tier: tierOf(pOf(c)) }))
+      .filter((a) => a.tier !== "none");
+
+    return {
+      repo: map.repo,
+      tier,
+      files: shown,
+      also,
+      map: { date: map.syncedAt.toISOString().slice(0, 10), head7: map.head7 },
+      scorer: scorer.name,
+      modelConf: checked.modelConf,
+    };
+  } catch (err) {
+    console.error("[where] match failed:", err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+function noFitLine(noFit: NonNullable<WhereResult["noFit"]>): string {
+  const lead = "No clear fit in your repos yet:";
+  switch (noFit.reason) {
+    case "no-maps":
+      return "No code repos synced yet.";
+    case "stale":
+      return `${lead} the map of ${noFit.repo} is more than ${FRESH_DAYS} days old.`;
+    case "truncated":
+      return `${lead} the map of ${noFit.repo} leaves out files because the repo is large.`;
+    case "no-shared-words":
+      return `${lead} no file or function name shares a word with this capture.`;
+    case "weak":
+      return `${lead} the closest files are only a weak match.`;
+  }
+}
+
+function mapNote(w: WhereResult): string {
+  return w.map ? `map from ${w.map.date}${w.map.head7 ? ` (${w.map.head7})` : ""}` : "";
+}
+
+/** The "## Where it applies" section for the capture file, or null when the user has no maps (the file stays as today). */
+export function whereSection(w: WhereResult): string | null {
+  if (w.noFit?.reason === "no-maps") return null;
+  if (w.noFit || !w.repo) return `## Where it applies\n${noFitLine(w.noFit ?? { reason: "weak" })}\n`;
+  const head = [`**${FIT_LABEL[w.tier]}**`, w.repo, PROVENANCE, mapNote(w)].filter(Boolean).join(" · ");
+  const files = w.files.map((f) => `- \`${f.path}\`${f.why ? `: ${f.why}` : ""}\n`).join("");
+  const also = w.also.length ? `Also fits: ${w.also.map((a) => `${a.repo} (${FIT_LABEL[a.tier]})`).join(", ")}\n` : "";
+  return `## Where it applies\n${head}\n${files}${also}`;
+}
+
+export function whereCard(w: WhereResult): WhereCard {
+  const label = PROVENANCE.charAt(0).toUpperCase() + PROVENANCE.slice(1);
+  return {
+    fit: FIT_LABEL[w.tier],
+    repo: w.repo,
+    files: w.files,
+    also: w.also.map((a) => ({ repo: a.repo, fit: FIT_LABEL[a.tier] })),
+    note: w.noFit || !w.repo ? noFitLine(w.noFit ?? { reason: "weak" }) : [label, mapNote(w)].filter(Boolean).join(" · "),
+  };
+}
+
+/** The capture file with the section right after "## Core idea"; unchanged if it has no Core idea or already has the section. */
+export function insertWhereSection(markdown: string, section: string): string {
+  const core = /^## Core idea\n/m.exec(markdown);
+  if (!core) return markdown;
+  const next = markdown.indexOf("\n## ", core.index + core[0].length);
+  if (next < 0) return markdown;
+  // Only a section in this spot counts: the captured source may have the same heading.
+  if (markdown.startsWith("## Where it applies\n", next + 1)) return markdown;
+  return `${markdown.slice(0, next + 1)}${section}\n${markdown.slice(next + 1)}`;
+}
+
+/** Adds the section to the saved capture file (best-effort). True when the file was updated. */
+export async function writeWhereSection(githubToken: string, repo: string, path: string, where: WhereResult): Promise<boolean> {
+  const section = whereSection(where);
+  if (!section) return false;
+  try {
+    const file = await readFile(githubToken, repo, path);
+    if (!file) return false;
+    const updated = insertWhereSection(file.content, section);
+    if (updated === file.content) return false;
+    await githubPut(githubToken, repo, path, updated, `where: note where ${path.replace(/^.*\//, "")} applies`, file.sha);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** One line for the MCP tool result, or null when nothing was written. */
+export function whereLine(where: WhereResult): string | null {
+  if (where.noFit?.reason === "no-maps") return null;
+  if (where.noFit || !where.repo) return `Where it applies: ${noFitLine(where.noFit ?? { reason: "weak" })}`;
+  return `Where it applies: ${FIT_LABEL[where.tier]} in ${where.repo}: ${where.files.map((f) => f.path).join(", ")} (${PROVENANCE}).`;
+}
