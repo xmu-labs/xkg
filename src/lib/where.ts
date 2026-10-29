@@ -24,7 +24,8 @@ const MAX_FILES = 3;
 const MAX_WHY_WORDS = 20;
 const FRESH_DAYS = 14;
 
-export type NoFitReason = "no-maps" | "stale" | "truncated" | "no-shared-words" | "weak";
+/** "unreadable": the model replied but the reply couldn't be read; kept only to log the call's cost, never shown. */
+export type NoFitReason = "no-maps" | "stale" | "truncated" | "no-shared-words" | "weak" | "unreadable";
 
 export interface WhereResult {
   repo: string | null;
@@ -191,7 +192,7 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const raw = await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture), (u) => { usage = u; });
     tokens = { in: usage?.tokensIn ?? null, out: usage?.tokensOut ?? null };
     const reply = parseReply(raw);
-    if (reply === undefined) return null;
+    if (reply === undefined) return none({ reason: "unreadable" });
     const checked = checkWhere(reply, maps);
     const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
     if (!checked.repo || !checked.files.length) return none(noFitOf(mapOf(ranked[0]!.repo), fresh), checked.modelConf);
@@ -251,16 +252,21 @@ function noFitLine(noFit: NonNullable<WhereResult["noFit"]>): string {
       return `${lead} no file or function name shares a word with this capture.`;
     case "weak":
       return `${lead} the closest files are only a weak match.`;
+    case "unreadable":
+      return `${lead} the match couldn't be read.`;
   }
 }
+
+/** A reply that couldn't be read is logged for its cost only: no section, card or result line. */
+const unreadable = (w: WhereResult) => w.noFit?.reason === "unreadable";
 
 function mapNote(w: WhereResult): string {
   return w.map ? `map from ${w.map.date}${w.map.head7 ? ` (${w.map.head7})` : ""}` : "";
 }
 
-/** The "## Where it applies" section for the capture file, or null when the user has no maps (the file stays as today). */
+/** The "## Where it applies" section for the capture file, or null when the user has no maps or the reply couldn't be read (the file stays as today). */
 export function whereSection(w: WhereResult): string | null {
-  if (w.noFit?.reason === "no-maps") return null;
+  if (w.noFit?.reason === "no-maps" || unreadable(w)) return null;
   if (w.noFit || !w.repo) return `## Where it applies\n${noFitLine(w.noFit ?? { reason: "weak" })}\n`;
   const head = [`**${FIT_LABEL[w.tier]}**`, w.repo, PROVENANCE, mapNote(w)].filter(Boolean).join(" · ");
   const files = w.files.map((f) => `- \`${f.path}\`${f.why ? `: ${f.why}` : ""}\n`).join("");
@@ -268,7 +274,8 @@ export function whereSection(w: WhereResult): string | null {
   return `## Where it applies\n${head}\n${files}${also}`;
 }
 
-export function whereCard(w: WhereResult): WhereCard {
+export function whereCard(w: WhereResult): WhereCard | null {
+  if (unreadable(w)) return null;
   const label = PROVENANCE.charAt(0).toUpperCase() + PROVENANCE.slice(1);
   return {
     fit: FIT_LABEL[w.tier],
@@ -308,7 +315,7 @@ export async function writeWhereSection(githubToken: string, repo: string, path:
 
 /** One line for the MCP tool result, or null when nothing was written. */
 export function whereLine(where: WhereResult): string | null {
-  if (where.noFit?.reason === "no-maps") return null;
+  if (where.noFit?.reason === "no-maps" || unreadable(where)) return null;
   if (where.noFit || !where.repo) return `Where it applies: ${noFitLine(where.noFit ?? { reason: "weak" })}`;
   return `Where it applies: ${FIT_LABEL[where.tier]} in ${where.repo}: ${where.files.map((f) => f.path).join(", ")} (${PROVENANCE}).`;
 }
