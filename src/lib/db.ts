@@ -165,7 +165,7 @@ export async function initDb(): Promise<void> {
 
   codeMapTableReady = false;
   await ensureCodeMapTable();
-  surfaceEventTableReady = false;
+  surfaceEventTable = null;
   await ensureSurfaceEventTable();
 
   await upgradeLegacyData();
@@ -237,14 +237,23 @@ export async function listCodeMaps(userId: number, limit: number): Promise<Store
 
 // ── Surface events (counts only; see lib/surface-events.ts) ──
 
-let surfaceEventTableReady = false;
+let surfaceEventTable: Promise<void> | null = null;
 
 /**
  * One row each time a channel shows the user a capture (see surface-events.ts).
- * Created on first use as well as by initDb.
+ * Created on first use as well as by initDb. Concurrent first uses share one
+ * creation (two CREATE TABLE IF NOT EXISTS at once can collide); a failed one
+ * is retried on the next use.
  */
-export async function ensureSurfaceEventTable(): Promise<void> {
-  if (surfaceEventTableReady) return;
+export function ensureSurfaceEventTable(): Promise<void> {
+  surfaceEventTable ??= createSurfaceEventTable().catch((err: unknown) => {
+    surfaceEventTable = null;
+    throw err;
+  });
+  return surfaceEventTable;
+}
+
+async function createSurfaceEventTable(): Promise<void> {
   await sql`
     CREATE TABLE IF NOT EXISTS surface_events (
       id SERIAL PRIMARY KEY,
@@ -263,7 +272,6 @@ export async function ensureSurfaceEventTable(): Promise<void> {
   await sql`ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_user_capture ON surface_events (user_id, capture_key)`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_surfaced_at ON surface_events (surfaced_at)`;
-  surfaceEventTableReady = true;
 }
 
 /**
