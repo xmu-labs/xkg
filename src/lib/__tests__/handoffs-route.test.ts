@@ -127,6 +127,21 @@ describe("POST /api/handoffs", () => {
     expect(githubPut).not.toHaveBeenCalled();
   });
 
+  // protects: the button never queues files or a fit it can't show; fails_when: a capture whose match wasn't saved, or a repo the card didn't suggest, is queued with no files and fit none; no_claim: none
+  it("refuses when the match wasn't saved, or the repo wasn't suggested", async () => {
+    listCodeRepos.mockResolvedValue([{ repo: "acme/app" }, { repo: "acme/web" }, { repo: "acme/other" }]);
+    const res = await post({ filename: CAPTURE, repo: "acme/other" });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "xkg didn't suggest acme/other for this capture." });
+
+    files.set(CAPTURE, { content: buildMarkdown("2026-10-29", capture as never, "raw"), sha: "c" });
+    const none = await post({ filename: CAPTURE, repo: "acme/app" });
+    expect(none.status).toBe(409);
+    expect(await none.json()).toEqual({ error: "This capture's match wasn't saved, so there's nothing to hand off. Try capturing it again." });
+    expect(githubPut).not.toHaveBeenCalled();
+    expect(recordHandoffEvent).not.toHaveBeenCalled();
+  });
+
   // protects: AC4, 60 an hour; fails_when: the 61st call queues; no_claim: the counter itself (quota test)
   it("answers 429 when the hourly limit is reached", async () => {
     consumeQuota.mockResolvedValue({ allowed: false, limit: 60, resetIn: 120 });

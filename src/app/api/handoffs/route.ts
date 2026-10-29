@@ -13,7 +13,8 @@ import { formatDate } from "@/lib/llm";
 /**
  * The capture card's "Hand off to your coding agent" button. The body names a
  * capture and a repo, nothing else: the files and fit come from the capture's
- * own "Where it applies" section, so only what xkg suggested is queued.
+ * own "Where it applies" section, so only what xkg suggested is queued, and
+ * only for a repo it suggested.
  */
 
 const CAPTURE_PATH = /^(inbox|applied)\/[\w.-]+\.md$/;
@@ -50,14 +51,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     // The best repo gets the files the card showed, less any turned down twice
     // for this capture; an "also fits" repo gets none, and the agent finds them.
+    // Nothing else is queued: the saved match is what the card showed.
     const where = readWhereSection(file.content);
-    const dead = where?.repo === repo ? await deadEnds(user.id, filename, repo) : new Set<string>();
-    const fit = where?.repo === repo ? where.tier : (where?.also.find((a) => a.repo === repo)?.tier ?? "none");
+    if (!where) return fail(409, "This capture's match wasn't saved, so there's nothing to hand off. Try capturing it again.");
+    const fit = where.repo === repo ? where.tier : where.also.find((a) => a.repo === repo)?.tier;
+    if (!fit) return fail(409, `xkg didn't suggest ${repo} for this capture.`);
+    const dead = where.repo === repo ? await deadEnds(user.id, filename, repo) : new Set<string>();
     const row: HandoffRow = {
       capture: filename,
       repo,
       kind: "code",
-      files: where?.repo === repo ? where.files.filter((f) => !dead.has(f)) : [],
+      files: where.repo === repo ? where.files.filter((f) => !dead.has(f)) : [],
       fit,
       status: "pending",
       since: formatDate(),

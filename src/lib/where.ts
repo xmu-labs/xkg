@@ -383,12 +383,31 @@ function mapNote(w: WhereResult): string {
   return w.map ? `map from ${w.map.date}${w.map.head7 ? ` (${w.map.head7})` : ""}` : "";
 }
 
+/**
+ * `text` as a Markdown code span with a fence longer than any run of backticks
+ * in it, padded with a space when it starts or ends with a backtick or space,
+ * so readCodeSpan gets back the same text.
+ */
+export function codeSpan(text: string): string {
+  const fence = "`".repeat(Math.max(0, ...(text.match(/`+/g) ?? []).map((run) => run.length)) + 1);
+  const pad = /^[` ]|[` ]$/.test(text) ? " " : "";
+  return `${fence}${pad}${text}${pad}${fence}`;
+}
+
+/** The text of the code span at the start of `s` (as codeSpan writes it), or null. */
+export function readCodeSpan(s: string): string | null {
+  const m = /^(`+)(?!`)(.*?[^`])\1(?!`)/.exec(s);
+  if (!m) return null;
+  const text = m[2]!;
+  return text.length > 1 && text.startsWith(" ") && text.endsWith(" ") && text.trim() ? text.slice(1, -1) : text;
+}
+
 /** The "## Where it applies" section for the capture file, or null when the user has no maps or the reply couldn't be read (the file stays as today). */
 export function whereSection(w: WhereResult): string | null {
   if (w.noFit?.reason === "no-maps" || unreadable(w)) return null;
   if (w.noFit || !w.repo) return `## Where it applies\n${noFitLine(w.noFit ?? { reason: "weak" })}\n`;
   const head = [`**${FIT_LABEL[w.tier]}**`, w.repo, PROVENANCE, mapNote(w)].filter(Boolean).join(" · ");
-  const files = w.files.map((f) => `- \`${f.path}\`${f.why ? `: ${f.why}` : ""}\n`).join("");
+  const files = w.files.map((f) => `- ${codeSpan(f.path)}${f.why ? `: ${f.why}` : ""}\n`).join("");
   const also = w.also.length ? `Also fits: ${w.also.map((a) => `${a.repo} (${FIT_LABEL[a.tier]})`).join(", ")}\n` : "";
   return `## Where it applies\n${head}\n${files}${also}`;
 }
@@ -433,7 +452,7 @@ export function readWhereSection(markdown: string): { repo: string; tier: Tier; 
   const head = /^\*\*(.+?)\*\* · ([^ ]+)/.exec(lines[0] ?? "");
   const tier = head && TIER_OF_LABEL.get(head[1]!);
   if (!head || !tier || tier === "none") return null;
-  const files = lines.flatMap((l) => /^- `([^`]+)`/.exec(l)?.[1] ?? []);
+  const files = lines.flatMap((l) => (l.startsWith("- `") ? readCodeSpan(l.slice(2)) ?? [] : []));
   const alsoLine = lines.find((l) => l.startsWith("Also fits: "))?.slice("Also fits: ".length) ?? "";
   const also = alsoLine
     .split(", ")
