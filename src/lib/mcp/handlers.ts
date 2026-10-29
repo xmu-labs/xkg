@@ -537,7 +537,11 @@ export async function handleGeneratePlan(
       typeof (f as { path?: unknown })?.path === "string" && typeof (f as { content?: unknown })?.content === "string")
     .slice(0, 5)
     .map((f) => ({ path: f.path, content: f.content }));
-  const bare = sent.filter((f): f is string => typeof f === "string");
+  // Paths sent without contents, as a string or as { path } alone, are named in the reply.
+  const bare = sent
+    .map((f) => (typeof f === "string" ? f : (f as { path?: unknown; content?: unknown })?.path))
+    .filter((p, i): p is string =>
+      typeof p === "string" && typeof (sent[i] as { content?: unknown })?.content !== "string");
 
   const planText = await generatePlan(
     user.llm_api_key,

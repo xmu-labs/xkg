@@ -73,6 +73,16 @@ describe("generate_plan code context", () => {
     expect(text).toContain("src/lib/llm.ts");
   });
 
+  // Regression: ISSUE-001 — a path sent without its content was dropped with no note
+  // Found by /qa on 2026-10-29
+  // Report: .gstack/qa-reports/run-20261029T145411Z/functional/qa-report-generate-plan-2026-10-29.md
+  // protects: an agent that sends { path } alone learns to send contents; fails_when: a path-only entry is dropped without a note; no_claim: none
+  it("names a path sent without its content in the reply", async () => {
+    const text = await plan([{ path: "src/lib/rate-limit.ts" }]);
+    expect(readFile.mock.calls.map((c) => c[2])).toEqual([CAPTURE]);
+    expect(text).toContain("Not included: `src/lib/rate-limit.ts`");
+  });
+
   it("keeps at most 5 files and drops entries without a path and text content", async () => {
     const files = Array.from({ length: 7 }, (_, i) => ({ path: `src/f${i}.ts`, content: `export const f${i} = ${i};` }));
     await plan([{ path: "src/bad.ts" }, { content: "no path" }, ...files]);
