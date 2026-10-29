@@ -155,6 +155,27 @@ describe("buildCodeMap", () => {
     expect(JSON.stringify(map)).not.toContain("missing");
   });
 
+  // Regression: Codex review on #126 — running from a subfolder mapped only that subtree, with wrong paths
+  // protects: one map per repo whatever folder the command runs in; fails_when: a subfolder run sends paths relative to it or omits root files; no_claim: worktrees
+  it("maps the whole repo from its root when run in a subfolder", async () => {
+    const { buildCodeMap } = await import("../code-map.js");
+    expect(buildCodeMap(join(repo, "src/lib"))).toEqual(buildCodeMap(repo));
+  });
+
+  // Regression: Codex review on #126 — one file with too many exports made the server refuse the whole map
+  // protects: a map the server accepts whatever a file exports; fails_when: 1,001 exports or a 201-character name reach the payload; no_claim: which 1,000 names are the most useful
+  it("keeps each file within the server's limits on exported names", async () => {
+    const { buildCodeMap } = await import("../code-map.js");
+    const { parseCodeMap } = await import("../../src/lib/code-map.js");
+    const many = Array.from({ length: 1001 }, (_, i) => `export const n${i} = ${i};`).join("\n");
+    write(repo, { "src/lib/many.ts": `${many}\nexport const ${"a".repeat(201)} = 1;\n` });
+    const map = buildCodeMap(repo)!;
+    const many2 = map.files.find((f) => f.p === "src/lib/many.ts")!;
+    expect(many2.e).toHaveLength(1000);
+    expect(many2.e!.every((n) => n.length <= 200)).toBe(true);
+    expect(parseCodeMap(map).ok).toBe(true);
+  });
+
   it("returns null when the repo has no origin remote", async () => {
     const { buildCodeMap } = await import("../code-map.js");
     const bare = makeRepo({ "a.ts": "export const a = 1;\n" }, null);
@@ -275,6 +296,16 @@ describe("syncCodeMap", () => {
     write(repo, { "src/lib/new.ts": "export function fresh() {}\n" });
     expect(await syncCodeMap("key-1", repo, { cachePath })).toMatchObject({ status: "synced", files: 9 });
     expect(posted()).toHaveLength(2);
+  });
+
+  // Regression: Codex review on #126 — after switching to another account's key, the unchanged gate sent that account nothing
+  // protects: each account gets the map once; fails_when: a new key reports unchanged without sending; no_claim: how the key is stored
+  it("sends the map again when the API key changes", async () => {
+    const { syncCodeMap } = await import("../code-map.js");
+    await syncCodeMap("key-1", repo, { cachePath });
+    expect(await syncCodeMap("key-2", repo, { cachePath })).toMatchObject({ status: "synced" });
+    expect(posted().map((p) => p.auth)).toEqual(["Bearer key-1", "Bearer key-2"]);
+    expect(readFileSync(cachePath, "utf8")).not.toContain("key-2");
   });
 
   it("syncs an unchanged map when forced", async () => {

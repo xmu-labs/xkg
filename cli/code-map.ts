@@ -28,6 +28,10 @@ const MAX_SOURCE_BYTES = 1024 * 1024;
 const SKIP_DIR = /(^|\/)(node_modules|dist|build|\.next|\.nuxt|vendor|coverage|target|\.venv|venv|__pycache__|\.gradle|\.dart_tool|cdk\.out|__tests__|tests)\//;
 const SKIP_FILE = /\.(test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$|_test\.go$|(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum)$|\.lockb?$|\.(png|jpe?g|gif|svg|ico|webp|avif|bmp|tiff?|mp4|mov|webm|mp3|wav|ogg|pdf|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|rar|jar|wasm|exe|dll|so|dylib|bin|class|pyc)$/i;
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+// The server's limits per file (src/lib/code-map.ts): a file over them would
+// make it refuse the whole map.
+const MAX_EXPORTS_PER_FILE = 1000;
+const MAX_NAME_LENGTH = 200;
 
 type Lang = "js" | "py" | "go" | "rs";
 const JS_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
@@ -81,7 +85,7 @@ export function exportedNames(path: string, source: string): string[] {
     }
   }
   found.sort((a, b) => a[0] - b[0]);
-  return [...new Set(found.map(([, name]) => name).filter((n) => IDENTIFIER.test(n)))];
+  return [...new Set(found.map(([, name]) => name).filter((n) => IDENTIFIER.test(n) && n.length <= MAX_NAME_LENGTH))].slice(0, MAX_EXPORTS_PER_FILE);
 }
 
 /** Raw import specifiers of a file. Kept only in the local cache; only resolved paths are ever sent. */
@@ -177,7 +181,7 @@ function resolveJs(from: string, spec: string, files: Set<string>, resolver: Res
     for (const a of resolver.aliases) {
       if (a.wildcard ? spec.startsWith(a.prefix) && spec.endsWith(a.suffix) && spec.length >= a.prefix.length + a.suffix.length : spec === a.prefix) {
         const match = a.wildcard ? spec.slice(a.prefix.length, spec.length - a.suffix.length) : "";
-        for (const t of a.targets) bases.push(posix.normalize(t.replace("*", match)));
+        for (const t of a.targets) bases.push(posix.normalize(t.replaceAll("*", match)));
       }
     }
     if (resolver.baseUrl !== null) bases.push(posix.join(resolver.baseUrl, spec));
@@ -252,6 +256,8 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
     return null;
   }
   if (!repo) return null;
+  // Paths are relative to the repo root wherever the command runs.
+  cwd = git(cwd, "rev-parse", "--show-toplevel");
 
   const tracked = new Map<string, string>();
   const listing = execFileSync("git", ["ls-files", "-s", "-z"], { cwd, encoding: "utf-8", maxBuffer: 256 * 1024 * 1024 });
@@ -397,7 +403,9 @@ export async function syncCodeMap(apiKey: string, cwd: string = process.cwd(), o
           : "Not a git repository. Run this inside the repo you code in.",
       };
     }
-    const hash = mapHash(map);
+    // The server keeps a map per account, so a new key means a new upload.
+    // Only a hash of the key is stored.
+    const hash = `${mapHash(map)}:${createHash("sha256").update(apiKey).digest("hex").slice(0, 16)}`;
     const entry = cache.repos![map.repo]!;
     if (!opts.force && entry.hash === hash) {
       saveCache(cachePath, cache);
