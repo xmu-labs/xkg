@@ -266,10 +266,10 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "claude -p"
-   npx -y @xmu-labs/xkg@latest kos --key YOUR_API_KEY
+   npx -y @xmu-labs/xkg@latest agent --key YOUR_API_KEY
    ```
 
-   `kos` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
+   `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes. Older CLI versions call it `xkg kos`, and that name still works for now.
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "codex exec"
@@ -374,8 +374,8 @@ npx -y @xmu-labs/xkg@latest <command>
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
 | `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook. Setup checks that the hook can reach xkg, and the hook runs the CLI version that installed it (run setup again to update) |
-| `config set agent "claude -p"` | Set which assistant `kos` should drive |
-| `kos --key YOUR_API_KEY` | Implement the latest plan in an isolated worktree |
+| `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
+| `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
 | `vault-check --key YOUR_API_KEY` | Debug the vault hook |
 | `help` | Show help |
