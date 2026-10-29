@@ -142,9 +142,9 @@ export async function handoffOffer(user: OfferUser, repo: string): Promise<strin
 
     const days = await offerDays(user.id, repo, waiting.map((r) => r.capture));
     const expired = expiredRows(waiting, days, today);
-    if (expired.length && (await setHandoffStatus(user.github_token, user.github_repo, expired, "expired", today))) {
-      await Promise.all(expired.map((r) => recordHandoffEvent(user.id, r.capture, repo, "expired")));
-    }
+    // Only rows this call expired are counted: another session may have expired (or answered) them first
+    const set = expired.length ? await setHandoffStatus(user.github_token, user.github_repo, expired, "expired", today) : null;
+    await Promise.all((set ?? []).map((r) => recordHandoffEvent(user.id, r.capture, repo, "expired")));
     waiting = waiting.filter((r) => !expired.includes(r));
 
     // Captures deleted since they were queued are left out of the list and the

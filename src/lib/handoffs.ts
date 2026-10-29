@@ -181,21 +181,22 @@ const samePair = (a: Pick<HandoffRow, "capture" | "repo">, b: Pick<HandoffRow, "
 /**
  * Sets the status of these rows, from `today` (the row's `since`), each only
  * if it's still as it was read (same status and date), so a change the user
- * or another call made meanwhile is kept. A dead row stays dead. True when
- * written (or nothing to change).
+ * or another call made meanwhile is kept. A dead row stays dead. Returns the
+ * rows it set (none when there was nothing to change), or null when
+ * HANDOFFS.md couldn't be written.
  */
-export async function setHandoffStatus(token: string, repo: string, read: HandoffRow[], status: string, today: string): Promise<boolean> {
-  const done = await updateHandoffs(token, repo, `handoff: mark ${read.length} ${status}`, today, (rows) => {
-    let changed = false;
+export function setHandoffStatus(token: string, repo: string, read: HandoffRow[], status: string, today: string): Promise<HandoffRow[] | null> {
+  return updateHandoffs(token, repo, `handoff: mark ${read.length} ${status}`, today, (rows) => {
+    const set: HandoffRow[] = [];
     const next = rows.map((r) => {
       const unchanged = read.some((p) => samePair(p, r) && p.status === r.status && p.since === r.since);
       if (!unchanged || r.status === status || r.status === "dead") return r;
-      changed = true;
-      return { ...r, status, since: today };
+      const updated = { ...r, status, since: today };
+      set.push(updated);
+      return updated;
     });
-    return { rows: next, changed, result: true };
+    return { rows: next, changed: set.length > 0, result: set };
   });
-  return done === true;
 }
 
 /**

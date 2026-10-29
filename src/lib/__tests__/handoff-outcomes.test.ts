@@ -22,6 +22,8 @@ const githubPut = vi.fn(PUT);
 const githubDelete = vi.fn(async (_t: string, _r: string, path: string) => {
   delete files[path];
 });
+/** Runs once, right after the next read of HANDOFFS.md: a change made by someone else meanwhile. */
+let afterHandoffsRead: (() => void) | null = null;
 const recordApplyEvent = vi.fn();
 const recordHandoffEvent = vi.fn();
 const codeMapPaths = vi.fn();
@@ -32,7 +34,15 @@ vi.mock("../github", () => ({
   githubGet: vi.fn(),
   githubPut: (...a: Parameters<typeof githubPut>) => githubPut(...a),
   githubDelete: (...a: Parameters<typeof githubDelete>) => githubDelete(...a),
-  readFile: async (_t: string, _r: string, path: string) => files[path] ?? null,
+  readFile: async (_t: string, _r: string, path: string) => {
+    const file = files[path] ?? null;
+    if (path === "HANDOFFS.md" && afterHandoffsRead) {
+      const run = afterHandoffsRead;
+      afterHandoffsRead = null;
+      run();
+    }
+    return file;
+  },
   updateIndexEntry: vi.fn(),
 }));
 vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), codeMapPaths: (...a: unknown[]) => codeMapPaths(...a) }));
@@ -68,6 +78,7 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-10-30T12:00:00Z"));
   githubPut.mockClear();
   githubDelete.mockClear();
+  afterHandoffsRead = null;
   recordApplyEvent.mockReset();
   recordHandoffEvent.mockReset();
   codeMapPaths.mockReset().mockResolvedValue(new Set(["src/llm.ts", "src/briefing.ts"]));
@@ -139,25 +150,59 @@ describe("answers after a handoff is finished", () => {
 });
 
 describe("when HANDOFFS.md can't be written", () => {
-  // protects: the reply never claims a snooze or a closed handoff that wasn't saved; fails_when: it says "Snoozed" or "is done" after the queue write gave up; no_claim: the retry (handoffs tests)
-  it("says so instead of claiming it", async () => {
-    setup();
-    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+  const failHandoffs = () =>
     githubPut.mockImplementation(async (_t, _r, path, content, _m, sha) => {
       if (path === "HANDOFFS.md") throw new Error("GitHub PUT HANDOFFS.md: HTTP 409");
-      if (sha && files[path] && files[path]!.sha !== sha) throw new Error(`GitHub PUT ${path}: HTTP 409`);
-      files[path] = { content, sha: `sha${++shaN}` };
+      return PUT(_t, _r, path, content, _m, sha);
     });
+
+  // protects: an answer is saved whole or not at all, so the agent can simply try again; fails_when: a log line or an event is kept for an answer HANDOFFS.md never got; no_claim: the retry (handoffs tests)
+  it("records nothing for an answer and says to try again", async () => {
+    setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failHandoffs();
     try {
       expect(await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" }))
-        .toBe(`Recorded: not now for ${NAME} in acme/app, but HANDOFFS.md couldn't be updated, so it may be offered again before 2026-11-06. It doesn't count as an apply.`);
-      expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
-        .toBe(`Applied: ${NAME} → applied/${NAME} (a1b2c3d). HANDOFFS.md couldn't be updated, so its row for acme/app still says pending.`);
+        .toBe("Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.");
+      expect(files[`inbox/${NAME}`]!.content).not.toContain("Handoff log");
+      expect(recordHandoffEvent).not.toHaveBeenCalled();
       expect(handoffs()[0]!.status).toBe("pending");
     } finally {
       githubPut.mockImplementation(PUT);
       spy.mockRestore();
     }
+  });
+
+  // protects: an apply is never lost to the queue, and its handoff is counted once, when the row is finally closed; fails_when: the reply claims the handoff is done, or a failed close and a later one count twice; no_claim: none
+  it("still records the apply, and counts the handoff once when a later report closes it", async () => {
+    setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    failHandoffs();
+    try {
+      expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
+        .toBe(`Applied: ${NAME} → applied/${NAME} (a1b2c3d). HANDOFFS.md couldn't be updated, so its row for acme/app still says pending.`);
+      expect(recordHandoffEvent).not.toHaveBeenCalled();
+    } finally {
+      githubPut.mockImplementation(PUT);
+      spy.mockRestore();
+    }
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
+      .toBe(`Already recorded: ${NAME} (a1b2c3d). The handoff in acme/app is done.`);
+    expect(handoffs()[0]!.status).toBe("applied");
+    expect(recordHandoffEvent.mock.calls.filter((c) => c[3] === "applied")).toHaveLength(1);
+  });
+});
+
+describe("an answer that crosses another change", () => {
+  // protects: an apply that lands between an answer's read and its write wins; fails_when: the answer overwrites the applied row, or the reply claims a snooze; no_claim: none
+  it("leaves the row as the other change left it", async () => {
+    setup();
+    afterHandoffsRead = () => {
+      files["HANDOFFS.md"] = { content: renderHandoffs([row({ status: "applied", since: "2026-10-30" })]), sha: "h2" };
+    };
+    expect(await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" }))
+      .toBe(`Recorded: not now for ${NAME} in acme/app. It doesn't count as an apply.`);
+    expect(handoffs()[0]!.status).toBe("applied");
   });
 });
 
@@ -325,5 +370,33 @@ describe("reverted", () => {
       .toBe(`Already recorded: the revert of ${NAME} (a1b2c3d).`);
     expect(files[`applied/${NAME}`]!.content.match(/reverted/g)).toHaveLength(1);
     expect(recordHandoffEvent).toHaveBeenCalledTimes(1);
+  });
+
+  // protects: a revert's APPLIED.md mark survives a conflicting write, and a repeat report repairs one that failed; fails_when: a failed ledger write is reported as done, or a repeat report can't fix it; no_claim: none
+  it("retries the ledger mark, and a repeat report repairs a failed one", async () => {
+    appliedSetup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let fails = 1;
+    githubPut.mockImplementation(async (_t, _r, path, content, _m, sha) => {
+      if (path === "APPLIED.md" && fails-- > 0) throw new Error("GitHub PUT APPLIED.md: HTTP 409");
+      return PUT(_t, _r, path, content, _m, sha);
+    });
+    try {
+      await handleApplyCapture(user, { filename: NAME, outcome: "reverted", commit_sha: SHA, repo: "acme/app" });
+      expect(files["APPLIED.md"]!.content).toContain("reverted 2026-10-30");
+
+      appliedSetup();
+      fails = 2;
+      expect(await handleApplyCapture(user, { filename: NAME, outcome: "reverted", commit_sha: SHA, repo: "acme/app" }))
+        .toBe(`Recorded: the apply of ${NAME} in commit a1b2c3d was reverted, but APPLIED.md couldn't be updated. Report it again to fix that.`);
+      expect(files["APPLIED.md"]!.content).not.toContain("reverted");
+      expect(await handleApplyCapture(user, { filename: NAME, outcome: "reverted", commit_sha: SHA, repo: "acme/app" }))
+        .toBe(`Already recorded: the revert of ${NAME} (a1b2c3d).`);
+      expect(files["APPLIED.md"]!.content).toContain("reverted 2026-10-30");
+      expect(files[`applied/${NAME}`]!.content.match(/· reverted ·/g)).toHaveLength(1);
+    } finally {
+      githubPut.mockImplementation(PUT);
+      spy.mockRestore();
+    }
   });
 });

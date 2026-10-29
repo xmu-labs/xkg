@@ -90,11 +90,15 @@ export async function appliedHandoff(user: ApplyUser, filename: string, args: An
   }
 }
 
-/** Marks the handoff applied and counts it. Best-effort: false when HANDOFFS.md couldn't be written. */
+/**
+ * Marks the handoff applied, and counts it only when this call set the row,
+ * so a retry after a failed write counts it once. Best-effort: false when
+ * HANDOFFS.md couldn't be written.
+ */
 export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<boolean> {
-  const saved = await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
-  await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
-  return saved;
+  const set = await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
+  if (set?.length) await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
+  return set !== null;
 }
 
 /** What the reply says about the handoff an apply closed. */
@@ -132,7 +136,19 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
 
   const today = formatDate();
   const short = args.commit_sha?.slice(0, 7);
-  if (outcome === "reverted" && revertLogged(file.content, args.commit_sha!)) return `Already recorded: the revert of ${filename} (${short}).`;
+  const ledgerNote = (marked: boolean) => (marked ? "" : ", but APPLIED.md couldn't be updated. Report it again to fix that");
+  // A repeat report also repairs an APPLIED.md mark that failed the first time
+  if (outcome === "reverted" && revertLogged(file.content, args.commit_sha!)) {
+    return `Already recorded: the revert of ${filename} (${short})${ledgerNote(await markLedgerReverted(token, knowledge, filename, args.commit_sha!, today))}.`;
+  }
+
+  // HANDOFFS.md first: when it can't be written nothing is recorded, so the
+  // agent can simply try again. Only a waiting row takes the answer, and only
+  // if it's still as read: an applied or dead row stays as it is.
+  const until = addDays(today, SNOOZE_DAYS);
+  const status = { declined: "declined", done: "done", later: `snoozed:${until}`, reverted: null }[outcome];
+  const set = row && status && isWaiting(row.status) ? await setHandoffStatus(token, knowledge, [row], status, today) : [];
+  if (!set) return "Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.";
 
   const reason = outcome === "declined" ? reasonOf(args.reason) : undefined;
   const confidence = confidenceOf(args.confidence);
@@ -140,30 +156,35 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
   const commit = outcome === "reverted" ? args.commit_sha : undefined;
   const line = handoffLogLine({ date: today, repo, outcome, reason, confidence, commit, files });
   await githubPut(token, knowledge, path, appendHandoffLog(file.content, line), `handoff: ${outcome} ${filename}`, file.sha);
-
-  if (outcome === "reverted") {
-    const ledger = await readFile(token, knowledge, LEDGER_PATH);
-    const marked = ledger && markReverted(ledger.content, filename, args.commit_sha!, today);
-    if (marked) await githubPut(token, knowledge, LEDGER_PATH, marked, `ledger: ${filename} reverted (${short})`, ledger.sha).catch(() => undefined);
-  }
-
-  // Only a waiting row takes the answer: an applied or dead row stays as it is
-  const until = addDays(today, SNOOZE_DAYS);
-  const status = { declined: "declined", done: "done", later: `snoozed:${until}`, reverted: null }[outcome];
-  const saved = row && status && isWaiting(row.status) ? await setHandoffStatus(token, knowledge, [row], status, today) : null;
+  const marked = outcome === "reverted" ? await markLedgerReverted(token, knowledge, filename, args.commit_sha!, today) : true;
   if (repo) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
 
-  if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted.`;
+  if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted${ledgerNote(marked)}.`;
+  if (outcome === "later" && (set.length || row?.status === status)) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
   const said = {
     declined: `${filename} declined in ${repo} (${reason})`,
     done: `${filename} was already done in ${repo}`,
     later: `not now for ${filename} in ${repo}`,
   }[outcome];
-  if (saved === false) {
-    return `Recorded: ${said}, but HANDOFFS.md couldn't be updated, so it may be offered again${outcome === "later" ? ` before ${until}` : ""}. It doesn't count as an apply.`;
-  }
-  if (outcome === "later" && saved) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
   return `Recorded: ${said}. It doesn't count as an apply.`;
+}
+
+/**
+ * Marks the apply reverted in APPLIED.md, retrying once from a fresh read.
+ * True when marked, or there's nothing to mark (already marked, or no row).
+ */
+async function markLedgerReverted(token: string, knowledge: string, filename: string, commit: string, today: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const ledger = await readFile(token, knowledge, LEDGER_PATH);
+      const marked = ledger && markReverted(ledger.content, filename, commit, today);
+      if (marked) await githubPut(token, knowledge, LEDGER_PATH, marked, `ledger: ${filename} reverted (${commit.slice(0, 7)})`, ledger.sha);
+      return true;
+    } catch (err) {
+      if (attempt === 1) console.error("[handoff] ledger revert failed:", err instanceof Error ? err.message : err);
+    }
+  }
+  return false;
 }
 
 /** True when the capture's Handoff log already has this commit's revert (short and full shas match). */

@@ -199,7 +199,8 @@ describe("setHandoffStatus", () => {
   it("sets the status and the date it changed, leaving dead rows and other repos alone", async () => {
     const rows = [row(), row({ repo: "acme/web" }), row({ capture: "inbox/dead.md", status: "dead" })];
     files.set(HANDOFFS_PATH, { content: renderHandoffs(rows), sha: "s1" });
-    expect(await setHandoffStatus("t", "o/k", [row(), row({ capture: "inbox/dead.md" })], "declined", "2026-11-02")).toBe(true);
+    expect(await setHandoffStatus("t", "o/k", [row(), row({ capture: "inbox/dead.md" })], "declined", "2026-11-02"))
+      .toEqual([row({ status: "declined", since: "2026-11-02" })]);
     expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows).toEqual([
       row({ status: "declined", since: "2026-11-02" }), row({ repo: "acme/web" }), row({ capture: "inbox/dead.md", status: "dead" }),
     ]);
@@ -209,8 +210,20 @@ describe("setHandoffStatus", () => {
   it("changes a row only if it's unchanged since it was read", async () => {
     const read = row();
     files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
-    expect(await setHandoffStatus("t", "o/k", [read, row({ capture: "inbox/b.md" })], "expired", "2026-10-30")).toBe(true);
+    await setHandoffStatus("t", "o/k", [read, row({ capture: "inbox/b.md" })], "expired", "2026-10-30");
     expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.status)).toEqual(["done", "expired"]);
+  });
+
+  // protects: callers know which rows changed, so they count only those; fails_when: a skipped row is reported as set, or a failed write as nothing to do; no_claim: none
+  it("returns the rows it set, or null when the write failed", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [row(), row({ capture: "inbox/b.md" })], "expired", "2026-10-30"))
+      .toEqual([row({ capture: "inbox/b.md", status: "expired", since: "2026-10-30" })]);
+    putFailures = 2;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [row()], "expired", "2026-10-30")).toBeNull();
+    spy.mockRestore();
   });
 
   // protects: the re-read after a conflict is checked the same way; fails_when: the retry overwrites a row the conflicting write changed; no_claim: none
