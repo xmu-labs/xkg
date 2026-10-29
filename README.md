@@ -248,7 +248,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    capture "The Mom Test: don't ask if your idea is good. Ask about the person's real behavior, current workflow, and past spending."
    ```
 
-   If you sync a **code map** (see step 5), the capture also gets a **Where it applies** section: the repo and up to 3 files where it may change something, picked by your LLM from file and function names only and labeled as not yet checked in your code. Every path is checked against your map, a reason that names a function the file doesn't export is dropped, and the fit (Strong or Possible) comes from how well the names match, never from the model rating itself. When nothing fits, it says why in one line. With no map, the capture is saved exactly as before.
+   If you sync a **code map** (see step 5), the capture also gets a **Where it applies** section: the repo and up to 3 files where it may change something, from file and function names only, labeled as not yet checked in your code. xkg ranks your mapped files by the names they share with the capture, then [TypeSafe](https://typesafe.ai)'s decision model Jev rates the top 15 files of each repo: would applying the capture change this file, and does anything in the repo fit at all. Files rated Possible or better are shown (Strong when Jev is fairly sure), each with the exported names it shares with the capture. Your LLM is used only to extract the capture; if TypeSafe can't answer, your LLM picks the files instead, every path is checked against your map, a reason that names a function the file doesn't export is dropped, and the fit comes from how well the names match, never from the model rating itself. When nothing fits, it says why in one line. With no map, the capture is saved exactly as before.
 
 2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
@@ -383,7 +383,7 @@ Captures live as structured Markdown in **your** GitHub repository. Private by d
 
 - **No lock-in** — clone it, move it, delete xkg, keep the files
 - **No proprietary format** — every capture is a readable `.md` file
-- **No training on your data** — captures are sent only to the LLM provider you chose, with the key you supplied, to extract the insight you asked for
+- **No training on your data** — captures are sent only to the LLM provider you chose, with the key you supplied, to extract the insight you asked for. If you sync code maps, the extracted title, core idea and takeaways also go to TypeSafe, which says where the capture applies and doesn't train on what it receives
 - **Any tool can read it** — anything that reads Git or speaks MCP
 - **BYOK** — your provider, your key, your cost
 - **Never commit your xkg API key** to source control
@@ -423,14 +423,15 @@ The whole point of this repo being public is that you can check these claims rat
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
 | code maps (`code_maps`) | per repo you sync with the git hooks (at most 20): file paths, exported function and class names, and which mapped files import which. Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it) |
-| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer and the fit shown. Never the capture's name or content |
+| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`) and the fit shown. Never the capture's name or content |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
-When you capture, the server talks to exactly three kinds of destination:
+When you capture, the server talks to exactly four kinds of destination:
 
 1. **GitHub** — to write the capture into your repo
-2. **Your LLM provider**, with *your* key: the one you picked in Settings. If you sync code maps, the maps of your 5 most recently synced repos (names only) go along, so it can say where the capture applies
-3. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
+2. **Your LLM provider**, with *your* key: the one you picked in Settings, to extract the capture
+3. **TypeSafe**, with xkg's key, only if you sync code maps: the extracted title, core idea and takeaways, and the names (paths, exported names, imported paths) of up to 15 files per repo, so its model Jev can say where the capture applies. If TypeSafe can't answer, the maps of your 5 most recently synced repos (names only) go to your LLM provider instead
+4. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
 

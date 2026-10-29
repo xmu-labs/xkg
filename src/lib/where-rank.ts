@@ -61,6 +61,12 @@ export function terms(text: string): string[] {
   return words(text).filter((w) => !STOP.has(w) && w.length > 2).map(stem);
 }
 
+/** Up to `max` names the file exports that share a word with the capture, in export order. */
+export function sharedNames(file: MapFile, capture: string, max = 3): string[] {
+  const wanted = new Set(terms(capture));
+  return (file.e ?? []).filter((name) => terms(name).some((t) => wanted.has(t))).slice(0, max);
+}
+
 const WEIGHTS = { e: 3, n: 2, d: 1 } as const;
 const IGNORED_DIRS = new Set(["src", "lib", "app"]);
 

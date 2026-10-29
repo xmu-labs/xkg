@@ -1,19 +1,26 @@
 /**
- * "Where it applies": at capture, one LLM call picks the repo and up to 3
- * files where the capture would change something, from the user's code maps
- * (file and function names, never code). xkg then checks every path against
- * the stored map, drops reasons that name functions the file doesn't export,
- * and takes the tier from a scorer, never from the model's own confidence.
+ * "Where it applies": at capture, xkg finds the repo and up to 3 files where
+ * the capture would change something, from the user's code maps (file and
+ * function names, never code).
+ *
+ * With xkg's TypeSafe key set, Jev decides: it rates the name ranker's top
+ * files per repo, and the user's model is not called. Otherwise, or when Jev
+ * fails, one call to the user's model picks the files; xkg then checks every
+ * path against the stored map, drops reasons that name functions the file
+ * doesn't export, and takes the tier from a scorer, never from the model's own
+ * confidence.
  *
  * Never throws: any failure returns null and the capture is saved as before.
  */
 
 import type { MapFile, StoredCodeMap } from "./code-map";
 import { listCodeMaps, type User } from "./db";
+import { env } from "./env";
 import { githubPut, readFile } from "./github";
+import { jevScorer } from "./jev";
 import { callLlm, llmSettings, type LlmUsage } from "./llm";
 import type { ExtractedCapture } from "./types";
-import { rankFiles, renderMaps, type RankedFile } from "./where-rank";
+import { rankFiles, renderMaps, sharedNames, type RankedFile } from "./where-rank";
 import { evidenceScorer, tierOf, type CaptureText, type Candidate, type Scorer, type Tier } from "./where-score";
 
 export type { StoredCodeMap };
@@ -21,6 +28,8 @@ export type { StoredCodeMap };
 /** Maps of this many most recently synced repos go into one match. */
 export const MATCH_REPOS = 5;
 const MAX_FILES = 3;
+/** Files per repo, best ranked first, that Jev rates. */
+export const JEV_POOL = 15;
 const MAX_WHY_WORDS = 20;
 const FRESH_DAYS = 14;
 
@@ -55,6 +64,8 @@ export interface WhereDeps {
   listMaps?: (userId: number) => Promise<StoredCodeMap[]>;
   complete?: (system: string, prompt: string, onUsage?: (usage: LlmUsage) => void) => Promise<string>;
   scorer?: Scorer;
+  /** Decides instead of the model when set; null: always the model. Defaults to Jev when xkg's TypeSafe key is set. */
+  jev?: Scorer | null;
   now?: () => Date;
 }
 
@@ -167,14 +178,15 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
       callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600, onUsage }));
   const now = (deps.now ?? (() => new Date()))();
   const fresh = (m: StoredCodeMap) => now.getTime() - m.syncedAt.getTime() <= FRESH_DAYS * 86_400_000;
+  const jev = deps.jev === undefined ? defaultJev() : deps.jev;
   let tokens: WhereResult["tokens"];
-  const none = (noFit: WhereResult["noFit"], modelConf: number | null = null): WhereResult => ({
+  const none = (noFit: WhereResult["noFit"], modelConf: number | null = null, by = scorer): WhereResult => ({
     repo: null,
     tier: "none",
     files: [],
     also: [],
     noFit,
-    scorer: scorer.name,
+    scorer: by.name,
     modelConf,
     ...(tokens ? { tokens } : {}),
   });
@@ -184,8 +196,21 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     if (!maps.length) return none({ reason: "no-maps" });
 
     const text = captureText(capture);
-    const ranked = rankFiles(maps, [text.title, text.coreIdea, ...text.takeaways].join("\n"));
+    const query = [text.title, text.coreIdea, ...text.takeaways].join("\n");
+    const ranked = rankFiles(maps, query);
     if (!ranked.length) return none({ reason: "no-shared-words" });
+    const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
+
+    if (jev) {
+      try {
+        const decided = await decideWithJev(jev, maps, ranked, text, query, fresh);
+        tokens = decided.tokens;
+        return decided.top ? decided.top : none(noFitOf(mapOf(ranked[0]!.repo), fresh), null, jev);
+      } catch (err) {
+        console.error("[where] Jev failed, the model picks instead:", err instanceof Error ? err.message : err);
+        tokens = undefined;
+      }
+    }
 
     let usage = null as LlmUsage | null;
     const raw = await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture), (u) => { usage = u; });
@@ -193,7 +218,6 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const reply = parseReply(raw);
     if (reply === undefined) return null;
     const checked = checkWhere(reply, maps);
-    const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
     if (!checked.repo || !checked.files.length) return none(noFitOf(mapOf(ranked[0]!.repo), fresh), checked.modelConf);
 
     const map = mapOf(checked.repo);
@@ -214,12 +238,12 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const scores = await scorer.score(text, candidates);
     const pOf = (c: { repo: string; path: string }) => scores.find((s) => s.repo === c.repo && s.path === c.path)?.p ?? 0;
 
-    const shown = checked.files.filter((f) => tierOf(pOf({ repo: map.repo, path: f.path })) !== "none");
+    const shown = checked.files.filter((f) => tierOf(pOf({ repo: map.repo, path: f.path }), scorer.cutoffs) !== "none");
     if (!shown.length) return none(noFitOf(map, fresh), checked.modelConf);
-    const tier = tierOf(Math.max(...shown.map((f) => pOf({ repo: map.repo, path: f.path }))));
+    const tier = tierOf(Math.max(...shown.map((f) => pOf({ repo: map.repo, path: f.path }))), scorer.cutoffs);
     const also = candidates
       .slice(checked.files.length)
-      .map((c) => ({ repo: c.repo, tier: tierOf(pOf(c)) }))
+      .map((c) => ({ repo: c.repo, tier: tierOf(pOf(c), scorer.cutoffs) }))
       .filter((a) => a.tier !== "none");
 
     return {
@@ -236,6 +260,74 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     console.error("[where] match failed:", err instanceof Error ? err.message : err);
     return null;
   }
+}
+
+function defaultJev(): Scorer | null {
+  const key = env.typesafeApiKey;
+  return key ? jevScorer(key) : null;
+}
+
+/**
+ * Jev rates where-rank's top files of each repo (one request per repo). The
+ * best file picks the repo; up to 3 of its files at Possible or above are
+ * shown. Their reason is the exported names they share with the capture, a
+ * fact xkg can check. `top` is null when no file reaches Possible.
+ */
+async function decideWithJev(
+  jev: Scorer,
+  maps: StoredCodeMap[],
+  ranked: RankedFile[],
+  text: CaptureText,
+  query: string,
+  fresh: (m: StoredCodeMap) => boolean,
+): Promise<{ top: WhereResult | null; tokens: NonNullable<WhereResult["tokens"]> }> {
+  const pool: Candidate[] = [];
+  for (const repo of new Set(ranked.map((r) => r.repo))) {
+    const map = maps.find((m) => m.repo === repo)!;
+    const byPath = new Map(map.files.map((f) => [f.p, f]));
+    const top = ranked.filter((r) => r.repo === repo).slice(0, JEV_POOL);
+    for (const r of top) {
+      pool.push({ repo, path: r.path, rel: r.score / top[0]!.score, whyKept: false, fresh: fresh(map), file: byPath.get(r.path) });
+    }
+  }
+
+  let usage = null as LlmUsage | null;
+  const scores = await jev.score(text, pool, (u) => { usage = u; });
+  const tokens = { in: usage?.tokensIn ?? null, out: usage?.tokensOut ?? null };
+  const tier = (p: number) => tierOf(p, jev.cutoffs);
+  // A stable sort keeps the ranker's order between equal scores.
+  const rated = pool
+    .map((c) => ({ c, p: scores.find((s) => s.repo === c.repo && s.path === c.path)?.p ?? 0 }))
+    .sort((a, b) => b.p - a.p);
+  const best = rated[0];
+  if (!best || tier(best.p) === "none") return { top: null, tokens };
+
+  const map = maps.find((m) => m.repo === best.c.repo)!;
+  const files = rated
+    .filter((r) => r.c.repo === map.repo && tier(r.p) !== "none")
+    .slice(0, MAX_FILES)
+    .map(({ c }) => {
+      const names = c.file ? sharedNames(c.file, query) : [];
+      return names.length ? { path: c.path, why: `shares names with the capture: ${names.map((n) => `\`${n}\``).join(", ")}` } : { path: c.path };
+    });
+  const also = [...new Set(pool.map((c) => c.repo))]
+    .filter((repo) => repo !== map.repo)
+    .map((repo) => ({ repo, tier: tier(rated.find((r) => r.c.repo === repo)!.p) }))
+    .filter((a) => a.tier !== "none");
+
+  return {
+    top: {
+      repo: map.repo,
+      tier: tier(best.p),
+      files,
+      also,
+      map: { date: map.syncedAt.toISOString().slice(0, 10), head7: map.head7 },
+      scorer: jev.name,
+      modelConf: null,
+      tokens,
+    },
+    tokens,
+  };
 }
 
 function noFitLine(noFit: NonNullable<WhereResult["noFit"]>): string {
