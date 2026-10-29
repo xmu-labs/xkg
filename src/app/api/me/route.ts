@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
@@ -58,13 +58,15 @@ export async function GET(): Promise<NextResponse> {
     await ensureProfileColumns();
     await ensureLlmColumns();
     // Follow a rename on GitHub, so xkg doesn't rely on the redirect from the
-    // old name, which stops working if a new repo takes that name.
-    if (user.github_repo) {
-      const current = await currentRepoName(user.github_token, user.github_repo);
-      if (current && current !== user.github_repo) {
-        await updateUserRepo(user.id, current);
-        user.github_repo = current;
-      }
+    // old name, which stops working if a new repo takes that name. Runs after
+    // the response so the profile never waits on GitHub; Settings shows the
+    // new name on the next load.
+    const { id, github_token: token, github_repo: repo } = user;
+    if (repo) {
+      after(async () => {
+        const current = await currentRepoName(token, repo);
+        if (current && current !== repo) await updateUserRepo(id, current);
+      });
     }
     return NextResponse.json(mePayload(user));
   } catch (err) {

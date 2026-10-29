@@ -396,7 +396,7 @@ Settings → Account shows the repo your captures are saved in, with a link to i
 | `INDEX.md` | a table of every capture: date, title, keywords, tags |
 | `APPLIED.md` | which capture went into which commit |
 
-**Renaming it.** Rename the repo on GitHub as usual, then open xkg once. xkg reads the new name from GitHub, saves it, and shows it in Settings. Until then, GitHub's redirect from the old name keeps captures working. Don't create a new repo with the old name before you've opened xkg, because GitHub drops the redirect when you do. You don't need to onboard again, and doing so would replace your PIN and keys.
+**Renaming it.** Rename the repo on GitHub as usual, then open xkg once. xkg reads the new name from GitHub in the background and saves it; Settings shows it from the next time you open the app. Until then, GitHub's redirect from the old name keeps captures working. Don't create a new repo with the old name before you've opened xkg, because GitHub drops the redirect when you do. You don't need to onboard again, and doing so would replace your PIN and keys.
 
 ### What xkg stores, and where
 

@@ -3,13 +3,26 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 /**
  * Settings shows where captures are stored. GET /api/me returns the knowledge
  * repo, and when the user has renamed it on GitHub, the saved name follows the
- * rename so xkg stops depending on GitHub's redirect from the old name.
+ * rename so xkg stops depending on GitHub's redirect from the old name. The
+ * GitHub check runs after the response (next/server `after`), so it never
+ * slows down loading the profile (XKG-55).
  */
 
 const getSession = vi.fn();
 const updateUserRepo = vi.fn();
 
+const afterResponse: Array<() => unknown> = [];
+
 vi.mock("@/lib/session", () => ({ getSession: () => getSession() }));
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof import("next/server")>()),
+  after: (task: () => unknown) => { afterResponse.push(task); },
+}));
+
+/** Run what the route scheduled for after the response. */
+async function runAfterResponse() {
+  for (const task of afterResponse.splice(0)) await task();
+}
 vi.mock("@/lib/db", () => ({
   ensureLlmColumns: vi.fn(),
   ensureProfileColumns: vi.fn(),
@@ -46,6 +59,7 @@ beforeEach(() => {
   getSession.mockReset().mockResolvedValue({ ...user });
   updateUserRepo.mockReset();
   fetchMock.mockReset();
+  afterResponse.length = 0;
   vi.stubGlobal("fetch", fetchMock);
 });
 
@@ -59,6 +73,7 @@ describe("GET /api/me — knowledge repo", () => {
     const res = await GET();
     expect(res.status).toBe(200);
     expect((await res.json()).knowledgeRepo).toBe("octo/mnemos-knowledge");
+    await runAfterResponse();
     expect(updateUserRepo).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.github.com/repos/octo/mnemos-knowledge",
@@ -66,10 +81,12 @@ describe("GET /api/me — knowledge repo", () => {
     );
   });
 
-  it("saves and returns the new name after a rename on GitHub", async () => {
+  it("answers without waiting for GitHub, then saves the new name after a rename", async () => {
     githubAnswers(200, { full_name: "octo/xkg-knowledge" });
     const res = await GET();
-    expect((await res.json()).knowledgeRepo).toBe("octo/xkg-knowledge");
+    expect((await res.json()).knowledgeRepo).toBe("octo/mnemos-knowledge");
+    expect(fetchMock).not.toHaveBeenCalled();
+    await runAfterResponse();
     expect(updateUserRepo).toHaveBeenCalledWith(7, "octo/xkg-knowledge");
   });
 
@@ -78,6 +95,7 @@ describe("GET /api/me — knowledge repo", () => {
     const res = await GET();
     expect(res.status).toBe(200);
     expect((await res.json()).knowledgeRepo).toBe("octo/mnemos-knowledge");
+    await runAfterResponse();
     expect(updateUserRepo).not.toHaveBeenCalled();
   });
 
@@ -85,6 +103,7 @@ describe("GET /api/me — knowledge repo", () => {
     githubAnswers(404, { message: "Not Found" });
     const res = await GET();
     expect((await res.json()).knowledgeRepo).toBe("octo/mnemos-knowledge");
+    await runAfterResponse();
     expect(updateUserRepo).not.toHaveBeenCalled();
   });
 
@@ -92,6 +111,7 @@ describe("GET /api/me — knowledge repo", () => {
     getSession.mockResolvedValue({ ...user, github_repo: null });
     const res = await GET();
     expect((await res.json()).knowledgeRepo).toBeNull();
+    await runAfterResponse();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
