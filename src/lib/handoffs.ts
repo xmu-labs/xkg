@@ -46,6 +46,10 @@ export interface HandoffFile {
   tail: string;
 }
 
+/** A path in a ", " list: "%" and "," are written as %25 and %2C, so a path with ", " stays one path. */
+export const encodePath = (path: string) => path.replace(/%/g, "%25").replace(/,/g, "%2C");
+export const decodePath = (path: string) => path.replace(/%(25|2C)/gi, (_, code: string) => (code === "25" ? "%" : ","));
+
 /** The same capture whether it sits in inbox/ or applied/. */
 const captureName = (path: string) => path.replace(/^(inbox|applied|archived)\//, "");
 
@@ -56,7 +60,7 @@ function rowOf(cells: string[]): HandoffRow | null {
     capture,
     repo,
     kind,
-    files: !files || files === EMPTY ? [] : files.split(", "),
+    files: !files || files === EMPTY ? [] : files.split(", ").map(decodePath),
     fit: fit ?? "none",
     status,
     since,
@@ -84,7 +88,7 @@ export function parseHandoffs(content: string): HandoffFile {
 
 export function renderHandoffs(rows: HandoffRow[], around: Omit<HandoffFile, "rows"> = { head: INTRO, other: [], tail: "" }): string {
   const body = rows
-    .map((r) => `| ${[r.capture, r.repo, r.kind, r.files.join(", "), r.fit, r.status, r.since, r.source].map((v) => cell(v)).join(" | ")} |\n`)
+    .map((r) => `| ${[r.capture, r.repo, r.kind, r.files.map(encodePath).join(", "), r.fit, r.status, r.since, r.source].map((v) => cell(v)).join(" | ")} |\n`)
     .join("");
   const other = around.other.map((l) => `${l}\n`).join("");
   return `${around.head}${TABLE_HEAD}${body}${other}${around.tail}`;
