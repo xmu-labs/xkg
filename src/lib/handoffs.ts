@@ -46,6 +46,10 @@ export interface HandoffFile {
   tail: string;
 }
 
+/** A path in a ", " list: "%" and "," are written as %25 and %2C, so a path with ", " stays one path. */
+export const encodePath = (path: string) => path.replace(/%/g, "%25").replace(/,/g, "%2C");
+export const decodePath = (path: string) => path.replace(/%(25|2C)/gi, (_, code: string) => (code === "25" ? "%" : ","));
+
 /** The same capture whether it sits in inbox/ or applied/. */
 export const captureName = (path: string) => path.replace(/^(inbox|applied|archived)\//, "");
 
@@ -56,7 +60,7 @@ function rowOf(cells: string[]): HandoffRow | null {
     capture,
     repo,
     kind,
-    files: !files || files === EMPTY ? [] : files.split(", "),
+    files: !files || files === EMPTY ? [] : files.split(", ").map(decodePath),
     fit: fit ?? "none",
     status,
     since,
@@ -84,7 +88,7 @@ export function parseHandoffs(content: string): HandoffFile {
 
 export function renderHandoffs(rows: HandoffRow[], around: Omit<HandoffFile, "rows"> = { head: INTRO, other: [], tail: "" }): string {
   const body = rows
-    .map((r) => `| ${[r.capture, r.repo, r.kind, r.files.join(", "), r.fit, r.status, r.since, r.source].map((v) => cell(v)).join(" | ")} |\n`)
+    .map((r) => `| ${[r.capture, r.repo, r.kind, r.files.map(encodePath).join(", "), r.fit, r.status, r.since, r.source].map((v) => cell(v)).join(" | ")} |\n`)
     .join("");
   const other = around.other.map((l) => `${l}\n`).join("");
   return `${around.head}${TABLE_HEAD}${body}${other}${around.tail}`;
@@ -175,20 +179,17 @@ const samePair = (a: Pick<HandoffRow, "capture" | "repo">, b: Pick<HandoffRow, "
   a.repo.toLowerCase() === b.repo.toLowerCase() && captureName(a.capture) === captureName(b.capture);
 
 /**
- * Sets the status of these capture and repo pairs, from `today` (the row's
- * `since`). A dead row stays dead. True when written (or nothing to change).
+ * Sets the status of these rows, from `today` (the row's `since`), each only
+ * if it's still as it was read (same status and date), so a change the user
+ * or another call made meanwhile is kept. A dead row stays dead. True when
+ * written (or nothing to change).
  */
-export async function setHandoffStatus(
-  token: string,
-  repo: string,
-  pairs: Pick<HandoffRow, "capture" | "repo">[],
-  status: string,
-  today: string,
-): Promise<boolean> {
-  const done = await updateHandoffs(token, repo, `handoff: mark ${pairs.length} ${status}`, today, (rows) => {
+export async function setHandoffStatus(token: string, repo: string, read: HandoffRow[], status: string, today: string): Promise<boolean> {
+  const done = await updateHandoffs(token, repo, `handoff: mark ${read.length} ${status}`, today, (rows) => {
     let changed = false;
     const next = rows.map((r) => {
-      if (!pairs.some((p) => samePair(p, r)) || r.status === status || r.status === "dead") return r;
+      const unchanged = read.some((p) => samePair(p, r) && p.status === r.status && p.since === r.since);
+      if (!unchanged || r.status === status || r.status === "dead") return r;
       changed = true;
       return { ...r, status, since: today };
     });
@@ -252,7 +253,7 @@ export function handoffLogLine(e: HandoffLogEntry): string {
   const parts = [e.date, ...(e.repo ? [e.repo] : []), e.reason ? `${e.outcome} (${e.reason})` : e.outcome];
   if (e.commit) parts.push(`commit ${e.commit}`);
   if (e.confidence) parts.push(`confidence ${e.confidence}`);
-  if (e.files?.length) parts.push(`files ${e.files.join(", ")}`);
+  if (e.files?.length) parts.push(`files ${e.files.map(encodePath).join(", ")}`);
   return `- ${parts.join(" · ")}`;
 }
 

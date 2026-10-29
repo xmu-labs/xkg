@@ -69,7 +69,8 @@ type SourceRow = { user_id: number; capture_key: string; applied_at: string | Da
 /**
  * Captures applied per user and week, split by what showed them before the
  * apply: the card (a Strong or Possible fit), a briefing, both, another
- * channel only, or nothing. No credit beyond that.
+ * channel only (recall, the vault scan, the session-start handoff offer), or
+ * nothing. No credit beyond that.
  */
 export async function applySourceStats(today: string, weeks: number): Promise<SourceWeek[]> {
   await ensureSurfaceEventTable();
@@ -77,7 +78,7 @@ export async function applySourceStats(today: string, weeks: number): Promise<So
     SELECT a.user_id, a.capture_key, a.applied_at,
       bool_or(s.channel = 'where' AND s.shown AND s.tier IN ('strong', 'possible')) AS card,
       bool_or(s.channel = 'briefing') AS briefing,
-      bool_or(s.channel IN ('recall', 'vault')) AS other
+      bool_or(s.channel IN ('recall', 'vault', 'handoff')) AS other
     FROM apply_events a
     LEFT JOIN surface_events s
       ON s.user_id = a.user_id AND s.capture_key = a.capture_key AND s.surfaced_at <= a.applied_at

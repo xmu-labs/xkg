@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { fetchGithubMap, GITHUB_MAP_MAX_AGE_DAYS, refreshStaleGithubMaps } from "../code-repos";
+import { fetchGithubMap, GITHUB_MAP_MAX_AGE_DAYS, refreshStaleGithubMaps, repoName } from "../code-repos";
 import type { StoredCodeMap } from "../code-map";
 
 /** Adding a repo from GitHub: file paths only, read with the user's own GitHub sign-in. */
@@ -168,5 +168,23 @@ describe("refreshStaleGithubMaps", () => {
     const maps = [stored("acme/old", "github", 9)];
     expect(await refreshStaleGithubMaps(null, 7, maps, { fetchImpl, now: () => now })).toBe(maps);
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+});
+
+describe("repoName", () => {
+  // protects: what a user types or pastes becomes owner/name; fails_when: a URL, .git or trailing slashes aren't stripped; no_claim: none
+  it("reads owner/name from what the user typed", () => {
+    expect(repoName(" https://github.com/Acme/App.git ")).toBe("acme/app");
+    expect(repoName("acme/app///")).toBe("acme/app");
+    expect(repoName("acme")).toBeNull();
+    expect(repoName("acme/app/extra")).toBeNull();
+  });
+
+  // protects: a request body can't make the name check slow; fails_when: a long run of slashes takes more than a moment; no_claim: none
+  it("stays fast on a long run of slashes", () => {
+    const started = performance.now();
+    expect(repoName(`a${"/".repeat(200_000)}b`)).toBeNull();
+    expect(repoName(`acme/app${"/".repeat(200_000)}`)).toBe("acme/app");
+    expect(performance.now() - started).toBeLessThan(200);
   });
 });

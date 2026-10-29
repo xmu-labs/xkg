@@ -64,6 +64,14 @@ describe("HANDOFFS.md format", () => {
     expect(text).toContain("| inbox/2026-10-28-review.md | acme/app | code | — | possible | snoozed:2026-11-05 | 2026-10-28 | button |");
     expect(parseHandoffs(text).rows).toEqual(rows);
   });
+  // protects: a file name with ", " or "%" stays one file; fails_when: a round trip splits or changes a path; no_claim: none
+  it("keeps paths with commas and percent signs whole", () => {
+    const odd = row({ files: ["src/a, b.ts", "docs/50%,off.md", "src/plain.ts"] });
+    const text = renderHandoffs([odd]);
+    expect(parseHandoffs(text).rows).toEqual([odd]);
+    expect(text).toContain("src/plain.ts");
+  });
+
 
   // protects: a pipe in a path can't break the table; fails_when: a cell with "|" splits into two; no_claim: none
   it("escapes table characters in cells", () => {
@@ -196,6 +204,25 @@ describe("setHandoffStatus", () => {
       row({ status: "declined", since: "2026-11-02" }), row({ repo: "acme/web" }), row({ capture: "inbox/dead.md", status: "dead" }),
     ]);
   });
+
+  // protects: a status change lands only on the row as it was read, so an edit or answer made meanwhile is kept; fails_when: a row whose status or date changed since the read is overwritten; no_claim: none
+  it("changes a row only if it's unchanged since it was read", async () => {
+    const read = row();
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [read, row({ capture: "inbox/b.md" })], "expired", "2026-10-30")).toBe(true);
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.status)).toEqual(["done", "expired"]);
+  });
+
+  // protects: the re-read after a conflict is checked the same way; fails_when: the retry overwrites a row the conflicting write changed; no_claim: none
+  it("checks again on the retry after a conflict", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    githubPut.mockImplementationOnce(async () => {
+      files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "snoozed:2026-11-05" })]), sha: "s2" });
+      throw new Error("GitHub PUT HANDOFFS.md: HTTP 409");
+    });
+    await setHandoffStatus("t", "o/k", [row()], "expired", "2026-10-30");
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows[0]!.status).toBe("snoozed:2026-11-05");
+  });
 });
 
 describe("finished rows", () => {
@@ -266,6 +293,8 @@ describe("Handoff log", () => {
     expect(handoffLogLine({ date: "2026-10-30", repo: "acme/app", outcome: "applied", commit: "a".repeat(40), files: ["src/a.ts", "src/b.ts"] }))
       .toBe(`- 2026-10-30 · acme/app · applied · commit ${"a".repeat(40)} · files src/a.ts, src/b.ts`);
     expect(handoffLogLine({ date: "2026-10-30", outcome: "reverted", commit: "b".repeat(40) })).toBe(`- 2026-10-30 · reverted · commit ${"b".repeat(40)}`);
+    // Written like HANDOFFS.md's list, so a path with ", " stays one path
+    expect(handoffLogLine({ date: "2026-10-30", outcome: "applied", files: ["src/a, b.ts", "src/c.ts"] })).toBe("- 2026-10-30 · applied · files src/a%2C b.ts, src/c.ts");
   });
 
   // protects: the log sits with the capture's other logs and grows in place; fails_when: a second section is added or it lands after Links to memory; no_claim: none
