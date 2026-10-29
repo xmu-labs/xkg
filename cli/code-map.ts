@@ -23,8 +23,12 @@ export const MAX_BYTES = 120 * 1024;
 const MAP_URL = "https://xkg.xmu.sh/api/code-map";
 const SYNC_TIMEOUT_MS = 3000;
 const RESEND_AFTER_MS = 24 * 60 * 60 * 1000;
+/** Bump when what is read from a file changes, so entries cached by an older CLI are read again. */
+const CACHE_VERSION = 2;
 /** Larger files are mapped by path only: they are almost always generated. */
 const MAX_SOURCE_BYTES = 1024 * 1024;
+/** Bytes of file contents read at once; each batch's names are taken before the next is read. */
+const BLOB_BATCH_BYTES = 32 * 1024 * 1024;
 
 const SKIP_DIR = /(^|\/)(node_modules|dist|build|\.next|\.nuxt|vendor|coverage|target|\.venv|venv|__pycache__|\.gradle|\.dart_tool|cdk\.out|__tests__|tests)\//;
 const SKIP_FILE = /\.(test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$|_test\.go$|(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum)$|\.lockb?$|\.(png|jpe?g|gif|svg|ico|webp|avif|bmp|tiff?|mp4|mov|webm|mp3|wav|ogg|pdf|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|rar|jar|wasm|exe|dll|so|dylib|bin|class|pyc)$/i;
@@ -61,19 +65,85 @@ export function repoFromRemote(url: string): string | null {
   return /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : null;
 }
 
+// Line-start patterns use [ \t]*, never \s*: comments are blanked to spaces
+// first, and \s* would rescan every blank line below from each line start.
 const EXPORT_PATTERNS: Record<Lang, RegExp[]> = {
   js: [
     /^export\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:function\s*\*?|class|const|let|var|type|interface|enum|namespace)\s*([A-Za-z_$][\w$]*)/gm,
   ],
   py: [/^(?:async\s+)?def\s+([A-Za-z]\w*)/gm, /^class\s+([A-Za-z]\w*)/gm],
   go: [/^func\s+(?:\([^)]*\)\s*)?([A-Z]\w*)/gm, /^type\s+([A-Z]\w*)/gm],
-  rs: [/^\s*pub\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)/gm],
+  rs: [/^[ \t]*pub\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)/gm],
 };
+
+type Syntax = { line: string; block: boolean; multi: string[]; single: string[]; char?: RegExp };
+const SYNTAX: Record<Lang, Syntax> = {
+  js: { line: "//", block: true, multi: ["`"], single: ["'", '"'] },
+  py: { line: "#", block: false, multi: ['"""', "'''"], single: ["'", '"'] },
+  go: { line: "//", block: true, multi: ["`"], single: ["'", '"'] },
+  // ' starts a char ('"') or a lifetime ('a), so only a whole char is skipped.
+  rs: { line: "//", block: true, multi: ['"'], single: [], char: /'(?:\\.[^']*|[^\\'])'/y },
+};
+
+/**
+ * The source with comments and multi-line strings blanked (newlines kept), so a
+ * declaration or import in a comment or docstring is not taken for a real one.
+ * Single-line strings are kept, since import paths are in them. Regex literals
+ * are not parsed: one with a quote or backtick can blank code until the next.
+ */
+function maskComments(lang: Lang, source: string): string {
+  const { line, block, multi, single, char } = SYNTAX[lang];
+  const out = source.split("");
+  const blank = (from: number, to: number) => {
+    for (let k = from; k < to; k++) if (out[k] !== "\n") out[k] = " ";
+  };
+  for (let i = 0; i < source.length;) {
+    const c = source[i]!;
+    let end = -1;
+    if (c === "\\") {
+      i += 2;
+      continue;
+    }
+    if (char) {
+      char.lastIndex = i;
+      if (char.test(source)) {
+        i = char.lastIndex;
+        continue;
+      }
+    }
+    if (source.startsWith(line, i)) {
+      end = source.indexOf("\n", i);
+    } else if (block && source.startsWith("/*", i)) {
+      end = source.indexOf("*/", i + 2);
+      if (end >= 0) end += 2;
+    } else {
+      const quote = multi.find((q) => source.startsWith(q, i));
+      if (quote) {
+        let j = i + quote.length;
+        while (j < source.length && !source.startsWith(quote, j)) j += source[j] === "\\" ? 2 : 1;
+        end = Math.min(source.length, j + quote.length);
+      } else if (single.includes(c)) {
+        let j = i + 1;
+        while (j < source.length && source[j] !== c && source[j] !== "\n") j += source[j] === "\\" ? 2 : 1;
+        i = j + 1;
+        continue;
+      } else {
+        i++;
+        continue;
+      }
+    }
+    if (end < 0) end = source.length;
+    blank(i, end);
+    i = end;
+  }
+  return out.join("");
+}
 
 /** The top-level names a file exports, in source order. Empty for languages without a pattern. */
 export function exportedNames(path: string, source: string): string[] {
   const lang = langOf(path);
   if (!lang) return [];
+  source = maskComments(lang, source);
   const found: Array<[number, string]> = [];
   for (const re of EXPORT_PATTERNS[lang]) {
     for (const m of source.matchAll(re)) found.push([m.index!, m[1]!]);
@@ -92,13 +162,14 @@ export function exportedNames(path: string, source: string): string[] {
 
 /** Raw import specifiers of a file. Kept only in the local cache; only resolved paths are ever sent. */
 function importSpecifiers(lang: Lang, source: string): string[] {
+  source = maskComments(lang, source);
   const out: string[] = [];
   if (lang === "js") {
-    for (const re of [/\bfrom\s+['"]([^'"\n]+)['"]/g, /^\s*import\s+['"]([^'"\n]+)['"]/gm, /\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g]) {
+    for (const re of [/\bfrom\s+['"]([^'"\n]+)['"]/g, /^[ \t]*import\s+['"]([^'"\n]+)['"]/gm, /\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g]) {
       for (const m of source.matchAll(re)) out.push(m[1]!);
     }
   } else if (lang === "py") {
-    for (const m of source.matchAll(/^\s*from\s+(\.*[\w.]*)\s+import\s+([^\n#]+)/gm)) {
+    for (const m of source.matchAll(/^[ \t]*from\s+(\.*[\w.]*)\s+import\s+([^\n#]+)/gm)) {
       const mod = m[1]!;
       out.push(mod);
       for (const name of m[2]!.replace(/[()\\]/g, "").split(",")) {
@@ -106,7 +177,7 @@ function importSpecifiers(lang: Lang, source: string): string[] {
         if (/^\w+$/.test(n)) out.push(mod.endsWith(".") ? mod + n : `${mod}.${n}`);
       }
     }
-    for (const m of source.matchAll(/^\s*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) {
+    for (const m of source.matchAll(/^[ \t]*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) {
       for (const part of m[1]!.split(",")) out.push(part.trim().split(/\s+as\s+/)[0]!);
     }
   }
@@ -163,12 +234,19 @@ function stripJsonComments(text: string): string {
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
 
-function jsCandidates(base: string): string[] {
+// The sources the TypeScript compiler tries for an import that names a
+// JavaScript extension, in its order (tryAddingExtensions).
+const TS_SOURCES: Record<string, string[]> = { ".js": [".ts", ".tsx"], ".jsx": [".tsx", ".ts"], ".mjs": [".mts"], ".cjs": [".cts"] };
+
+/** Files an import of `base` can mean; from a TypeScript file, `./b.js` means b.ts first, as the compiler resolves it. */
+function jsCandidates(base: string, fromTs: boolean): string[] {
   const out = [base];
   const ext = posix.extname(base);
-  if ([".js", ".jsx", ".mjs", ".cjs"].includes(ext)) {
+  if (TS_SOURCES[ext]) {
     const stem = base.slice(0, -ext.length);
-    out.push(`${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`);
+    const source = TS_SOURCES[ext].map((e) => stem + e);
+    if (fromTs) out.unshift(...source);
+    else out.push(...source);
   }
   for (const e of JS_EXTS) out.push(base + e);
   for (const e of JS_EXTS) out.push(`${base}/index${e}`);
@@ -180,17 +258,22 @@ function resolveJs(from: string, spec: string, files: Set<string>, resolver: Res
   if (spec === "." || spec === ".." || spec.startsWith("./") || spec.startsWith("../")) {
     bases.push(posix.join(posix.dirname(from), spec));
   } else {
-    for (const a of resolver.aliases) {
-      if (a.wildcard ? spec.startsWith(a.prefix) && spec.endsWith(a.suffix) && spec.length >= a.prefix.length + a.suffix.length : spec === a.prefix) {
-        const match = a.wildcard ? spec.slice(a.prefix.length, spec.length - a.suffix.length) : "";
-        for (const t of a.targets) bases.push(posix.normalize(t.replaceAll("*", match)));
-      }
+    // One alias applies, as in the compiler (matchPatternOrExact): an exact
+    // pattern, else the wildcard with the longest prefix, the first on a tie.
+    const best =
+      resolver.aliases.find((a) => !a.wildcard && spec === a.prefix) ??
+      resolver.aliases
+        .filter((a) => a.wildcard && spec.startsWith(a.prefix) && spec.endsWith(a.suffix) && spec.length >= a.prefix.length + a.suffix.length)
+        .reduce<Alias | undefined>((b, a) => (!b || a.prefix.length > b.prefix.length ? a : b), undefined);
+    if (best) {
+      const match = best.wildcard ? spec.slice(best.prefix.length, spec.length - best.suffix.length) : "";
+      for (const t of best.targets) bases.push(posix.normalize(t.replaceAll("*", match)));
     }
     if (resolver.baseUrl !== null) bases.push(posix.join(resolver.baseUrl, spec));
   }
   for (const base of bases) {
     if (base.startsWith("..") || base.startsWith("/")) continue;
-    const hit = jsCandidates(base).find((c) => files.has(c));
+    const hit = jsCandidates(base, /\.[mc]?tsx?$/.test(from)).find((c) => files.has(c));
     if (hit) return hit;
   }
   return null;
@@ -217,36 +300,46 @@ function resolvePy(from: string, spec: string, files: Set<string>): string | nul
 type BlobEntry = { e?: string[]; s?: string[]; r?: Resolver };
 export type MapCache = { repos?: Record<string, { hash?: string; sentAt?: number; blobs?: Record<string, BlobEntry> }> };
 
-/** Blob contents by id, in one `git cat-file` pass. Blobs over 1 MB come back empty. */
-export function readBlobs(cwd: string, ids: string[]): Map<string, string> {
-  const out = new Map<string, string>();
-  if (ids.length === 0) return out;
+/**
+ * Blob contents by id, a batch at a time, each batch at most `budget` bytes.
+ * Blobs over 1 MB come back empty, in the first batch.
+ */
+export function* readBlobBatches(cwd: string, ids: string[], budget = BLOB_BATCH_BYTES): Generator<Map<string, string>> {
+  if (ids.length === 0) return;
   const sizes = execFileSync("git", ["cat-file", "--batch-check"], { cwd, input: ids.join("\n") + "\n", encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
-  const wanted: string[] = [];
+  const skipped = new Map<string, string>();
+  const batches: string[][] = [];
+  let bytes = Infinity;
   for (const line of sizes.split("\n")) {
     const [id, type, size] = line.split(" ");
     if (!id || type !== "blob") continue;
-    if (Number(size) <= MAX_SOURCE_BYTES) wanted.push(id);
-    else out.set(id, "");
-  }
-  if (wanted.length === 0) return out;
-  const raw = execFileSync("git", ["cat-file", "--batch"], { cwd, input: wanted.join("\n") + "\n", maxBuffer: 1024 * 1024 * 1024 });
-  for (let pos = 0; pos < raw.length;) {
-    const nl = raw.indexOf(0x0a, pos);
-    if (nl === -1) break;
-    const [id, type, size] = raw.subarray(pos, nl).toString("utf-8").split(" ");
-    if (type !== "blob") { pos = nl + 1; continue; }
     const len = Number(size);
-    out.set(id!, raw.subarray(nl + 1, nl + 1 + len).toString("utf-8"));
-    pos = nl + 1 + len + 1;
+    if (len > MAX_SOURCE_BYTES) { skipped.set(id, ""); continue; }
+    if (bytes + len > budget) { batches.push([]); bytes = 0; }
+    batches.at(-1)!.push(id);
+    bytes += len;
   }
-  return out;
+  if (skipped.size) yield skipped;
+  for (const batch of batches) {
+    const raw = execFileSync("git", ["cat-file", "--batch"], { cwd, input: batch.join("\n") + "\n", maxBuffer: budget + MAX_SOURCE_BYTES + batch.length * 128 });
+    const out = new Map<string, string>();
+    for (let pos = 0; pos < raw.length;) {
+      const nl = raw.indexOf(0x0a, pos);
+      if (nl === -1) break;
+      const [id, type, size] = raw.subarray(pos, nl).toString("utf-8").split(" ");
+      if (type !== "blob") { pos = nl + 1; continue; }
+      const len = Number(size);
+      out.set(id!, raw.subarray(nl + 1, nl + 1 + len).toString("utf-8"));
+      pos = nl + 1 + len + 1;
+    }
+    yield out;
+  }
 }
 
 export interface BuildOptions {
   /** Parsed ~/.xkg/maps.json; updated in place with this build's exports. */
   cache?: MapCache;
-  readBlobs?: (cwd: string, ids: string[]) => Map<string, string>;
+  readBlobs?: (cwd: string, ids: string[]) => Iterable<Map<string, string>>;
 }
 
 /** The repo's map, or null when it has no origin remote to name it by. */
@@ -277,32 +370,42 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
   cache.repos ??= {};
   const previous = cache.repos[repo]?.blobs ?? {};
   const blobs: Record<string, BlobEntry> = {};
-  const keyOf = (path: string, kind: string) => `${tracked.get(path)}:${kind}`;
+  const keyOf = (path: string, kind: string) => `${tracked.get(path)}:${kind}:${CACHE_VERSION}`;
 
   const configPath = ["tsconfig.json", "jsconfig.json"].find((p) => tracked.has(p));
-  const toRead = new Map<string, string>();
+  // Files not in the cache, by blob id. Names are taken from each batch of
+  // contents before the next is read, so a large repo never sits in memory at once.
+  const toRead = new Map<string, { key: string; make: (src: string) => BlobEntry }[]>();
+  const need = (p: string, kind: string, make: (src: string) => BlobEntry) => {
+    const key = keyOf(p, kind);
+    if (previous[key]) return;
+    const id = tracked.get(p)!;
+    toRead.set(id, [...(toRead.get(id) ?? []), { key, make }]);
+  };
   for (const p of paths) {
     const lang = langOf(p);
-    if (lang && !previous[keyOf(p, lang)]) toRead.set(tracked.get(p)!, p);
+    if (lang) need(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src) }));
   }
-  if (configPath && !previous[keyOf(configPath, "config")]) toRead.set(tracked.get(configPath)!, configPath);
-  const contents = (opts.readBlobs ?? readBlobs)(cwd, [...toRead.keys()]);
+  if (configPath) need(configPath, "config", (src) => ({ r: parseTsconfig(src) }));
+  const fresh: Record<string, BlobEntry> = {};
+  for (const batch of (opts.readBlobs ?? readBlobBatches)(cwd, [...toRead.keys()])) {
+    for (const [id, src] of batch) for (const { key, make } of toRead.get(id) ?? []) fresh[key] ??= make(src);
+  }
+  for (const jobs of toRead.values()) for (const { key, make } of jobs) fresh[key] ??= make("");
 
-  const entryFor = (p: string, kind: string, make: (src: string) => BlobEntry): BlobEntry => {
+  const entryFor = (p: string, kind: string): BlobEntry => {
     const key = keyOf(p, kind);
-    const entry = previous[key] ?? make(contents.get(tracked.get(p)!) ?? "");
+    const entry = previous[key] ?? fresh[key]!;
     blobs[key] = entry;
     return entry;
   };
 
-  const resolver = configPath
-    ? entryFor(configPath, "config", (src) => ({ r: parseTsconfig(src) })).r!
-    : { aliases: [], baseUrl: null };
+  const resolver = configPath ? entryFor(configPath, "config").r! : { aliases: [], baseUrl: null };
 
   const files: MapFile[] = paths.map((p) => {
     const lang = langOf(p);
     if (!lang) return { p };
-    const entry = entryFor(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src) }));
+    const entry = entryFor(p, lang);
     const file: MapFile = { p };
     if (entry.e?.length) file.e = entry.e;
     const imports = new Set<string>();
