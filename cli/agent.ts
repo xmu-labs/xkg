@@ -9,7 +9,7 @@
 
 import { tmpdir } from "os";
 import { dirname, join, resolve } from "path";
-import { writeFileSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { writeFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync } from "fs";
 import { execSync } from "child_process";
 import { callMcp } from "./hooks.js";
 import { readConfig } from "./config.js";
@@ -44,6 +44,14 @@ export function parseChecklist(planText: string): string[] {
 export function buildAgentBranch(now: Date = new Date()): string {
   const stamp = now.toISOString().replace(/[:.]/g, "-").replace("T", "-").slice(0, 19);
   return `xkg/agent-${stamp}`;
+}
+
+/**
+ * A new empty folder for the run's worktree. Unique per run: the branch name
+ * only has seconds, and the temp folder is shared by every repo on the machine.
+ */
+export function newWorktreePath(branch: string): string {
+  return mkdtempSync(join(tmpdir(), `${branch.replace(/\//g, "-")}-`));
 }
 
 /** Printed when the command is run under its old name, `kos`. */
@@ -137,7 +145,7 @@ export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Pr
 
   // 3. Isolated worktree on a fresh branch
   const branch = buildAgentBranch();
-  const worktreePath = join(tmpdir(), branch.replace(/\//g, "-"));
+  const worktreePath = newWorktreePath(branch);
   console.log(`Creating isolated worktree on branch ${branch}...`);
   run(`git worktree add -b ${branch} "${worktreePath}"`, repoRoot);
 

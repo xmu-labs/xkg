@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join } from "path";
+import { basename, dirname, join } from "path";
 import { execSync } from "child_process";
 import {
   parsePlanFilenames,
   latestPlanFilename,
   parseChecklist,
   buildAgentBranch,
+  newWorktreePath,
   withPlanExcludes,
   excludePlanFiles,
   PLAN_FILE,
@@ -85,6 +86,23 @@ describe("buildAgentBranch", () => {
 
   it("always starts with the xkg/agent- prefix", () => {
     expect(buildAgentBranch()).toMatch(/^xkg\/agent-/);
+  });
+});
+
+describe("newWorktreePath", () => {
+  // protects: two runs started in the same second, in any repos, each get a worktree; fails_when: the folder is derived from the branch name alone, so the second run's `git worktree add` fails with "already exists"; no_claim: two runs in one repo in the same second (same branch name)
+  it("gives each run its own empty folder, even for the same branch name", () => {
+    const a = newWorktreePath("xkg/agent-2026-06-05-10-30-45");
+    const b = newWorktreePath("xkg/agent-2026-06-05-10-30-45");
+    try {
+      expect(a).not.toBe(b);
+      expect(readdirSync(a)).toEqual([]);
+      expect(basename(a)).toMatch(/^xkg-agent-2026-06-05-10-30-45-/);
+      expect(dirname(a)).toBe(tmpdir());
+    } finally {
+      rmSync(a, { recursive: true, force: true });
+      rmSync(b, { recursive: true, force: true });
+    }
   });
 });
 
