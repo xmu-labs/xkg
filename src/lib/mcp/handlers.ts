@@ -26,7 +26,7 @@ import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApp
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
-import { appliedHandoff, closeHandoff, closedNote, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
+import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
@@ -281,18 +281,21 @@ export async function handleApplyCapture(
   if (args.commit_sha && !inboxFile) {
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
-      // The first report may have come without the repo; this one closes the handoff
+      // A repeat fills in what the first report's log line left out, and is about the repo that line names.
+      // If the first report came without the repo, there's no line yet: this one logs the apply.
+      const logged = await fillApply(user, appliedPath, file, args);
+      const open = logged && !args.repo ? await appliedHandoff(user, filename, { ...args, repo: logged.repo }, today) : handoff;
       let closed: Closed | null = null;
-      if (handoff) {
+      if (open) {
         try {
-          await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, handoff.line), `handoff: applied ${filename}`, file.sha);
-          closed = await closeHandoff(user, appliedPath, handoff, true, today);
+          if (!logged) await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, open.line), `handoff: applied ${filename}`, file.sha);
+          closed = await closeHandoff(user, appliedPath, open, true, today);
         } catch (err) {
           console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
-          closed = { closed: false, status: handoff.row.status, failed: true };
+          closed = { closed: false, status: open.row.status, failed: true };
         }
       }
-      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${closedNote(handoff, closed)}`;
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${closedNote(open, closed)}${logged?.note ?? ""}`;
     }
   }
 

@@ -258,6 +258,35 @@ export function handoffLogLine(e: HandoffLogEntry): string {
   return `- ${parts.join(" · ")}`;
 }
 
+const LOG_DATE = /^\d{4}-\d{2}-\d{2}$/;
+const LOG_OUTCOME = /^([a-z]+)(?: \(([a-z-]+)\))?$/;
+
+/** One answer as handoffLogLine wrote it, or null for any other line. */
+export function parseHandoffLogLine(line: string): HandoffLogEntry | null {
+  if (!line.startsWith("- ")) return null;
+  const parts = line.slice(2).split(" · ");
+  const date = parts.shift()!;
+  const repo = parts[0]?.includes("/") ? parts.shift() : undefined;
+  const outcome = LOG_OUTCOME.exec(parts.shift() ?? "");
+  if (!LOG_DATE.test(date) || !outcome) return null;
+  const entry: HandoffLogEntry = { date, ...(repo ? { repo } : {}), outcome: outcome[1]!, ...(outcome[2] ? { reason: outcome[2] } : {}) };
+  for (const part of parts) {
+    const [field, ...rest] = part.split(" ");
+    const value = rest.join(" ");
+    if (field === "commit") entry.commit = value;
+    else if (field === "confidence") entry.confidence = value;
+    else if (field === "files") entry.files = value.split(", ").map(decodePath);
+  }
+  return entry;
+}
+
+/** The answers in the capture's `## Handoff log`, in order. Other lines are skipped. */
+export function parseHandoffLog(content: string): HandoffLogEntry[] {
+  const section = content.match(/## Handoff log\n([\s\S]*?)(?=\n## |$)/);
+  if (!section) return [];
+  return section[1]!.split("\n").map(parseHandoffLogLine).filter((e): e is HandoffLogEntry => e !== null);
+}
+
 /** Adds `line` to the capture's `## Handoff log`, creating it before `## Links to memory` (or at the end). */
 export function appendHandoffLog(content: string, line: string): string {
   const section = content.match(/## Handoff log\n[\s\S]*?(?=\n## |$)/);
