@@ -523,7 +523,7 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
 
 export async function handleGeneratePlan(
   user: User,
-  args: { selected_captures: string[]; project_context: string; codebase_files?: string[] },
+  args: { selected_captures: string[]; project_context: string; codebase_files?: unknown[] },
 ): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
   if (!user.llm_api_key) return "API key not configured.";
@@ -543,25 +543,18 @@ export async function handleGeneratePlan(
 
   if (selectedCaptures.length === 0) return "None of the specified captures could be found.";
 
-  // Optionally read codebase files (treated as repo-relative paths)
-  const codebaseFiles: Array<{ path: string; content: string }> = [];
-  if (args.codebase_files?.length) {
-    const fileResults = await Promise.all(
-      args.codebase_files.slice(0, 5).map(async (path) => {
-        const file = await readFile(user.github_token, user.github_repo!, path);
-        return file ? { path, content: file.content } : null;
-      }),
-    );
-    codebaseFiles.push(
-      ...fileResults.filter((f): f is { path: string; content: string } => f !== null),
-    );
-  }
+  // xkg never reads code (github_repo is the knowledge repo, where code paths
+  // don't exist). Only the paths the agent names reach the plan; anything that
+  // isn't a short one-line path, such as pasted code, is dropped.
+  const codebasePaths = (Array.isArray(args.codebase_files) ? args.codebase_files : [])
+    .filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= 512 && !/[\r\n]/.test(p))
+    .slice(0, 5);
 
   const planText = await generatePlan(
     user.llm_api_key,
     selectedCaptures,
     args.project_context,
-    codebaseFiles.length > 0 ? codebaseFiles : undefined,
+    codebasePaths.length > 0 ? codebasePaths : undefined,
     llmSettings(user),
   );
 

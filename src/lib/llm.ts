@@ -930,7 +930,7 @@ Only include if captures involve user-facing changes. Omit this section otherwis
 
 RULES:
 - Implementation steps must be specific enough to execute without re-reading the captures
-- Reference exact function names and file paths from any codebase files provided
+- Use the paths under FILES IN VIEW in the Codebase Mapping. You have not seen the code in these files, so never name a function or describe code in them; the implementing agent reads them and fits each step
 - Omit Architecture Notes and Product Notes if not applicable — do not include empty sections
 - Verification items must describe observable outcomes, not subjective assessments`;
 
@@ -939,15 +939,16 @@ export async function generatePlan(
   apiKey: string,
   selectedCaptures: Array<{ filename: string; content: string }>,
   projectContext: string,
-  codebaseFiles?: Array<{ path: string; content: string }>,
+  codebasePaths?: string[],
   llm: LlmConfig = "anthropic",
 ): Promise<string> {
   const captureSection = selectedCaptures
     .map((c, i) => `--- Capture ${i + 1}: ${c.filename} ---\n${c.content}`)
     .join("\n\n");
 
-  const codebaseSection = codebaseFiles && codebaseFiles.length > 0
-    ? `\n\nCODEBASE FILES:\n${codebaseFiles.map((f) => `--- File: ${f.path} ---\n${f.content.slice(0, 4000)}${f.content.length > 4000 ? "\n[truncated]" : ""}`).join("\n\n")}`
+  // Paths only: xkg never sees code, and the agent reads these files itself.
+  const codebaseSection = codebasePaths && codebasePaths.length > 0
+    ? `\n\nFILES IN VIEW (paths the agent named, without their code):\n${codebasePaths.map((p) => `- ${p}`).join("\n")}`
     : "";
 
   const userMessage = `PROJECT CONTEXT:

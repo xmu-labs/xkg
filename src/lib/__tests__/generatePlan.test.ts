@@ -78,33 +78,29 @@ describe("generatePlan", () => {
     expect(userContent).toContain("Branch: feature/retry");
   });
 
-  it("includes codebase files in the LLM message when provided", async () => {
+  // protects: plans see which files the agent has in view, never their code; fails_when: a path is missing or anything but paths is sent; no_claim: the plan's quality
+  it("lists the file paths the agent named, one per line, with no contents", async () => {
     await generatePlan(
       "test-key",
       [{ filename: "inbox/x.md", content: "x" }],
       "context",
-      [{ path: "src/lib/llm.ts", content: "export function foo() {}" }],
+      ["src/lib/llm.ts", "src/lib/where.ts"],
     );
 
     const callArgs = mockCreate.mock.calls[0]?.[0] as { messages: Array<{ content: string }> };
     const userContent = callArgs.messages[0]?.content ?? "";
-    expect(userContent).toContain("src/lib/llm.ts");
-    expect(userContent).toContain("export function foo()");
+    expect(userContent).toContain("\n- src/lib/llm.ts\n- src/lib/where.ts");
+    expect(userContent).not.toContain("CODEBASE FILES");
   });
 
-  it("truncates codebase file content at 4000 chars", async () => {
-    const longContent = "x".repeat(5000);
-    await generatePlan(
-      "test-key",
-      [{ filename: "inbox/x.md", content: "x" }],
-      "context",
-      [{ path: "big.ts", content: longContent }],
-    );
+  // protects: the model doesn't invent code it never saw; fails_when: the prompt asks for function names from files it wasn't given; no_claim: model compliance
+  it("tells the model it has not seen the code in those files", async () => {
+    await generatePlan("test-key", [{ filename: "inbox/x.md", content: "x" }], "context", ["src/lib/llm.ts"]);
 
-    const callArgs = mockCreate.mock.calls[0]?.[0] as { messages: Array<{ content: string }> };
-    const userContent = callArgs.messages[0]?.content ?? "";
-    expect(userContent).toContain("[truncated]");
-    expect(userContent).not.toContain("x".repeat(5000));
+    const callArgs = mockCreate.mock.calls[0]?.[0] as { system: string | Array<{ text: string }> };
+    const system = typeof callArgs.system === "string" ? callArgs.system : callArgs.system.map((b) => b.text).join("");
+    expect(system).toContain("You have not seen the code");
+    expect(system).not.toContain("Reference exact function names and file paths from any codebase files provided");
   });
 
   it("uses max_tokens: 3000 for the LLM call", async () => {

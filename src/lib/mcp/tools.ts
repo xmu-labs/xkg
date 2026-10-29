@@ -174,7 +174,7 @@ export const TOOLS = [
   },
   {
     name: "generate_plan",
-    description: "Generate a structured implementation plan from selected knowledge captures. Reads full capture content, optionally reads codebase files, and produces a Markdown plan saved to plans/ in your knowledge repo. Use after briefing to turn insights into actionable steps.",
+    description: "Generate a structured implementation plan from selected knowledge captures. Reads full capture content and produces a Markdown plan saved to plans/ in your knowledge repo. xkg never sees your code, so check each step against the files before applying it. Use after briefing to turn insights into actionable steps.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -187,7 +187,7 @@ export const TOOLS = [
         codebase_files: {
           type: "array" as const,
           items: { type: "string" },
-          description: "Optional repo-relative file paths to read and include as context (e.g. ['src/app/api/capture/route.ts'])",
+          description: "Optional: up to 5 repo-relative paths of files the plan should cover (e.g. ['src/app/api/capture/route.ts']). Paths only: xkg never reads code, so don't send file contents.",
         },
       },
       required: ["selected_captures", "project_context"],
