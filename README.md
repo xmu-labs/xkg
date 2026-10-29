@@ -131,6 +131,22 @@ Register that command in the tool you use.
 
 When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own, so there's nothing to paste into rules files. Codex CLI doesn't read it yet: see [Codex](#codex) for the lines to add.
 
+#### Offer new captures when a session starts
+
+`xkg session-start` counts the captures in your inbox. When there are some, it tells your agent to ask you "You have 3 new xkg captures. Want to see them and apply one here?" before your task. It prints nothing when the inbox is empty or xkg can't be reached, and gives up after 3 seconds. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files carry no key.
+
+Add it as a session-start hook in your agent. `--agent` picks the output shape that agent reads:
+
+| Agent | File | Hook |
+| --- | --- | --- |
+| Claude Code | `~/.claude/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent claude" }] }] }` |
+| Codex | `~/.codex/hooks.json` | `{ "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent codex" }] }] } }`, then trust it once in `/hooks` |
+| Gemini CLI | `~/.gemini/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent gemini" }] }] }` |
+| GitHub Copilot CLI | `~/.copilot/hooks/xkg.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "type": "command", "bash": "npx -y @xmu-labs/xkg@latest session-start --agent copilot" }] } }` |
+| Cursor | `~/.cursor/hooks.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "command": "npx -y @xmu-labs/xkg@latest session-start --agent cursor" }] } }` |
+
+Merge the hook into the file if it already has other settings. Without `--agent`, the command prints plain text.
+
 #### Cursor
 
 Add this to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (all projects):
@@ -374,6 +390,8 @@ npx -y @xmu-labs/xkg@latest <command>
 | `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
 | `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hook. Setup checks that the hook can reach xkg, and the hook runs the CLI version that installed it (run setup again to update) |
+| `session-start [--agent NAME]` | For an agent's session-start hook: ask whether to see and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot` or `cursor`; without it the output is plain text. See [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts) |
+| `config set key YOUR_API_KEY` | Store the key that `session-start`, the git hook and `agent` use |
 | `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
 | `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
