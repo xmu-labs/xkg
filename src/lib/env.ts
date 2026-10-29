@@ -32,6 +32,10 @@ export const env = {
   get adminSecret(): string {
     return required("ADMIN_SECRET");
   },
+  /** xkg's own TypeSafe key: when set, Jev decides where a capture applies (server-side only). */
+  get typesafeApiKey(): string | null {
+    return process.env.TYPESAFE_API_KEY || null;
+  },
   /** Public app URL — used for OAuth redirects and links. */
   get appUrl(): string {
     return optional("NEXT_PUBLIC_APP_URL", "http://localhost:3000");

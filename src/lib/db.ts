@@ -2,7 +2,7 @@ import { sql } from "./sql";
 import { encrypt, decrypt, hashApiKey, isEncrypted, isHashedApiKey } from "./crypto";
 import { isLegacyPinHash, wrapLegacyHash } from "./pin";
 import type { LlmEffort, LlmProvider } from "./types";
-import type { CodeMapPayload } from "./code-map";
+import type { CodeMapPayload, MapFile, StoredCodeMap } from "./code-map";
 
 export type { LlmProvider };
 
@@ -165,6 +165,8 @@ export async function initDb(): Promise<void> {
 
   codeMapTableReady = false;
   await ensureCodeMapTable();
+  surfaceEventTable = null;
+  await ensureSurfaceEventTable();
 
   await upgradeLegacyData();
 }
@@ -221,6 +223,55 @@ export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: 
       SELECT id FROM code_maps WHERE user_id = ${userId} ORDER BY synced_at DESC, id DESC LIMIT ${MAX_CODE_MAPS}
     )
   `;
+}
+
+/** The user's most recently synced maps, newest first. */
+export async function listCodeMaps(userId: number, limit: number): Promise<StoredCodeMap[]> {
+  await ensureCodeMapTable();
+  const { rows } = await sql<{ repo: string; map: MapFile[]; head7: string | null; truncated: boolean; synced_at: Date }>`
+    SELECT repo, map, head7, truncated, synced_at FROM code_maps WHERE user_id = ${userId}
+    ORDER BY synced_at DESC, id DESC LIMIT ${limit}
+  `;
+  return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, syncedAt: new Date(r.synced_at) }));
+}
+
+// ── Surface events (counts only; see lib/surface-events.ts) ──
+
+let surfaceEventTable: Promise<void> | null = null;
+
+/**
+ * One row each time a channel shows the user a capture (see surface-events.ts).
+ * Created on first use as well as by initDb. Concurrent first uses share one
+ * creation (two CREATE TABLE IF NOT EXISTS at once can collide); a failed one
+ * is retried on the next use.
+ */
+export function ensureSurfaceEventTable(): Promise<void> {
+  surfaceEventTable ??= createSurfaceEventTable().catch((err: unknown) => {
+    surfaceEventTable = null;
+    throw err;
+  });
+  return surfaceEventTable;
+}
+
+async function createSurfaceEventTable(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS surface_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      capture_key TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      tokens_in INTEGER,
+      tokens_out INTEGER,
+      model_conf REAL,
+      scorer TEXT,
+      tier TEXT,
+      shown BOOLEAN,
+      surfaced_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN`;
+  await sql`CREATE INDEX IF NOT EXISTS surface_events_user_capture ON surface_events (user_id, capture_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS surface_events_surfaced_at ON surface_events (surfaced_at)`;
 }
 
 /**
@@ -490,6 +541,8 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM apply_events WHERE user_id = ${userId}`;
   await ensureCodeMapTable();
   await sql`DELETE FROM code_maps WHERE user_id = ${userId}`;
+  await ensureSurfaceEventTable();
+  await sql`DELETE FROM surface_events WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 

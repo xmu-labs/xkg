@@ -18,11 +18,13 @@ import type { User } from "@/lib/db";
 import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
 import { recordApplyEvent } from "@/lib/apply-events";
+import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
 import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
+import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
@@ -45,6 +47,8 @@ export async function handleCapture(user: User, args: { content: string; title?:
 
   const sourceType = detectSourceType(args.content);
   const capture: ExtractedCapture = await extractCapture(user.llm_api_key, args.content, args.title, llmSettings(user));
+  // Runs alongside writing and linking; never throws.
+  const matching = matchCapture(user, capture);
 
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
@@ -109,6 +113,12 @@ export async function handleCapture(user: User, args: { content: string; title?:
     }
   }
 
+  const where = await matching;
+  const wrote = where ? await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where) : false;
+  // The agent only sees the fit once the section is written.
+  const line = wrote && where ? whereLine(where) : null;
+  if (where) await recordWhereEvent(user.id, `inbox/${filename}`, where, line !== null);
+
   // Append inbox count as a nudge
   const inboxRes = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
   const inboxCount = inboxRes.ok && inboxRes.data
@@ -119,6 +129,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   if (linkedCount > 0) {
     result += `\nLinked to ${linkedCount} related capture(s).`;
   }
+  if (line) result += `\n${line}`;
   if (inboxCount > 0) {
     result += `\n\n---\n📬 You have ${inboxCount} item(s) in your inbox. Use list_inbox to review and apply them.`;
   }
@@ -400,6 +411,7 @@ export async function handleRecall(user: User, args: { context: string; max_resu
   );
 
   const validCaptures = captures.filter((c): c is string => c !== null);
+  await recordSurfaceEvents(user.id, ranked.filter((_, i) => captures[i] !== null).map((r) => r.filename), "recall");
   return `Found ${validCaptures.length} relevant capture(s) for: "${args.context}"\n\n${validCaptures.join("\n\n---\n\n")}`;
 }
 
@@ -464,7 +476,9 @@ export async function handleBriefing(user: User, args: { project_context: string
     rules = rulesFile?.content ?? "";
   }
 
-  return formatBriefing(candidates.filter((c): c is BriefingCandidate => c !== null), rules);
+  const shown = candidates.filter((c): c is BriefingCandidate => c !== null);
+  await recordSurfaceEvents(user.id, shown.map((c) => c.filename), "briefing");
+  return formatBriefing(shown, rules);
 }
 
 export async function handleApplyToContext(user: User, args: { task: string; stack?: string; files?: string[]; code_snippet?: string }): Promise<string> {
@@ -621,6 +635,7 @@ export async function handleVaultScan(
   const coreIdea = coreMatch?.[1]?.trim() ?? "";
   const firstTakeaway = takeawaysMatch?.[1]?.split("\n").find((l) => l.startsWith("- ")) ?? "";
   const basename = topMatch.filename.split("/").pop() ?? topMatch.filename;
+  await recordSurfaceEvents(user.id, [topMatch.filename], "vault");
 
   return `xkg vault match (score: ${Math.round(topMatch.score * 100)}%):
 

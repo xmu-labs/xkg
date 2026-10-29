@@ -2,7 +2,7 @@ import Link from "next/link";
 import { isHostedInstance } from "@/lib/hosted";
 
 /** Shown on both documents. Change it whenever either one changes. */
-export const LEGAL_EFFECTIVE_DATE = "October 28, 2026";
+export const LEGAL_EFFECTIVE_DATE = "October 29, 2026";
 
 export function LegalTable({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
   return (

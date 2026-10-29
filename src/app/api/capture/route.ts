@@ -6,6 +6,8 @@ import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
+import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
+import { recordWhereEvent } from "@/lib/surface-events";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -101,6 +103,11 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 502 });
   }
 
+  // Where it applies: one more call (Jev, or the user's model when Jev can't
+  // answer), started now so it runs alongside writing and linking instead of
+  // after them. Never throws.
+  const matching = matchCapture(user, capture);
+
   // Build Markdown and commit to user's repo
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
@@ -130,5 +137,19 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     }
   }
 
-  return NextResponse.json({ capture, filename, fileUrl: captureFileUrl(user.github_repo, filename) });
+  const where = await matching;
+  const card = where ? whereCard(where) : null;
+  if (where) {
+    await Promise.all([
+      writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
+      recordWhereEvent(user.id, `inbox/${filename}`, where, card !== null),
+    ]);
+  }
+
+  return NextResponse.json({
+    capture,
+    filename,
+    fileUrl: captureFileUrl(user.github_repo, filename),
+    ...(card ? { where: card } : {}),
+  });
 }
