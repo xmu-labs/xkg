@@ -31,18 +31,20 @@ describe("deleteUserData", () => {
     expect(deletes.map((q) => q.text)).toEqual([
       "DELETE FROM oauth_refresh_tokens WHERE user_id = ?",
       "DELETE FROM oauth_codes WHERE user_id = ?",
-      "DELETE FROM usage_quota WHERE identifier IN (?, ?)",
+      "DELETE FROM usage_quota WHERE identifier IN (?, ?, ?)",
       "DELETE FROM login_attempts WHERE identifier IN (?, ?)",
       "DELETE FROM apply_events WHERE user_id = ?",
       "DELETE FROM code_maps WHERE user_id = ?",
       "DELETE FROM surface_events WHERE user_id = ?",
+      "DELETE FROM handoff_events WHERE user_id = ?",
       "DELETE FROM users WHERE id = ?",
     ]);
     expect(deletes.map((q) => q.values)).toEqual([
       [7],
       [7],
-      ["capture:user:7", "code-map:user:7"],
+      ["capture:user:7", "code-map:user:7", "handoff:user:7"],
       ["user:7", "octo-cat"],
+      [7],
       [7],
       [7],
       [7],

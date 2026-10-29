@@ -16,7 +16,8 @@ const HEADER =
   "| Date | Capture | Commit | Target |\n| --- | --- | --- | --- |\n";
 const EMPTY = "—";
 
-function cell(value: string | undefined): string {
+/** One Markdown table cell: a dash when empty, newlines flattened, pipes and backslashes escaped. */
+export function cell(value: string | undefined): string {
   if (!value) return EMPTY;
   return value.replace(/\s*\n\s*/g, " ").replace(/[\\|]/g, "\\$&");
 }
@@ -66,7 +67,7 @@ function parseRows(content: string): Array<{ date: string; capture: string; comm
 }
 
 /** Splits `| a | b\\|c |` into unescaped, trimmed cells. */
-function splitRow(line: string): string[] {
+export function splitRow(line: string): string[] {
   if (!line.startsWith("|")) return [];
   const cells: string[] = [];
   let current = "";

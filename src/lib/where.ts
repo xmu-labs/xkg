@@ -391,6 +391,35 @@ export function insertWhereSection(markdown: string, section: string): string {
   return `${markdown.slice(0, next + 1)}${section}\n${markdown.slice(next + 1)}`;
 }
 
+const TIER_OF_LABEL = new Map(Object.entries(FIT_LABEL).map(([tier, label]) => [label, tier as Tier]));
+
+/**
+ * The fit a saved capture's "Where it applies" section shows: repo, tier, file
+ * paths and also-fits repos. Null when it has no section with a fit. Only the
+ * section right after "## Core idea" counts, never one in the captured source.
+ */
+export function readWhereSection(markdown: string): { repo: string; tier: Tier; files: string[]; also: { repo: string; tier: Tier }[] } | null {
+  const core = /^## Core idea\n/m.exec(markdown);
+  if (!core) return null;
+  const start = markdown.indexOf("\n## ", core.index + core[0].length) + 1;
+  if (start === 0 || !markdown.startsWith("## Where it applies\n", start)) return null;
+  const end = markdown.indexOf("\n## ", start);
+  const lines = markdown.slice(start, end < 0 ? undefined : end).split("\n").slice(1);
+  const head = /^\*\*(.+?)\*\* · ([^ ]+)/.exec(lines[0] ?? "");
+  const tier = head && TIER_OF_LABEL.get(head[1]!);
+  if (!head || !tier || tier === "none") return null;
+  const files = lines.flatMap((l) => /^- `([^`]+)`/.exec(l)?.[1] ?? []);
+  const alsoLine = lines.find((l) => l.startsWith("Also fits: "))?.slice("Also fits: ".length) ?? "";
+  const also = alsoLine
+    .split(", ")
+    .flatMap((part) => {
+      const m = /^(\S+) \((.+)\)$/.exec(part);
+      const t = m && TIER_OF_LABEL.get(m[2]!);
+      return m && t ? [{ repo: m[1]!, tier: t }] : [];
+    });
+  return { repo: head[2]!, tier, files, also };
+}
+
 /** Adds the section to the saved capture file (best-effort). True when the file was updated. */
 export async function writeWhereSection(githubToken: string, repo: string, path: string, where: WhereResult): Promise<boolean> {
   const section = whereSection(where);

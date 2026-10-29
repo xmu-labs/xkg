@@ -59,12 +59,15 @@ vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: vi.fn() }));
 const recordWhereEvent = vi.fn();
 vi.mock("@/lib/surface-events", () => ({ recordWhereEvent: (...a: unknown[]) => recordWhereEvent(...a), recordSurfaceEvents: vi.fn() }));
 vi.mock("@/lib/where", async (orig) => ({ ...(await orig<typeof import("../where")>()), matchCapture: () => matchCapture() }));
+const recordHandoffEvent = vi.fn();
+vi.mock("@/lib/handoff-events", () => ({ recordHandoffEvent: (...a: unknown[]) => recordHandoffEvent(...a) }));
 
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai" };
 
 const { POST } = await import("@/app/api/capture/route");
 const { handleCapture } = await import("../mcp/handlers");
 const { buildMarkdown, formatDate, detectSourceType } = await import("../llm");
+const { parseHandoffs, HANDOFFS_PATH } = await import("../handoffs");
 
 const strong: WhereResult = {
   repo: "acme/app", tier: "strong", files: [{ path: "src/llm.ts", why: "`rank` sends the whole index" }], also: [],
@@ -84,6 +87,7 @@ beforeEach(() => {
   githubPut.mockClear();
   matchCapture.mockClear();
   recordWhereEvent.mockClear();
+  recordHandoffEvent.mockClear();
   failWhereWrite = false;
 });
 
@@ -110,7 +114,7 @@ describe("web capture", () => {
     await post();
     expect(order.indexOf("match")).toBeLessThan(order.indexOf(`put:${capturePath()}`));
     expect(order.indexOf("link")).toBeGreaterThan(order.indexOf("match"));
-    expect(order.at(-1)).toBe(`put:${capturePath()}`);
+    expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("link"));
   });
 
   // protects: AC3, users with no maps keep today's file; fails_when: the file differs from buildMarkdown or is written twice; no_claim: none
@@ -165,5 +169,61 @@ describe("MCP capture", () => {
     const result = await handleCapture(user as never, { content: "notes" });
     expect(githubPut.mock.calls.filter((c) => c[2] === capturePath())).toHaveLength(1);
     expect(result).not.toContain("Where it applies");
+  });
+});
+
+describe("auto-queue for the coding agent", () => {
+  const queued = () => parseHandoffs(files.get(HANDOFFS_PATH)?.content ?? "").rows;
+  const possible: WhereResult = { ...strong, tier: "possible" };
+
+  // protects: AC2 (D1), a Strong fit waits for the next session on its own; fails_when: no row, or the row lacks the files or source auto; no_claim: the match is right
+  it("web: queues a Strong fit and tells the card", async () => {
+    matchResult = strong;
+    const body = await (await post()).json();
+    expect(queued()).toEqual([{ capture: capturePath(), repo: "acme/app", kind: "code", files: ["src/llm.ts"], fit: "strong", status: "pending", since: formatDate(), source: "auto" }]);
+    expect(body.handoff).toEqual({ repo: "acme/app" });
+    expect(recordHandoffEvent).toHaveBeenCalledWith(7, capturePath(), "acme/app", "queued", { source: "auto" });
+  });
+
+  // protects: AC2, Possible and no-fit captures wait for the button; fails_when: either is queued; no_claim: none
+  it("web: doesn't queue a Possible fit or no fit", async () => {
+    for (const m of [possible, { repo: null, tier: "none", files: [], also: [], noFit: { reason: "weak" }, scorer: "evidence", modelConf: null } as WhereResult, null]) {
+      matchResult = m;
+      const body = await (await post()).json();
+      expect(body.handoff).toBeUndefined();
+    }
+    expect(files.has(HANDOFFS_PATH)).toBe(false);
+    expect(recordHandoffEvent).not.toHaveBeenCalled();
+  });
+
+  // protects: AC2, saving the same capture twice leaves one row; fails_when: a second row appears; no_claim: none
+  it("web: saving the same capture twice leaves one row", async () => {
+    matchResult = strong;
+    await post();
+    await post();
+    expect(queued()).toHaveLength(1);
+  });
+
+  // protects: the queue write never touches GitHub while the section is being written; fails_when: HANDOFFS.md is written before the capture's section; no_claim: none
+  it("web: writes the queue after the section", async () => {
+    matchResult = strong;
+    await post();
+    expect(order.indexOf(`put:${HANDOFFS_PATH}`)).toBeGreaterThan(order.lastIndexOf(`put:${capturePath()}`));
+  });
+
+  // protects: AC2 on the MCP path; fails_when: only the web path queues; no_claim: none
+  it("MCP: queues a Strong fit and says so", async () => {
+    matchResult = strong;
+    const result = await handleCapture(user as never, { content: "notes" });
+    expect(queued()).toEqual([expect.objectContaining({ capture: capturePath(), repo: "acme/app", source: "auto" })]);
+    expect(result).toContain("Queued for your next coding session in acme/app.");
+  });
+
+  // protects: AC2 on the MCP path; fails_when: a Possible fit is queued or announced; no_claim: none
+  it("MCP: doesn't queue a Possible fit", async () => {
+    matchResult = possible;
+    const result = await handleCapture(user as never, { content: "notes" });
+    expect(files.has(HANDOFFS_PATH)).toBe(false);
+    expect(result).not.toContain("Queued");
   });
 });

@@ -5,6 +5,7 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
+import HandOff from "@/components/HandOff";
 import type { WhereCard } from "@/lib/where";
 
 interface CaptureResult {
@@ -22,6 +23,8 @@ interface CaptureResult {
   fileUrl?: string;
   /** Where the capture applies in the user's code; absent when matching was skipped. */
   where?: WhereCard;
+  /** Set when a Strong fit was queued for the next coding session in this repo. */
+  handoff?: { repo: string };
 }
 
 /** Text with `backticked` names shown as code. */
@@ -326,6 +329,13 @@ export default function CapturePage() {
                 </>
               )}
               <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.where.note}</p>
+              {result.where.repo && (
+                <HandOff
+                  filename={`inbox/${result.filename}`}
+                  repos={[result.where.repo, ...result.where.also.map((a) => a.repo)]}
+                  waitingIn={result.handoff?.repo}
+                />
+              )}
             </div>
           )}
 
