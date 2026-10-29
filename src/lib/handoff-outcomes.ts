@@ -19,7 +19,7 @@ import { formatDate } from "./llm";
 import { repoName } from "./code-repos";
 import { LEDGER_PATH, markReverted } from "./ledger";
 import { recordHandoffEvent } from "./handoff-events";
-import { addDays, appendHandoffLog, handoffFor, handoffLogLine, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
+import { addDays, appendHandoffLog, handoffFor, handoffLogLine, isWaiting, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
 
 export const OUTCOMES = ["applied", "declined", "done", "later", "reverted"] as const;
 export type Outcome = (typeof OUTCOMES)[number];
@@ -90,10 +90,19 @@ export async function appliedHandoff(user: ApplyUser, filename: string, args: An
   }
 }
 
-/** Marks the handoff applied and counts it. Best-effort. */
-export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<void> {
-  await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
+/** Marks the handoff applied and counts it. Best-effort: false when HANDOFFS.md couldn't be written. */
+export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<boolean> {
+  const saved = await setHandoffStatus(user.github_token, user.github_repo!, [handoff.row], "applied", today);
   await recordHandoffEvent(user.id, path, handoff.repo, "applied", { ...(handoff.confidence ? { confidence: handoff.confidence } : {}), withCommit });
+  return saved;
+}
+
+/** What the reply says about the handoff an apply closed. */
+export function closedNote(handoff: AppliedHandoff | null, saved: boolean): string {
+  if (!handoff) return "";
+  return saved
+    ? `. The handoff in ${handoff.repo} is done.`
+    : `. HANDOFFS.md couldn't be updated, so its row for ${handoff.repo} still says ${handoff.row.status}.`;
 }
 
 /**
@@ -138,18 +147,22 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
     if (marked) await githubPut(token, knowledge, LEDGER_PATH, marked, `ledger: ${filename} reverted (${short})`, ledger.sha).catch(() => undefined);
   }
 
+  // Only a waiting row takes the answer: an applied or dead row stays as it is
   const until = addDays(today, SNOOZE_DAYS);
   const status = { declined: "declined", done: "done", later: `snoozed:${until}`, reverted: null }[outcome];
-  if (row && status) await setHandoffStatus(token, knowledge, [row], status, today);
+  const saved = row && status && isWaiting(row.status) ? await setHandoffStatus(token, knowledge, [row], status, today) : null;
   if (repo) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
 
   if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted.`;
   const said = {
     declined: `${filename} declined in ${repo} (${reason})`,
     done: `${filename} was already done in ${repo}`,
-    later: row && row.status !== "dead" ? null : `not now for ${filename} in ${repo}`,
+    later: `not now for ${filename} in ${repo}`,
   }[outcome];
-  if (!said) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
+  if (saved === false) {
+    return `Recorded: ${said}, but HANDOFFS.md couldn't be updated, so it may be offered again${outcome === "later" ? ` before ${until}` : ""}. It doesn't count as an apply.`;
+  }
+  if (outcome === "later" && saved) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
   return `Recorded: ${said}. It doesn't count as an apply.`;
 }
 

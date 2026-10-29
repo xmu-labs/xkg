@@ -222,7 +222,8 @@ export async function readHandoffs(token: string, repo: string): Promise<Handoff
   return file ? parseHandoffs(file.content).rows : [];
 }
 
-const waiting = (status: string) => status === "pending" || status === "expired" || status.startsWith("snoozed:");
+/** Still waiting for an answer: pending, snoozed, or expired without one. */
+export const isWaiting = (status: string) => status === "pending" || status === "expired" || status.startsWith("snoozed:");
 
 /**
  * The row an answer is about: the capture's row for `repo`, or, with no repo,
@@ -232,7 +233,7 @@ const waiting = (status: string) => status === "pending" || status === "expired"
 export function handoffFor(rows: HandoffRow[], capture: string, repo?: string | null): HandoffRow | null {
   const mine = rows.filter((r) => captureName(r.capture) === captureName(capture));
   if (repo) return mine.find((r) => r.repo.toLowerCase() === repo.toLowerCase()) ?? null;
-  const open = mine.filter((r) => waiting(r.status));
+  const open = mine.filter((r) => isWaiting(r.status));
   return open.length === 1 ? open[0]! : null;
 }
 

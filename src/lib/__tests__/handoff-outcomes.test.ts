@@ -14,10 +14,11 @@ import type { User } from "../db";
 
 const files: Record<string, { content: string; sha: string }> = {};
 let shaN = 0;
-const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string, _m: string, sha?: string) => {
+const PUT = async (_t: string, _r: string, path: string, content: string, _m: string, sha?: string) => {
   if (sha && files[path] && files[path]!.sha !== sha) throw new Error(`GitHub PUT ${path}: HTTP 409`);
   files[path] = { content, sha: `sha${++shaN}` };
-});
+};
+const githubPut = vi.fn(PUT);
 const githubDelete = vi.fn(async (_t: string, _r: string, path: string) => {
   delete files[path];
 });
@@ -122,6 +123,41 @@ describe("answers that aren't applies", () => {
     setup([row({ status: "dead" })]);
     await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" });
     expect(handoffs()[0]!.status).toBe("dead");
+  });
+});
+
+describe("answers after a handoff is finished", () => {
+  // protects: an applied handoff is never reopened by a later answer; fails_when: "later" turns an applied row into a snooze (offered again) or "declined" overwrites it; no_claim: none
+  it("keep an applied row applied, and still log the answer", async () => {
+    setup([row({ status: "applied", since: "2026-10-29" })]);
+    expect(await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" }))
+      .toBe(`Recorded: not now for ${NAME} in acme/app. It doesn't count as an apply.`);
+    await handleApplyCapture(user, { filename: NAME, outcome: "declined", repo: "acme/app", reason: "doesnt-fit" });
+    expect(handoffs()[0]!.status).toBe("applied");
+    expect(files[`inbox/${NAME}`]!.content).toContain("- 2026-10-30 · acme/app · later\n- 2026-10-30 · acme/app · declined (doesnt-fit)\n");
+  });
+});
+
+describe("when HANDOFFS.md can't be written", () => {
+  // protects: the reply never claims a snooze or a closed handoff that wasn't saved; fails_when: it says "Snoozed" or "is done" after the queue write gave up; no_claim: the retry (handoffs tests)
+  it("says so instead of claiming it", async () => {
+    setup();
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    githubPut.mockImplementation(async (_t, _r, path, content, _m, sha) => {
+      if (path === "HANDOFFS.md") throw new Error("GitHub PUT HANDOFFS.md: HTTP 409");
+      if (sha && files[path] && files[path]!.sha !== sha) throw new Error(`GitHub PUT ${path}: HTTP 409`);
+      files[path] = { content, sha: `sha${++shaN}` };
+    });
+    try {
+      expect(await handleApplyCapture(user, { filename: NAME, outcome: "later", repo: "acme/app" }))
+        .toBe(`Recorded: not now for ${NAME} in acme/app, but HANDOFFS.md couldn't be updated, so it may be offered again before 2026-11-06. It doesn't count as an apply.`);
+      expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
+        .toBe(`Applied: ${NAME} → applied/${NAME} (a1b2c3d). HANDOFFS.md couldn't be updated, so its row for acme/app still says pending.`);
+      expect(handoffs()[0]!.status).toBe("pending");
+    } finally {
+      githubPut.mockImplementation(PUT);
+      spy.mockRestore();
+    }
   });
 });
 

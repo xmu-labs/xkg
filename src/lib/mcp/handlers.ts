@@ -26,7 +26,7 @@ import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApp
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
-import { appliedHandoff, closeHandoff, outcomeOf, recordAnswer } from "@/lib/handoff-outcomes";
+import { appliedHandoff, closeHandoff, closedNote, outcomeOf, recordAnswer } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
@@ -263,7 +263,6 @@ export async function handleApplyCapture(
 
   // A handoff waiting for this capture is done once it's applied
   const handoff = await appliedHandoff(user, filename, args, today);
-  const handoffNote = handoff ? `. The handoff in ${handoff.repo} is done.` : "";
 
   // The server's count, for the apply metric across users. The repo stays the record.
   // Safe to repeat: the same capture and commit is counted once.
@@ -283,15 +282,16 @@ export async function handleApplyCapture(
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
       // The first report may have come without the repo; this one closes the handoff
+      let closed = false;
       if (handoff) {
         try {
           await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, handoff.line), `handoff: applied ${filename}`, file.sha);
-          await closeHandoff(user, appliedPath, handoff, true, today);
+          closed = await closeHandoff(user, appliedPath, handoff, true, today);
         } catch (err) {
           console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
         }
       }
-      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${handoffNote}`;
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${closedNote(handoff, closed)}`;
     }
   }
 
@@ -340,15 +340,15 @@ export async function handleApplyCapture(
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
     const notes = (await recordInLedger()) + (await recordEvent());
-    if (handoff) await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today);
-    return `Applied again: ${appliedPath}${commitRef}${notes}${handoffNote}`;
+    const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : false;
+    return `Applied again: ${appliedPath}${commitRef}${notes}${closedNote(handoff, closed)}`;
   }
 
   await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
   const ledgerNote = (await recordInLedger()) + (await recordEvent());
-  if (handoff) await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today);
+  const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : false;
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -367,7 +367,7 @@ export async function handleApplyCapture(
     }
   }
 
-  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}${handoffNote}`;
+  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}${closedNote(handoff, closed)}`;
 }
 
 /** The apply metric: captures applied per week, and how many came with a commit. */
