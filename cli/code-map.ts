@@ -27,6 +27,8 @@ const RESEND_AFTER_MS = 24 * 60 * 60 * 1000;
 const CACHE_VERSION = 2;
 /** Larger files are mapped by path only: they are almost always generated. */
 const MAX_SOURCE_BYTES = 1024 * 1024;
+/** Bytes of file contents read at once; each batch's names are taken before the next is read. */
+const BLOB_BATCH_BYTES = 32 * 1024 * 1024;
 
 const SKIP_DIR = /(^|\/)(node_modules|dist|build|\.next|\.nuxt|vendor|coverage|target|\.venv|venv|__pycache__|\.gradle|\.dart_tool|cdk\.out|__tests__|tests)\//;
 const SKIP_FILE = /\.(test|spec)\.[^/]+$|(^|\/)test_[^/]+\.py$|_test\.go$|(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|go\.sum)$|\.lockb?$|\.(png|jpe?g|gif|svg|ico|webp|avif|bmp|tiff?|mp4|mov|webm|mp3|wav|ogg|pdf|woff2?|ttf|otf|eot|zip|gz|tgz|bz2|xz|7z|rar|jar|wasm|exe|dll|so|dylib|bin|class|pyc)$/i;
@@ -63,13 +65,15 @@ export function repoFromRemote(url: string): string | null {
   return /^[\w.-]+\/[\w.-]+$/.test(repo) ? repo : null;
 }
 
+// Line-start patterns use [ \t]*, never \s*: comments are blanked to spaces
+// first, and \s* would rescan every blank line below from each line start.
 const EXPORT_PATTERNS: Record<Lang, RegExp[]> = {
   js: [
     /^export\s+(?:default\s+)?(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:function\s*\*?|class|const|let|var|type|interface|enum|namespace)\s*([A-Za-z_$][\w$]*)/gm,
   ],
   py: [/^(?:async\s+)?def\s+([A-Za-z]\w*)/gm, /^class\s+([A-Za-z]\w*)/gm],
   go: [/^func\s+(?:\([^)]*\)\s*)?([A-Z]\w*)/gm, /^type\s+([A-Z]\w*)/gm],
-  rs: [/^\s*pub\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)/gm],
+  rs: [/^[ \t]*pub\s+(?:async\s+)?(?:unsafe\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)/gm],
 };
 
 type Syntax = { line: string; block: boolean; multi: string[]; single: string[]; char?: RegExp };
@@ -161,11 +165,11 @@ function importSpecifiers(lang: Lang, source: string): string[] {
   source = maskComments(lang, source);
   const out: string[] = [];
   if (lang === "js") {
-    for (const re of [/\bfrom\s+['"]([^'"\n]+)['"]/g, /^\s*import\s+['"]([^'"\n]+)['"]/gm, /\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g]) {
+    for (const re of [/\bfrom\s+['"]([^'"\n]+)['"]/g, /^[ \t]*import\s+['"]([^'"\n]+)['"]/gm, /\b(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g]) {
       for (const m of source.matchAll(re)) out.push(m[1]!);
     }
   } else if (lang === "py") {
-    for (const m of source.matchAll(/^\s*from\s+(\.*[\w.]*)\s+import\s+([^\n#]+)/gm)) {
+    for (const m of source.matchAll(/^[ \t]*from\s+(\.*[\w.]*)\s+import\s+([^\n#]+)/gm)) {
       const mod = m[1]!;
       out.push(mod);
       for (const name of m[2]!.replace(/[()\\]/g, "").split(",")) {
@@ -173,7 +177,7 @@ function importSpecifiers(lang: Lang, source: string): string[] {
         if (/^\w+$/.test(n)) out.push(mod.endsWith(".") ? mod + n : `${mod}.${n}`);
       }
     }
-    for (const m of source.matchAll(/^\s*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) {
+    for (const m of source.matchAll(/^[ \t]*import\s+([\w.]+(?:\s+as\s+\w+)?(?:\s*,\s*[\w.]+(?:\s+as\s+\w+)?)*)/gm)) {
       for (const part of m[1]!.split(",")) out.push(part.trim().split(/\s+as\s+/)[0]!);
     }
   }
@@ -287,36 +291,46 @@ function resolvePy(from: string, spec: string, files: Set<string>): string | nul
 type BlobEntry = { e?: string[]; s?: string[]; r?: Resolver };
 export type MapCache = { repos?: Record<string, { hash?: string; sentAt?: number; blobs?: Record<string, BlobEntry> }> };
 
-/** Blob contents by id, in one `git cat-file` pass. Blobs over 1 MB come back empty. */
-export function readBlobs(cwd: string, ids: string[]): Map<string, string> {
-  const out = new Map<string, string>();
-  if (ids.length === 0) return out;
+/**
+ * Blob contents by id, a batch at a time, each batch at most `budget` bytes.
+ * Blobs over 1 MB come back empty, in the first batch.
+ */
+export function* readBlobBatches(cwd: string, ids: string[], budget = BLOB_BATCH_BYTES): Generator<Map<string, string>> {
+  if (ids.length === 0) return;
   const sizes = execFileSync("git", ["cat-file", "--batch-check"], { cwd, input: ids.join("\n") + "\n", encoding: "utf-8", maxBuffer: 64 * 1024 * 1024 });
-  const wanted: string[] = [];
+  const skipped = new Map<string, string>();
+  const batches: string[][] = [];
+  let bytes = Infinity;
   for (const line of sizes.split("\n")) {
     const [id, type, size] = line.split(" ");
     if (!id || type !== "blob") continue;
-    if (Number(size) <= MAX_SOURCE_BYTES) wanted.push(id);
-    else out.set(id, "");
-  }
-  if (wanted.length === 0) return out;
-  const raw = execFileSync("git", ["cat-file", "--batch"], { cwd, input: wanted.join("\n") + "\n", maxBuffer: 1024 * 1024 * 1024 });
-  for (let pos = 0; pos < raw.length;) {
-    const nl = raw.indexOf(0x0a, pos);
-    if (nl === -1) break;
-    const [id, type, size] = raw.subarray(pos, nl).toString("utf-8").split(" ");
-    if (type !== "blob") { pos = nl + 1; continue; }
     const len = Number(size);
-    out.set(id!, raw.subarray(nl + 1, nl + 1 + len).toString("utf-8"));
-    pos = nl + 1 + len + 1;
+    if (len > MAX_SOURCE_BYTES) { skipped.set(id, ""); continue; }
+    if (bytes + len > budget) { batches.push([]); bytes = 0; }
+    batches.at(-1)!.push(id);
+    bytes += len;
   }
-  return out;
+  if (skipped.size) yield skipped;
+  for (const batch of batches) {
+    const raw = execFileSync("git", ["cat-file", "--batch"], { cwd, input: batch.join("\n") + "\n", maxBuffer: budget + MAX_SOURCE_BYTES + batch.length * 128 });
+    const out = new Map<string, string>();
+    for (let pos = 0; pos < raw.length;) {
+      const nl = raw.indexOf(0x0a, pos);
+      if (nl === -1) break;
+      const [id, type, size] = raw.subarray(pos, nl).toString("utf-8").split(" ");
+      if (type !== "blob") { pos = nl + 1; continue; }
+      const len = Number(size);
+      out.set(id!, raw.subarray(nl + 1, nl + 1 + len).toString("utf-8"));
+      pos = nl + 1 + len + 1;
+    }
+    yield out;
+  }
 }
 
 export interface BuildOptions {
   /** Parsed ~/.xkg/maps.json; updated in place with this build's exports. */
   cache?: MapCache;
-  readBlobs?: (cwd: string, ids: string[]) => Map<string, string>;
+  readBlobs?: (cwd: string, ids: string[]) => Iterable<Map<string, string>>;
 }
 
 /** The repo's map, or null when it has no origin remote to name it by. */
@@ -350,29 +364,39 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
   const keyOf = (path: string, kind: string) => `${tracked.get(path)}:${kind}:${CACHE_VERSION}`;
 
   const configPath = ["tsconfig.json", "jsconfig.json"].find((p) => tracked.has(p));
-  const toRead = new Map<string, string>();
+  // Files not in the cache, by blob id. Names are taken from each batch of
+  // contents before the next is read, so a large repo never sits in memory at once.
+  const toRead = new Map<string, { key: string; make: (src: string) => BlobEntry }[]>();
+  const need = (p: string, kind: string, make: (src: string) => BlobEntry) => {
+    const key = keyOf(p, kind);
+    if (previous[key]) return;
+    const id = tracked.get(p)!;
+    toRead.set(id, [...(toRead.get(id) ?? []), { key, make }]);
+  };
   for (const p of paths) {
     const lang = langOf(p);
-    if (lang && !previous[keyOf(p, lang)]) toRead.set(tracked.get(p)!, p);
+    if (lang) need(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src) }));
   }
-  if (configPath && !previous[keyOf(configPath, "config")]) toRead.set(tracked.get(configPath)!, configPath);
-  const contents = (opts.readBlobs ?? readBlobs)(cwd, [...toRead.keys()]);
+  if (configPath) need(configPath, "config", (src) => ({ r: parseTsconfig(src) }));
+  const fresh: Record<string, BlobEntry> = {};
+  for (const batch of (opts.readBlobs ?? readBlobBatches)(cwd, [...toRead.keys()])) {
+    for (const [id, src] of batch) for (const { key, make } of toRead.get(id) ?? []) fresh[key] ??= make(src);
+  }
+  for (const jobs of toRead.values()) for (const { key, make } of jobs) fresh[key] ??= make("");
 
-  const entryFor = (p: string, kind: string, make: (src: string) => BlobEntry): BlobEntry => {
+  const entryFor = (p: string, kind: string): BlobEntry => {
     const key = keyOf(p, kind);
-    const entry = previous[key] ?? make(contents.get(tracked.get(p)!) ?? "");
+    const entry = previous[key] ?? fresh[key]!;
     blobs[key] = entry;
     return entry;
   };
 
-  const resolver = configPath
-    ? entryFor(configPath, "config", (src) => ({ r: parseTsconfig(src) })).r!
-    : { aliases: [], baseUrl: null };
+  const resolver = configPath ? entryFor(configPath, "config").r! : { aliases: [], baseUrl: null };
 
   const files: MapFile[] = paths.map((p) => {
     const lang = langOf(p);
     if (!lang) return { p };
-    const entry = entryFor(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src) }));
+    const entry = entryFor(p, lang);
     const file: MapFile = { p };
     if (entry.e?.length) file.e = entry.e;
     const imports = new Set<string>();

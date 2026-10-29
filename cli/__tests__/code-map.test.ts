@@ -279,10 +279,10 @@ describe("buildCodeMap", () => {
 
   // protects: hook syncs stay fast on large repos; fails_when: unchanged files are read again, or a changed one is not; no_claim: speed on any particular repo
   it("reads only files whose content changed since the last build", async () => {
-    const { buildCodeMap, readBlobs } = await import("../code-map.js");
+    const { buildCodeMap, readBlobBatches } = await import("../code-map.js");
     const cache = {};
     let reads = 0;
-    const counting = (cwd: string, ids: string[]) => { reads += ids.length; return readBlobs(cwd, ids); };
+    const counting = (cwd: string, ids: string[]) => { reads += ids.length; return readBlobBatches(cwd, ids); };
 
     buildCodeMap(repo, { cache, readBlobs: counting });
     expect(reads).toBeGreaterThan(0);
@@ -298,12 +298,54 @@ describe("buildCodeMap", () => {
     expect(reads).toBe(1);
     expect(changed!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment", "tokens"] });
   });
+  // protects: a first sync of a large repo holds one batch of files in memory at a time; fails_when: names from a later batch are lost, or a file's names come from another file; no_claim: peak memory itself
+  it("builds the same map when files arrive in many small batches", async () => {
+    const { buildCodeMap, readBlobBatches } = await import("../code-map.js");
+    const oneAtATime = function* (cwd: string, ids: string[]) {
+      for (const id of ids) yield* readBlobBatches(cwd, [id]);
+    };
+    expect(buildCodeMap(repo, { readBlobs: oneAtATime })).toEqual(buildCodeMap(repo));
+  });
+
+  // protects: a hook sync stays quick on files that are mostly comments, which are blanked to spaces before matching; fails_when: a line-start pattern rescans the rest of the file from every line (seconds per file); no_claim: speed on any particular machine
+  it.each([
+    ["js", "notes.ts", "// ", "import './side';\nexport const kept = 1;\n"],
+    ["py", "notes.py", "# ", "from .side import thing\ndef kept():\n    pass\n"],
+    ["rs", "notes.rs", "// ", "pub fn kept() {}\n"],
+  ])("maps a %s file that is mostly comments in well under a second", async (_lang, path, comment, code) => {
+    const { buildCodeMap } = await import("../code-map.js");
+    write(repo, { [path]: code + (comment + "x".repeat(95) + "\n").repeat(9000) });
+    const started = Date.now();
+    const map = buildCodeMap(repo, { cache: {} });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(map!.files.find((f) => f.p === path)!.e).toEqual(["kept"]);
+  });
+
   // protects: an upgrade fixes names cached by an older version; fails_when: a name cached before comments were skipped is sent again; no_claim: caches from other tools
   it("rebuilds names cached by an older version", async () => {
     const { buildCodeMap } = await import("../code-map.js");
     const blob = git(repo, "rev-parse", ":src/lib/text.ts");
     const cache = { repos: { "acme/widgets": { blobs: { [`${blob}:js`]: { e: ["fromAComment"] } } } } };
     expect(buildCodeMap(repo, { cache })!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment"] });
+  });
+});
+
+describe("readBlobBatches", () => {
+  // protects: a cold sync of a repo with many large files can't overflow one read; fails_when: all blobs are read in one pass, or a batch goes over the budget; no_claim: the default budget's value
+  it("reads blobs in batches that each fit the byte budget", async () => {
+    const { readBlobBatches } = await import("../code-map.js");
+    const body = (c: string) => c.repeat(400 * 1024);
+    const dir = makeRepo({ "a.ts": body("a"), "b.ts": body("b"), "c.ts": body("c"), "big.ts": "x".repeat(1024 * 1024 + 1) });
+    try {
+      const ids = ["a.ts", "b.ts", "c.ts", "big.ts"].map((p) => git(dir, "rev-parse", `:${p}`));
+      const batches = [...readBlobBatches(dir, ids, 1024 * 1024)];
+      expect(batches.length).toBeGreaterThan(1);
+      for (const b of batches) expect([...b.values()].reduce((n, s) => n + s.length, 0)).toBeLessThanOrEqual(1024 * 1024);
+      const all = new Map(batches.flatMap((b) => [...b]));
+      expect(all).toEqual(new Map([[ids[0], body("a")], [ids[1], body("b")], [ids[2], body("c")], [ids[3], ""]]));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
