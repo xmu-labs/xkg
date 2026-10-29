@@ -227,8 +227,8 @@ describe("postCommit", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  // protects: the map follows the code after each commit; fails_when: a commit without a trailer skips the sync, or the sync runs before the applies are reported; no_claim: the hash gate (code-map tests)
-  it("syncs the code map after reporting, even for a commit without a trailer", async () => {
+  // protects: the map follows the code after each commit, and an apply's new files are in the map before the server keeps only mapped files; fails_when: a commit without a trailer skips the sync, or the apply is reported before the sync; no_claim: the hash gate (code-map tests)
+  it("syncs the code map before reporting, even for a commit without a trailer", async () => {
     const { postCommit } = await import("../git-hook.js");
     const home = mkdtempSync(join(tmpdir(), "xkg-home-"));
     const origHome = process.env["HOME"];
@@ -241,7 +241,7 @@ describe("postCommit", () => {
 
       const applied = commit(repo, "src/b.ts", "Fix\n\nxkg-capture: a.md");
       await postCommit("key", applied, repo);
-      expect(sent().slice(1).map((s) => s.body.method ?? String(s.url))).toEqual(["initialize", "tools/call", "https://xkg.xmu.sh/api/code-map"]);
+      expect(sent().slice(1).map((s) => s.body.method ?? String(s.url))).toEqual(["https://xkg.xmu.sh/api/code-map", "initialize", "tools/call"]);
     } finally {
       process.env["HOME"] = origHome;
       rmSync(home, { recursive: true, force: true });

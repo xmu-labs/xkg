@@ -26,11 +26,11 @@ import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApp
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
-import { appliedHandoff, closeHandoff, closedNote, outcomeOf, recordAnswer } from "@/lib/handoff-outcomes";
+import { appliedHandoff, closeHandoff, closedNote, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
-import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
+import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -282,7 +282,7 @@ export async function handleApplyCapture(
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
       // The first report may have come without the repo; this one closes the handoff
-      let closed = false;
+      let closed: Closed | null = null;
       if (handoff) {
         try {
           const logged = appendHandoffLog(file.content, handoff.line);
@@ -290,6 +290,7 @@ export async function handleApplyCapture(
           closed = await closeHandoff(user, appliedPath, logged, handoff, true, today);
         } catch (err) {
           console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
+          closed = { closed: false, status: handoff.row.status, failed: true };
         }
       }
       return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${closedNote(handoff, closed)}`;
@@ -331,7 +332,11 @@ export async function handleApplyCapture(
     try {
       const ledger = await readFile(user.github_token, user.github_repo!, LEDGER_PATH);
       const row = { date: today, capture: filename, commit: args.commit_sha, target: args.target_file };
-      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, appendLedgerRow(ledger?.content ?? null, row), `ledger: ${filename}${commitRef}`, ledger?.sha);
+      const appended = appendLedgerRow(ledger?.content ?? null, row);
+      // The hook's reports can arrive out of order: a revert logged before this apply marks its row now
+      const revertDate = args.commit_sha ? revertedOn(file.content, args.commit_sha) : null;
+      const updated = revertDate ? (markReverted(appended, filename, args.commit_sha!, revertDate) ?? appended) : appended;
+      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, updated, `ledger: ${filename}${commitRef}`, ledger?.sha);
       return "";
     } catch {
       return ` (not counted in ${LEDGER_PATH}: the ledger write failed)`;
@@ -341,7 +346,7 @@ export async function handleApplyCapture(
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
     const notes = (await recordInLedger()) + (await recordEvent());
-    const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : false;
+    const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : null;
     return `Applied again: ${appliedPath}${commitRef}${notes}${closedNote(handoff, closed)}`;
   }
 
@@ -349,7 +354,7 @@ export async function handleApplyCapture(
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
   const ledgerNote = (await recordInLedger()) + (await recordEvent());
-  const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : false;
+  const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : null;
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {

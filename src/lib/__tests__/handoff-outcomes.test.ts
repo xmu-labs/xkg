@@ -276,6 +276,35 @@ describe("when the capture can't be written", () => {
   });
 });
 
+describe("an apply that crosses another change", () => {
+  // protects: an apply wins over a snooze that landed while it was being recorded; fails_when: the reply says done while the row stays snoozed, or the apply isn't counted; no_claim: none
+  it("closes a row snoozed meanwhile", async () => {
+    setup();
+    afterHandoffsRead = () => {
+      files["HANDOFFS.md"] = { content: renderHandoffs([row({ status: "snoozed:2026-11-06", since: "2026-10-30" })]), sha: "h2" };
+    };
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
+      .toBe(`Applied: ${NAME} → applied/${NAME} (a1b2c3d). The handoff in acme/app is done.`);
+    expect(handoffs()[0]!.status).toBe("applied");
+    expect(recordHandoffEvent.mock.calls.filter((c) => c[3] === "applied")).toHaveLength(1);
+    expect(learnFrom).toHaveBeenCalledTimes(1);
+  });
+
+  // protects: the reply never claims a close that didn't happen; fails_when: a row marked dead meanwhile is reported done or counted; no_claim: none
+  it("says so when the row became dead meanwhile", async () => {
+    setup();
+    afterHandoffsRead = () => {
+      files["HANDOFFS.md"] = { content: renderHandoffs([row({ status: "dead", since: "2026-10-30" })]), sha: "h2" };
+    };
+    expect(await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app" }))
+      .toBe(`Applied: ${NAME} → applied/${NAME} (a1b2c3d). Its row for acme/app in HANDOFFS.md says dead, so it was left as is.`);
+    expect(handoffs()[0]!.status).toBe("dead");
+    expect(recordHandoffEvent.mock.calls.filter((c) => c[3] === "applied")).toHaveLength(0);
+    // The apply's log line is written either way, so it's still learned from
+    expect(learnFrom).toHaveBeenCalledWith(user, `applied/${NAME}`, files[`applied/${NAME}`]!.content, "2026-10-30");
+  });
+});
+
 describe("an answer that crosses another change", () => {
   // protects: an apply that lands between an answer's read and its write wins; fails_when: the answer overwrites the applied row, or the reply claims a snooze; no_claim: none
   it("leaves the row as the other change left it", async () => {
@@ -453,6 +482,16 @@ describe("reverted", () => {
       .toBe(`Already recorded: the revert of ${NAME} (a1b2c3d).`);
     expect(files[`applied/${NAME}`]!.content.match(/reverted/g)).toHaveLength(1);
     expect(recordHandoffEvent).toHaveBeenCalledTimes(1);
+  });
+
+  // protects: the hook's reports can arrive out of order; fails_when: a revert reported before its apply leaves the apply's APPLIED.md row unmarked; no_claim: none
+  it("marks the apply's ledger row when the revert was reported first", async () => {
+    setup([row()]);
+    files["APPLIED.md"] = { content: "# Applied captures\n\n| Date | Capture | Commit | Target |\n|---|---|---|---|\n", sha: "l0" };
+    expect(await handleApplyCapture(user, { filename: NAME, outcome: "reverted", commit_sha: SHA, repo: "acme/app" }))
+      .toBe(`Recorded: the apply of ${NAME} in commit a1b2c3d was reverted.`);
+    await handleApplyCapture(user, { filename: NAME, commit_sha: SHA, repo: "acme/app", target_file: "src/llm.ts" });
+    expect(files["APPLIED.md"]!.content).toContain(`| 2026-10-30 | ${NAME} | ${SHA} | src/llm.ts · reverted 2026-10-30 |`);
   });
 
   // protects: a revert's APPLIED.md mark survives a conflicting write, and a repeat report repairs one that failed; fails_when: a failed ledger write is reported as done, or a repeat report can't fix it; no_claim: none
