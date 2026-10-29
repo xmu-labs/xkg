@@ -17,7 +17,9 @@ const capture = {
 const files = new Map<string, { content: string; sha: string }>();
 const order: string[] = [];
 let shaN = 0;
+let failWhereWrite = false;
 const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string) => {
+  if (failWhereWrite && content.includes("## Where it applies")) throw new Error("GitHub 409");
   order.push(`put:${path}`);
   files.set(path, { content, sha: `sha${++shaN}` });
   return { ok: true };
@@ -54,6 +56,8 @@ vi.mock("@/lib/linking", () => ({
   }),
 }));
 vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: vi.fn() }));
+const recordWhereEvent = vi.fn();
+vi.mock("@/lib/surface-events", () => ({ recordWhereEvent: (...a: unknown[]) => recordWhereEvent(...a), recordSurfaceEvents: vi.fn() }));
 vi.mock("@/lib/where", async (orig) => ({ ...(await orig<typeof import("../where")>()), matchCapture: () => matchCapture() }));
 
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai" };
@@ -79,6 +83,8 @@ beforeEach(() => {
   order.length = 0;
   githubPut.mockClear();
   matchCapture.mockClear();
+  recordWhereEvent.mockClear();
+  failWhereWrite = false;
 });
 
 describe("web capture", () => {
@@ -89,6 +95,13 @@ describe("web capture", () => {
     const saved = files.get(capturePath())!.content;
     expect(saved).toContain(`## Core idea\n${capture.coreIdea}\n\n## Where it applies\n**Strong fit** · acme/app`);
     expect(body.where).toEqual({ fit: "Strong fit", repo: "acme/app", files: strong.files, also: [], note: expect.stringContaining("not yet checked") });
+  });
+
+  // protects: D6 and AC21, the card's match is logged with its cost; fails_when: the web path shows a match without logging it; no_claim: what is stored
+  it("logs the match against the saved file", async () => {
+    matchResult = strong;
+    await post();
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
   });
 
   // protects: AC9, matching runs alongside writing and linking; fails_when: matching starts after the file is written or blocks linking; no_claim: real latency
@@ -109,6 +122,15 @@ describe("web capture", () => {
     expect(body.where.note).toBe("No code repos synced yet.");
   });
 
+  // protects: a reply that can't be read changes nothing the user sees but keeps its cost; fails_when: the card or file changes, or the call goes unlogged; no_claim: none
+  it("when the reply can't be read, shows nothing and logs the call as not shown", async () => {
+    matchResult = { repo: null, tier: "none", files: [], also: [], noFit: { reason: "unreadable" }, scorer: "evidence", modelConf: null, tokens: { in: 3301, out: 600 } };
+    const body = await (await post()).json();
+    expect(body.where).toBeUndefined();
+    expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), matchResult, false);
+  });
+
   // protects: a failed match changes nothing; fails_when: the response or file changes when matching returns null; no_claim: none
   it("when matching fails, saves the capture as before with no where", async () => {
     matchResult = null;
@@ -125,6 +147,16 @@ describe("MCP capture", () => {
     const result = await handleCapture(user as never, { content: "notes" });
     expect(files.get(capturePath())!.content).toContain("## Where it applies\n**Strong fit** · acme/app");
     expect(result).toContain("Where it applies: Strong fit in acme/app: src/llm.ts");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
+  });
+
+  // protects: card credit only for a fit the agent was shown; fails_when: a fit whose section write failed is logged as shown; no_claim: none
+  it("when the section can't be written, leaves it out of the result and logs it as not shown", async () => {
+    matchResult = strong;
+    failWhereWrite = true;
+    const result = await handleCapture(user as never, { content: "notes" });
+    expect(result).not.toContain("Where it applies");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, false);
   });
 
   // protects: AC3 on the MCP path; fails_when: a user with no maps gets a second write or a new result line; no_claim: none

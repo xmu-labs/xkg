@@ -25,7 +25,7 @@ beforeEach(() => {
 describe("deleteUserData", () => {
   it("clears every table keyed to the user, users row last", async () => {
     await deleteUserData(7, "Octo-Cat");
-    // Tables created on first use (code_maps) are made sure of first, so deletion never fails on a fresh database
+    // Tables created on first use (code_maps, surface_events) are made sure of first, so deletion never fails on a fresh database
     const deletes = queries.filter((q) => q.text.startsWith("DELETE"));
 
     expect(deletes.map((q) => q.text)).toEqual([
@@ -35,6 +35,7 @@ describe("deleteUserData", () => {
       "DELETE FROM login_attempts WHERE identifier IN (?, ?)",
       "DELETE FROM apply_events WHERE user_id = ?",
       "DELETE FROM code_maps WHERE user_id = ?",
+      "DELETE FROM surface_events WHERE user_id = ?",
       "DELETE FROM users WHERE id = ?",
     ]);
     expect(deletes.map((q) => q.values)).toEqual([
@@ -42,6 +43,7 @@ describe("deleteUserData", () => {
       [7],
       ["capture:user:7", "code-map:user:7"],
       ["user:7", "octo-cat"],
+      [7],
       [7],
       [7],
       [7],

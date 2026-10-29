@@ -123,6 +123,14 @@ export interface LlmCallOptions {
   system: string;
   user: string;
   maxTokens: number;
+  /** Called with the provider's own token count; not called when it sends none. */
+  onUsage?: (usage: LlmUsage) => void;
+}
+
+export type LlmUsage = { tokensIn: number; tokensOut: number };
+
+function reportUsage(opts: LlmCallOptions, tokensIn: number | undefined, tokensOut: number | undefined): void {
+  if (opts.onUsage && typeof tokensIn === "number" && typeof tokensOut === "number") opts.onUsage({ tokensIn, tokensOut });
 }
 
 /** Call the configured provider and return the raw text response (empty string on no content). */
@@ -169,10 +177,15 @@ async function callAnthropic(opts: LlmCallOptions, llm: ResolvedLlm): Promise<st
     messages: [{ role: "user", content: opts.user }],
     ...reasoning,
   });
+  const u = message.usage;
+  // The cached system prompt is input too, read from the cache.
+  if (u) reportUsage(opts, u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0), u.output_tokens);
   // With thinking on, the first block is the thinking block, not the answer.
   const text = message.content.find((b) => b.type === "text");
   return text?.type === "text" ? text.text : "";
 }
+
+type OpenAIUsage = { prompt_tokens?: number; completion_tokens?: number };
 
 /** OpenAI's reasoning models (o-series, GPT-5 and later) take reasoning_effort; others reject it. */
 function isOpenAIReasoningModel(model: string): boolean {
@@ -205,7 +218,8 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   if (!res.ok) {
     throw new Error(`[llm:openai] HTTP ${res.status} — ${await res.text()}`);
   }
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }>; usage?: OpenAIUsage };
+  reportUsage(opts, data.usage?.prompt_tokens, data.usage?.completion_tokens);
   return data.choices?.[0]?.message?.content ?? "";
 }
 
@@ -236,7 +250,8 @@ async function callOpenAICompatible(opts: LlmCallOptions, llm: ResolvedLlm, base
   if (!res.ok) {
     throw new Error(`[llm:${llm.provider}] HTTP ${res.status} — ${await res.text()}`);
   }
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string | null } }> };
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string | null } }>; usage?: OpenAIUsage };
+  reportUsage(opts, data.usage?.prompt_tokens, data.usage?.completion_tokens);
   // Some open models (Qwen3, R1 distills) put their reasoning inline.
   return (data.choices?.[0]?.message?.content ?? "").replace(/<think>[\s\S]*?<\/think>\s*/g, "");
 }
@@ -272,7 +287,11 @@ async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   }
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string; thought?: boolean }> } }>;
+    usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
   };
+  const u = data.usageMetadata;
+  // Thinking is counted apart from the answer; both are output.
+  if (u?.candidatesTokenCount !== undefined) reportUsage(opts, u.promptTokenCount, u.candidatesTokenCount + (u.thoughtsTokenCount ?? 0));
   const parts = data.candidates?.[0]?.content?.parts ?? [];
   return parts.filter((p) => !p.thought).map((p) => p.text ?? "").join("");
 }

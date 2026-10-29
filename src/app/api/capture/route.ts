@@ -7,6 +7,7 @@ import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
 import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
+import { recordWhereEvent } from "@/lib/surface-events";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -136,12 +137,18 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   }
 
   const where = await matching;
-  if (where) await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where);
+  const card = where ? whereCard(where) : null;
+  if (where) {
+    await Promise.all([
+      writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
+      recordWhereEvent(user.id, `inbox/${filename}`, where, card !== null),
+    ]);
+  }
 
   return NextResponse.json({
     capture,
     filename,
     fileUrl: captureFileUrl(user.github_repo, filename),
-    ...(where ? { where: whereCard(where) } : {}),
+    ...(card ? { where: card } : {}),
   });
 }

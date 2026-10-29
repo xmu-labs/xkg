@@ -11,7 +11,7 @@
 import type { MapFile, StoredCodeMap } from "./code-map";
 import { listCodeMaps, type User } from "./db";
 import { githubPut, readFile } from "./github";
-import { callLlm, llmSettings } from "./llm";
+import { callLlm, llmSettings, type LlmUsage } from "./llm";
 import type { ExtractedCapture } from "./types";
 import { rankFiles, renderMaps, type RankedFile } from "./where-rank";
 import { evidenceScorer, tierOf, type CaptureText, type Candidate, type Scorer, type Tier } from "./where-score";
@@ -24,7 +24,8 @@ const MAX_FILES = 3;
 const MAX_WHY_WORDS = 20;
 const FRESH_DAYS = 14;
 
-export type NoFitReason = "no-maps" | "stale" | "truncated" | "no-shared-words" | "weak";
+/** "unreadable": the model replied but the reply couldn't be read; kept only to log the call's cost, never shown. */
+export type NoFitReason = "no-maps" | "stale" | "truncated" | "no-shared-words" | "weak" | "unreadable";
 
 export interface WhereResult {
   repo: string | null;
@@ -38,6 +39,8 @@ export interface WhereResult {
   scorer: string;
   /** The model's own confidence: logged only, never shown or used. */
   modelConf: number | null;
+  /** Tokens the matching call used, when it was made (null: the provider sent no count). */
+  tokens?: { in: number | null; out: number | null };
 }
 
 /** What the capture card shows: labels only, never a number. */
@@ -51,7 +54,7 @@ export interface WhereCard {
 
 export interface WhereDeps {
   listMaps?: (userId: number) => Promise<StoredCodeMap[]>;
-  complete?: (system: string, prompt: string) => Promise<string>;
+  complete?: (system: string, prompt: string, onUsage?: (usage: LlmUsage) => void) => Promise<string>;
   scorer?: Scorer;
   now?: () => Date;
 }
@@ -160,9 +163,12 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
   const scorer = deps.scorer ?? evidenceScorer;
   const listMaps = deps.listMaps ?? ((id: number) => listCodeMaps(id, MATCH_REPOS));
   const complete =
-    deps.complete ?? ((system: string, text: string) => callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600 }));
+    deps.complete ??
+    ((system: string, text: string, onUsage?: (usage: LlmUsage) => void) =>
+      callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600, onUsage }));
   const now = (deps.now ?? (() => new Date()))();
   const fresh = (m: StoredCodeMap) => now.getTime() - m.syncedAt.getTime() <= FRESH_DAYS * 86_400_000;
+  let tokens: WhereResult["tokens"];
   const none = (noFit: WhereResult["noFit"], modelConf: number | null = null): WhereResult => ({
     repo: null,
     tier: "none",
@@ -171,6 +177,7 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     noFit,
     scorer: scorer.name,
     modelConf,
+    ...(tokens ? { tokens } : {}),
   });
 
   try {
@@ -181,8 +188,11 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const ranked = rankFiles(maps, [text.title, text.coreIdea, ...text.takeaways].join("\n"));
     if (!ranked.length) return none({ reason: "no-shared-words" });
 
-    const reply = parseReply(await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture)));
-    if (reply === undefined) return null;
+    let usage = null as LlmUsage | null;
+    const raw = await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture), (u) => { usage = u; });
+    tokens = { in: usage?.tokensIn ?? null, out: usage?.tokensOut ?? null };
+    const reply = parseReply(raw);
+    if (reply === undefined) return none({ reason: "unreadable" });
     const checked = checkWhere(reply, maps);
     const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
     if (!checked.repo || !checked.files.length) return none(noFitOf(mapOf(ranked[0]!.repo), fresh), checked.modelConf);
@@ -221,6 +231,7 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
       map: { date: map.syncedAt.toISOString().slice(0, 10), head7: map.head7 },
       scorer: scorer.name,
       modelConf: checked.modelConf,
+      tokens,
     };
   } catch (err) {
     console.error("[where] match failed:", err instanceof Error ? err.message : err);
@@ -241,16 +252,21 @@ function noFitLine(noFit: NonNullable<WhereResult["noFit"]>): string {
       return `${lead} no file or function name shares a word with this capture.`;
     case "weak":
       return `${lead} the closest files are only a weak match.`;
+    case "unreadable":
+      return `${lead} the match couldn't be read.`;
   }
 }
+
+/** A reply that couldn't be read is logged for its cost only: no section, card or result line. */
+const unreadable = (w: WhereResult) => w.noFit?.reason === "unreadable";
 
 function mapNote(w: WhereResult): string {
   return w.map ? `map from ${w.map.date}${w.map.head7 ? ` (${w.map.head7})` : ""}` : "";
 }
 
-/** The "## Where it applies" section for the capture file, or null when the user has no maps (the file stays as today). */
+/** The "## Where it applies" section for the capture file, or null when the user has no maps or the reply couldn't be read (the file stays as today). */
 export function whereSection(w: WhereResult): string | null {
-  if (w.noFit?.reason === "no-maps") return null;
+  if (w.noFit?.reason === "no-maps" || unreadable(w)) return null;
   if (w.noFit || !w.repo) return `## Where it applies\n${noFitLine(w.noFit ?? { reason: "weak" })}\n`;
   const head = [`**${FIT_LABEL[w.tier]}**`, w.repo, PROVENANCE, mapNote(w)].filter(Boolean).join(" · ");
   const files = w.files.map((f) => `- \`${f.path}\`${f.why ? `: ${f.why}` : ""}\n`).join("");
@@ -258,7 +274,8 @@ export function whereSection(w: WhereResult): string | null {
   return `## Where it applies\n${head}\n${files}${also}`;
 }
 
-export function whereCard(w: WhereResult): WhereCard {
+export function whereCard(w: WhereResult): WhereCard | null {
+  if (unreadable(w)) return null;
   const label = PROVENANCE.charAt(0).toUpperCase() + PROVENANCE.slice(1);
   return {
     fit: FIT_LABEL[w.tier],
@@ -298,7 +315,7 @@ export async function writeWhereSection(githubToken: string, repo: string, path:
 
 /** One line for the MCP tool result, or null when nothing was written. */
 export function whereLine(where: WhereResult): string | null {
-  if (where.noFit?.reason === "no-maps") return null;
+  if (where.noFit?.reason === "no-maps" || unreadable(where)) return null;
   if (where.noFit || !where.repo) return `Where it applies: ${noFitLine(where.noFit ?? { reason: "weak" })}`;
   return `Where it applies: ${FIT_LABEL[where.tier]} in ${where.repo}: ${where.files.map((f) => f.path).join(", ")} (${PROVENANCE}).`;
 }
