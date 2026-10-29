@@ -188,6 +188,16 @@ describe("postCommit", () => {
     expect(args.target_file).toBe("f00.ts, f01.ts, f02.ts, f03.ts, f04.ts and 18 more");
   });
 
+  // protects: changed files are sent as the literal paths the code map holds; fails_when: a non-ASCII, quoted or space-containing path is sent the way git quotes it ("caf\303\251.ts"); no_claim: none
+  it("sends file names as they are, not as git quotes them", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    writeFileSync(join(repo, "café.ts"), "x\n");
+    writeFileSync(join(repo, 'say "hi".ts'), "x\n");
+    const sha = commit(repo, "with space.ts", "Fix\n\nxkg-capture: a.md");
+    await postCommit("key", sha, repo);
+    expect(calls()[0]!.arguments.files).toEqual(["café.ts", 'say "hi".ts', "with space.ts"]);
+  });
+
   // protects: AC12, a plain `git revert` of an applied commit is reported, with no agent; fails_when: the revert isn't sent, names the revert's own sha, or is sent as an apply; no_claim: how fast the network answers (the hook runs in the background)
   it("reports a revert of a commit with a trailer as reverted", async () => {
     const { postCommit } = await import("../git-hook.js");
