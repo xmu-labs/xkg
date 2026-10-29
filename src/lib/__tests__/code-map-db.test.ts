@@ -14,7 +14,7 @@ vi.mock("../sql", () => ({
 }));
 
 let nextRows: unknown[] = [];
-const { saveCodeMap, initDb, listCodeMaps, listCodeRepos, deleteCodeMap } = await import("../db");
+const { saveCodeMap, initDb, listCodeMaps, listCodeRepos, deleteCodeMap, refreshGithubCodeMap } = await import("../db");
 
 beforeEach(() => {
   queries.length = 0;
@@ -101,5 +101,19 @@ describe("deleteCodeMap", () => {
     expect(queries[0]!.text).toBe("DELETE FROM code_maps WHERE user_id = ? AND repo = ? RETURNING id");
     expect(queries[0]!.values).toEqual([7, "acme/widgets"]);
     expect(await deleteCodeMap(7, "acme/other")).toBe(false);
+  });
+});
+
+describe("refreshGithubCodeMap", () => {
+  // protects: a refresh at capture time never brings back a removed repo or overwrites a local map; fails_when: the refresh inserts, or updates a local row; no_claim: Postgres behavior itself
+  it("updates only an existing GitHub row and says whether there was one", async () => {
+    await refreshGithubCodeMap(7, map, "h");
+    queries.length = 0;
+    nextRows = [{ id: 3 }];
+    expect(await refreshGithubCodeMap(7, map, "h")).toBe(true);
+    expect(queries).toHaveLength(1);
+    expect(queries[0]!.text).toMatch(/^UPDATE code_maps SET .* WHERE user_id = \? AND repo = \? AND source = 'github' RETURNING id$/);
+    expect(queries[0]!.values).toEqual([JSON.stringify(map.files), "h", 1, false, 7, "acme/widgets"]);
+    expect(await refreshGithubCodeMap(7, map, "h")).toBe(false);
   });
 });

@@ -7,7 +7,7 @@
 
 import { createHash } from "crypto";
 import type { CodeMapPayload, MapFile, StoredCodeMap } from "./code-map";
-import { saveCodeMap } from "./db";
+import { refreshGithubCodeMap } from "./db";
 
 /** A GitHub map older than this is read again on the next capture. */
 export const GITHUB_MAP_MAX_AGE_DAYS = 7;
@@ -26,9 +26,9 @@ export type GithubMapResult = { ok: true; map: CodeMapPayload } | { ok: false; e
 const BAD_NAME = "Enter the repo as owner/name, for example acme/widgets.";
 const NO_ANSWER = "GitHub didn't answer. Try again in a minute.";
 
-/** `owner/name` from what the user typed (a pasted github.com URL works too), or null. */
+/** `owner/name` in lowercase, as the map route stores it, from what the user typed (a pasted github.com URL works too), or null. */
 export function repoName(input: string): string | null {
-  const name = input.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "");
+  const name = input.trim().replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/i, "").replace(/\/+$/, "").toLowerCase();
   const parts = name.split("/");
   if (parts.length !== 2 || !parts.every((s) => /^[\w.-]+$/.test(s) && s !== "." && s !== "..")) return null;
   return name.length <= 200 ? name : null;
@@ -91,7 +91,7 @@ export function codeMapHash(map: CodeMapPayload): string {
 
 interface RefreshDeps {
   fetchImpl?: Fetch;
-  save?: typeof saveCodeMap;
+  update?: typeof refreshGithubCodeMap;
   now?: () => Date;
 }
 
@@ -102,14 +102,15 @@ interface RefreshDeps {
 export async function refreshStaleGithubMaps(token: string | null | undefined, userId: number, maps: StoredCodeMap[], deps: RefreshDeps = {}): Promise<StoredCodeMap[]> {
   if (!token) return maps;
   const now = (deps.now ?? (() => new Date()))();
-  const save = deps.save ?? saveCodeMap;
+  const update = deps.update ?? refreshGithubCodeMap;
   const stale = (m: StoredCodeMap) => m.source === "github" && now.getTime() - m.syncedAt.getTime() > GITHUB_MAP_MAX_AGE_DAYS * 86_400_000;
   return Promise.all(maps.map(async (m) => {
     if (!stale(m)) return m;
     try {
       const res = await fetchGithubMap(token, m.repo, deps.fetchImpl);
       if (!res.ok) return m;
-      if (!(await save(userId, res.map, codeMapHash(res.map), "github"))) return m;
+      // Update only: a repo removed, or synced from the user's machine, meanwhile stays that way.
+      if (!(await update(userId, res.map, codeMapHash(res.map)))) return m;
       return { ...m, files: res.map.files, head7: null, truncated: res.map.truncated, syncedAt: now };
     } catch (err) {
       console.error(`[code-repos] refresh of ${m.repo} failed:`, err instanceof Error ? err.message : err);

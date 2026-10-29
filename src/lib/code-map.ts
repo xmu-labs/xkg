@@ -78,5 +78,6 @@ export function parseCodeMap(body: unknown): { ok: true; map: CodeMapPayload } |
     }
     files.push(file);
   }
-  return { ok: true, map: { repo: b.repo, head7, files, truncated: b.truncated === true } };
+  // GitHub matches owner/name in any case, so one repo is one row however its remote is spelled.
+  return { ok: true, map: { repo: b.repo.toLowerCase(), head7, files, truncated: b.truncated === true } };
 }

@@ -114,6 +114,14 @@ describe("fetchGithubMap", () => {
     expect(res.ok && res.map.repo).toBe("acme/widgets");
     expect(calls[0]!.url).toBe("https://api.github.com/repos/acme/widgets/git/trees/HEAD?recursive=1");
   });
+
+  // protects: a repo typed in another case is the same repo as the local map; fails_when: Acme/Widgets is stored beside acme/widgets; no_claim: hosts other than GitHub
+  it("names the repo in lowercase, as GitHub matches it", async () => {
+    const { calls, fetchImpl } = github(200, tree([{ path: "a.ts", type: "blob" }]));
+    const res = await fetchGithubMap("t", "https://github.com/Acme/Widgets", fetchImpl);
+    expect(res.ok && res.map.repo).toBe("acme/widgets");
+    expect(calls[0]!.url).toBe("https://api.github.com/repos/acme/widgets/git/trees/HEAD?recursive=1");
+  });
 });
 
 describe("refreshStaleGithubMaps", () => {
@@ -126,32 +134,32 @@ describe("refreshStaleGithubMaps", () => {
   it("refetches only GitHub maps older than 7 days and stores them", async () => {
     expect(GITHUB_MAP_MAX_AGE_DAYS).toBe(7);
     const { calls, fetchImpl } = github(200, tree([{ path: "new.ts", type: "blob" }]));
-    const save = vi.fn(async () => true);
+    const update = vi.fn(async () => true);
     const maps = [stored("acme/old", "github", 8), stored("acme/fresh", "github", 6), stored("acme/local", "local", 30)];
-    const out = await refreshStaleGithubMaps("t", 7, maps, { fetchImpl, save, now: () => now });
+    const out = await refreshStaleGithubMaps("t", 7, maps, { fetchImpl, update, now: () => now });
     expect(calls.map((c) => c.url)).toEqual(["https://api.github.com/repos/acme/old/git/trees/HEAD?recursive=1"]);
-    expect(save).toHaveBeenCalledWith(7, { repo: "acme/old", head7: "", truncated: false, files: [{ p: "new.ts" }] }, expect.stringMatching(/^[0-9a-f]{64}$/), "github");
+    expect(update).toHaveBeenCalledWith(7, { repo: "acme/old", head7: "", truncated: false, files: [{ p: "new.ts" }] }, expect.stringMatching(/^[0-9a-f]{64}$/));
     expect(out.map((m) => [m.repo, m.files[0]!.p])).toEqual([["acme/old", "new.ts"], ["acme/fresh", "old.ts"], ["acme/local", "old.ts"]]);
     expect(out[0]!.syncedAt).toEqual(now);
   });
 
   // protects: AC5, a failed refresh keeps the old map; fails_when: a GitHub error drops the repo, throws, or stores nothing-for-something; no_claim: when to retry
   it("keeps the old map when the refresh fails", async () => {
-    const save = vi.fn(async () => true);
+    const update = vi.fn(async () => true);
     const maps = [stored("acme/old", "github", 9)];
     for (const fetchImpl of [github(404, {}).fetchImpl, vi.fn(async () => { throw new Error("down"); })]) {
-      expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl, save, now: () => now })).toEqual(maps);
+      expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl, update, now: () => now })).toEqual(maps);
     }
-    expect(save).not.toHaveBeenCalled();
-    const failingSave = vi.fn(async () => { throw new Error("db down"); });
-    expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl: github(200, tree([{ path: "n.ts", type: "blob" }])).fetchImpl, save: failingSave, now: () => now })).toEqual(maps);
+    expect(update).not.toHaveBeenCalled();
+    const failingUpdate = vi.fn(async () => { throw new Error("db down"); });
+    expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl: github(200, tree([{ path: "n.ts", type: "blob" }])).fetchImpl, update: failingUpdate, now: () => now })).toEqual(maps);
   });
 
-  // protects: precedence, a local sync that landed meanwhile is not shadowed; fails_when: the refetched GitHub files are used though the row is now local; no_claim: the race window itself
-  it("keeps the old map in hand when the row was not replaced", async () => {
+  // protects: precedence and removal, a local sync or a removal that landed meanwhile is not undone; fails_when: the refetched GitHub files are used though the row is now local or gone; no_claim: the race window itself
+  it("keeps the old map in hand when the row was not updated", async () => {
     const maps = [stored("acme/old", "github", 9)];
-    const save = vi.fn(async () => false);
-    expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl: github(200, tree([{ path: "n.ts", type: "blob" }])).fetchImpl, save, now: () => now })).toEqual(maps);
+    const update = vi.fn(async () => false);
+    expect(await refreshStaleGithubMaps("t", 7, maps, { fetchImpl: github(200, tree([{ path: "n.ts", type: "blob" }])).fetchImpl, update, now: () => now })).toEqual(maps);
   });
 
   // protects: no GitHub call without a token; fails_when: a request goes out without the user's sign-in; no_claim: token validity

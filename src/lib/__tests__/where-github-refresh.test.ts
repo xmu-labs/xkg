@@ -5,10 +5,10 @@ import type { ExtractedCapture } from "../types";
 /** On capture, a GitHub map older than 7 days is read again before matching (best-effort). */
 
 const listCodeMaps = vi.fn();
-const saveCodeMap = vi.fn();
+const refreshGithubCodeMap = vi.fn();
 vi.mock("../db", () => ({
   listCodeMaps: (...a: unknown[]) => listCodeMaps(...a),
-  saveCodeMap: (...a: unknown[]) => saveCodeMap(...a),
+  refreshGithubCodeMap: (...a: unknown[]) => refreshGithubCodeMap(...a),
 }));
 
 const { matchCapture } = await import("../where");
@@ -25,7 +25,7 @@ const github = vi.fn();
 
 beforeEach(() => {
   listCodeMaps.mockReset().mockResolvedValue([stale]);
-  saveCodeMap.mockReset().mockResolvedValue(true);
+  refreshGithubCodeMap.mockReset().mockResolvedValue(true);
   github.mockReset().mockImplementation(async () => new Response(JSON.stringify({ tree: [{ path: "src/checkout/cache-policy.ts", type: "blob" }] }), { status: 200 }));
   vi.stubGlobal("fetch", github);
 });
@@ -38,7 +38,7 @@ describe("matchCapture with a stale GitHub map", () => {
     await matchCapture({ ...base, github_token: "gho_user" }, capture, { complete, jev: null, now: () => NOW });
     expect(github).toHaveBeenCalledTimes(1);
     expect(String(github.mock.calls[0]![0])).toBe("https://api.github.com/repos/acme/shop/git/trees/HEAD?recursive=1");
-    expect(saveCodeMap).toHaveBeenCalledWith(7, expect.objectContaining({ repo: "acme/shop", files: [{ p: "src/checkout/cache-policy.ts" }] }), expect.any(String), "github");
+    expect(refreshGithubCodeMap).toHaveBeenCalledWith(7, expect.objectContaining({ repo: "acme/shop", files: [{ p: "src/checkout/cache-policy.ts" }] }), expect.any(String));
     expect(complete.mock.calls[0]![1]).toContain("src/checkout/cache-policy.ts");
   });
 
@@ -47,7 +47,7 @@ describe("matchCapture with a stale GitHub map", () => {
     github.mockImplementation(async () => { throw new Error("down"); });
     const res = await matchCapture({ ...base, github_token: "gho_user" }, capture, { jev: null, now: () => NOW });
     expect(res?.noFit).toEqual({ reason: "no-shared-words" });
-    expect(saveCodeMap).not.toHaveBeenCalled();
+    expect(refreshGithubCodeMap).not.toHaveBeenCalled();
   });
 
   // protects: no GitHub call without a sign-in token; fails_when: matching calls GitHub for a user object without one; no_claim: none

@@ -233,6 +233,17 @@ export async function saveCodeMap(userId: number, map: CodeMapPayload, mapHash: 
   return true;
 }
 
+/** Replaces a GitHub map read again at capture time. False when the row is gone or now comes from the user's machine. */
+export async function refreshGithubCodeMap(userId: number, map: CodeMapPayload, mapHash: string): Promise<boolean> {
+  await ensureCodeMapTable();
+  const { rowCount } = await sql`
+    UPDATE code_maps SET map = ${JSON.stringify(map.files)}::jsonb, map_hash = ${mapHash}, head7 = NULL,
+      file_count = ${map.files.length}, truncated = ${map.truncated}, synced_at = NOW()
+    WHERE user_id = ${userId} AND repo = ${map.repo} AND source = 'github' RETURNING id
+  `;
+  return rowCount > 0;
+}
+
 /** The user's most recently synced maps, newest first. */
 export async function listCodeMaps(userId: number, limit: number): Promise<StoredCodeMap[]> {
   await ensureCodeMapTable();
