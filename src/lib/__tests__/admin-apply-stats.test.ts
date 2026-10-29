@@ -7,7 +7,13 @@ import { NextRequest } from "next/server";
  */
 
 const applyGateStats = vi.fn();
+const applySourceStats = vi.fn();
+const matchingStats = vi.fn();
 vi.mock("@/lib/apply-events", () => ({ applyGateStats: (...a: unknown[]) => applyGateStats(...a) }));
+vi.mock("@/lib/surface-events", () => ({
+  applySourceStats: (...a: unknown[]) => applySourceStats(...a),
+  matchingStats: (...a: unknown[]) => matchingStats(...a),
+}));
 
 beforeAll(() => {
   process.env.ADMIN_SECRET = "admin-test-secret";
@@ -25,6 +31,10 @@ function get(query = "", secret?: string): NextRequest {
 beforeEach(() => {
   applyGateStats.mockReset();
   applyGateStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", captures: 1, capturesWithCommit: 1, capturesWithWhy: 0, harnesses: { codex: 1 } }]);
+  applySourceStats.mockReset();
+  applySourceStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", sources: { cardOnly: 1, briefingOnly: 0, both: 0, other: 0, none: 0 } }]);
+  matchingStats.mockReset();
+  matchingStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", matches: 3, suggestions: 2, medianTokens: 3443 }]);
 });
 
 describe("adminAuthorized", () => {
@@ -46,8 +56,22 @@ describe("GET /api/admin/apply-stats", () => {
     const res = await GET(get("", "admin-test-secret"));
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.weeks).toEqual([{ userId: 7, weekStart: "2026-10-26", captures: 1, capturesWithCommit: 1, capturesWithWhy: 0, harnesses: { codex: 1 } }]);
+    expect(body.weeks).toEqual([{
+      userId: 7, weekStart: "2026-10-26", captures: 1, capturesWithCommit: 1, capturesWithWhy: 0, harnesses: { codex: 1 },
+      sources: { cardOnly: 1, briefingOnly: 0, both: 0, other: 0, none: 0 },
+    }]);
     expect(applyGateStats).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), 4);
+  });
+
+  // protects: AC8 and AC21 reach the operator; fails_when: the source buckets or matching cost are missing from the response; no_claim: the numbers (see surface-events tests)
+  it("adds what surfaced each week's applies, and the matching cost", async () => {
+    applySourceStats.mockResolvedValue([]);
+    const body = await (await GET(get("?weeks=2", "admin-test-secret"))).json();
+    // A week with no source row gets empty buckets, never a guess
+    expect(body.weeks[0].sources).toEqual({ cardOnly: 0, briefingOnly: 0, both: 0, other: 0, none: 0 });
+    expect(body.matching).toEqual([{ userId: 7, weekStart: "2026-10-26", matches: 3, suggestions: 2, medianTokens: 3443 }]);
+    expect(applySourceStats).toHaveBeenCalledWith(expect.any(String), 2);
+    expect(matchingStats).toHaveBeenCalledWith(expect.any(String), 2);
   });
 
   it("takes ?weeks= and keeps it between 1 and 52", async () => {

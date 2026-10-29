@@ -42,6 +42,7 @@ vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
 vi.mock("../apply-events", () => ({ recordApplyEvent: vi.fn() }));
+vi.mock("../surface-events", () => ({ recordSurfaceEvents: vi.fn(), recordWhereEvent: vi.fn() }));
 
 const { handleBriefing } = await import("../mcp/handlers");
 const { briefingCandidate, formatBriefing } = await import("../briefing");

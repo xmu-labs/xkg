@@ -54,6 +54,8 @@ vi.mock("@/lib/linking", () => ({
   }),
 }));
 vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: vi.fn() }));
+const recordWhereEvent = vi.fn();
+vi.mock("@/lib/surface-events", () => ({ recordWhereEvent: (...a: unknown[]) => recordWhereEvent(...a), recordSurfaceEvents: vi.fn() }));
 vi.mock("@/lib/where", async (orig) => ({ ...(await orig<typeof import("../where")>()), matchCapture: () => matchCapture() }));
 
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai" };
@@ -79,6 +81,7 @@ beforeEach(() => {
   order.length = 0;
   githubPut.mockClear();
   matchCapture.mockClear();
+  recordWhereEvent.mockClear();
 });
 
 describe("web capture", () => {
@@ -89,6 +92,13 @@ describe("web capture", () => {
     const saved = files.get(capturePath())!.content;
     expect(saved).toContain(`## Core idea\n${capture.coreIdea}\n\n## Where it applies\n**Strong fit** · acme/app`);
     expect(body.where).toEqual({ fit: "Strong fit", repo: "acme/app", files: strong.files, also: [], note: expect.stringContaining("not yet checked") });
+  });
+
+  // protects: D6 and AC21, the card's match is logged with its cost; fails_when: the web path shows a match without logging it; no_claim: what is stored
+  it("logs the match against the saved file", async () => {
+    matchResult = strong;
+    await post();
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong);
   });
 
   // protects: AC9, matching runs alongside writing and linking; fails_when: matching starts after the file is written or blocks linking; no_claim: real latency
@@ -125,6 +135,7 @@ describe("MCP capture", () => {
     const result = await handleCapture(user as never, { content: "notes" });
     expect(files.get(capturePath())!.content).toContain("## Where it applies\n**Strong fit** · acme/app");
     expect(result).toContain("Where it applies: Strong fit in acme/app: src/llm.ts");
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong);
   });
 
   // protects: AC3 on the MCP path; fails_when: a user with no maps gets a second write or a new result line; no_claim: none

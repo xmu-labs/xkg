@@ -100,6 +100,29 @@ describe("matchCapture: when it runs", () => {
   });
 });
 
+describe("matchCapture: cost", () => {
+  // protects: AC21, each match carries the tokens it used; fails_when: the provider's count is lost, or a match without a model call claims tokens; no_claim: the count is right
+  it("keeps the provider's token count when the model was called", async () => {
+    const complete = vi.fn(async (_s: string, _p: string, onUsage?: (u: { tokensIn: number; tokensOut: number }) => void) => {
+      onUsage?.({ tokensIn: 3301, tokensOut: 142 });
+      return JSON.stringify(strongReply);
+    });
+    const where = (await matchCapture(user, capture, deps(strongReply, { complete }).d))!;
+    expect(where.tokens).toEqual({ in: 3301, out: 142 });
+  });
+
+  it("keeps the call with unknown counts when the provider sends none", async () => {
+    const where = (await matchCapture(user, capture, deps({ repo: null, reason: "nothing" }).d))!;
+    expect(where.tier).toBe("none");
+    expect(where.tokens).toEqual({ in: null, out: null });
+  });
+
+  it("has no tokens when no model was called", async () => {
+    const where = (await matchCapture(user, capture, deps(strongReply, { listMaps: async () => [] }).d))!;
+    expect(where.tokens).toBeUndefined();
+  });
+});
+
 describe("checkWhere", () => {
   // protects: AC1, every shown path exists in the stored map; fails_when: an invented path survives; no_claim: the real file still has that content
   it("keeps only paths in the repo's map", () => {

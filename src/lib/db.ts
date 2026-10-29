@@ -165,6 +165,8 @@ export async function initDb(): Promise<void> {
 
   codeMapTableReady = false;
   await ensureCodeMapTable();
+  surfaceEventTableReady = false;
+  await ensureSurfaceEventTable();
 
   await upgradeLegacyData();
 }
@@ -231,6 +233,35 @@ export async function listCodeMaps(userId: number, limit: number): Promise<Store
     ORDER BY synced_at DESC, id DESC LIMIT ${limit}
   `;
   return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, syncedAt: new Date(r.synced_at) }));
+}
+
+// ── Surface events (counts only; see lib/surface-events.ts) ──
+
+let surfaceEventTableReady = false;
+
+/**
+ * One row each time a channel shows the user a capture (see surface-events.ts).
+ * Created on first use as well as by initDb.
+ */
+export async function ensureSurfaceEventTable(): Promise<void> {
+  if (surfaceEventTableReady) return;
+  await sql`
+    CREATE TABLE IF NOT EXISTS surface_events (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      capture_key TEXT NOT NULL,
+      channel TEXT NOT NULL,
+      tokens_in INTEGER,
+      tokens_out INTEGER,
+      model_conf REAL,
+      scorer TEXT,
+      tier TEXT,
+      surfaced_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS surface_events_user_capture ON surface_events (user_id, capture_key)`;
+  await sql`CREATE INDEX IF NOT EXISTS surface_events_surfaced_at ON surface_events (surfaced_at)`;
+  surfaceEventTableReady = true;
 }
 
 /**
@@ -500,6 +531,8 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM apply_events WHERE user_id = ${userId}`;
   await ensureCodeMapTable();
   await sql`DELETE FROM code_maps WHERE user_id = ${userId}`;
+  await ensureSurfaceEventTable();
+  await sql`DELETE FROM surface_events WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 

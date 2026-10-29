@@ -11,7 +11,7 @@
 import type { MapFile, StoredCodeMap } from "./code-map";
 import { listCodeMaps, type User } from "./db";
 import { githubPut, readFile } from "./github";
-import { callLlm, llmSettings } from "./llm";
+import { callLlm, llmSettings, type LlmUsage } from "./llm";
 import type { ExtractedCapture } from "./types";
 import { rankFiles, renderMaps, type RankedFile } from "./where-rank";
 import { evidenceScorer, tierOf, type CaptureText, type Candidate, type Scorer, type Tier } from "./where-score";
@@ -38,6 +38,8 @@ export interface WhereResult {
   scorer: string;
   /** The model's own confidence: logged only, never shown or used. */
   modelConf: number | null;
+  /** Tokens the matching call used, when it was made (null: the provider sent no count). */
+  tokens?: { in: number | null; out: number | null };
 }
 
 /** What the capture card shows: labels only, never a number. */
@@ -51,7 +53,7 @@ export interface WhereCard {
 
 export interface WhereDeps {
   listMaps?: (userId: number) => Promise<StoredCodeMap[]>;
-  complete?: (system: string, prompt: string) => Promise<string>;
+  complete?: (system: string, prompt: string, onUsage?: (usage: LlmUsage) => void) => Promise<string>;
   scorer?: Scorer;
   now?: () => Date;
 }
@@ -160,9 +162,12 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
   const scorer = deps.scorer ?? evidenceScorer;
   const listMaps = deps.listMaps ?? ((id: number) => listCodeMaps(id, MATCH_REPOS));
   const complete =
-    deps.complete ?? ((system: string, text: string) => callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600 }));
+    deps.complete ??
+    ((system: string, text: string, onUsage?: (usage: LlmUsage) => void) =>
+      callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600, onUsage }));
   const now = (deps.now ?? (() => new Date()))();
   const fresh = (m: StoredCodeMap) => now.getTime() - m.syncedAt.getTime() <= FRESH_DAYS * 86_400_000;
+  let tokens: WhereResult["tokens"];
   const none = (noFit: WhereResult["noFit"], modelConf: number | null = null): WhereResult => ({
     repo: null,
     tier: "none",
@@ -171,6 +176,7 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     noFit,
     scorer: scorer.name,
     modelConf,
+    ...(tokens ? { tokens } : {}),
   });
 
   try {
@@ -181,7 +187,10 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
     const ranked = rankFiles(maps, [text.title, text.coreIdea, ...text.takeaways].join("\n"));
     if (!ranked.length) return none({ reason: "no-shared-words" });
 
-    const reply = parseReply(await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture)));
+    let usage = null as LlmUsage | null;
+    const raw = await complete(SYSTEM, prompt(renderMaps(maps, ranked), capture), (u) => { usage = u; });
+    tokens = { in: usage?.tokensIn ?? null, out: usage?.tokensOut ?? null };
+    const reply = parseReply(raw);
     if (reply === undefined) return null;
     const checked = checkWhere(reply, maps);
     const mapOf = (repo: string) => maps.find((m) => m.repo === repo)!;
@@ -221,6 +230,7 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
       map: { date: map.syncedAt.toISOString().slice(0, 10), head7: map.head7 },
       scorer: scorer.name,
       modelConf: checked.modelConf,
+      tokens,
     };
   } catch (err) {
     console.error("[where] match failed:", err instanceof Error ? err.message : err);
