@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "fs";
 import { join, resolve } from "path";
 import { execFileSync } from "child_process";
-import { detectAgents, inspectAgent, type AgentEnv, type Part } from "./setup-agents.js";
+import { detectAgents, inspectAgent, type AgentEnv, type AgentId, type Part } from "./setup-agents.js";
 import { currentRepo } from "./session-start.js";
 import { isNewer } from "./version-check.js";
 import type { MapCache } from "./code-map.js";
@@ -33,6 +33,8 @@ export interface DoctorDeps {
   /** What `xkg session-start` prints in cwd (plain text), or "" when nothing waits. */
   preview: (key: string, cwd: string) => Promise<string>;
   mapCachePath: string;
+  /** Check only these agents (init after --agents); every detected agent when unset. */
+  only?: AgentId[];
 }
 
 const NPX = "npx -y @xmu-labs/xkg@latest";
@@ -73,7 +75,7 @@ export async function runChecks(deps: DoctorDeps): Promise<DoctorCheck[]> {
   }
 
   // ── Agents ──
-  const agents = detectAgents(deps.env);
+  const agents = detectAgents(deps.env).filter((a) => !deps.only || deps.only.includes(a.id));
   if (agents.length === 0) {
     add("Agents", "Agents", "warn", "No coding agent found (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor)");
   }

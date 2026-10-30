@@ -102,6 +102,15 @@ describe("agent checks", () => {
     expect(checks.filter((c) => c.section === "Gemini CLI").map((c) => c.status)).toEqual(["ok", "ok", "ok"]);
   });
 
+  it("checks only the agents named in `only`, as init does after --agents", async () => {
+    mkdirSync(join(home, ".gemini"));
+    mkdirSync(join(home, ".cursor"));
+    setupAgent(AGENTS.find((a) => a.id === "gemini")!, env());
+    const checks = await runChecks(deps({ only: ["gemini"] }));
+    expect(checks.some((c) => c.section === "Cursor")).toBe(false);
+    expect(checks.filter((c) => c.section === "Gemini CLI").every((c) => c.status === "ok")).toBe(true);
+  });
+
   it("reports a partial setup part by part", async () => {
     mkdirSync(join(home, ".cursor"));
     writeFileSync(join(home, ".cursor", "mcp.json"), JSON.stringify({ mcpServers: { xkg: { command: "npx" } } }));

@@ -72,6 +72,18 @@ describe("key", () => {
     expect(text()).toContain("401");
   });
 
+  it("asks before replacing the stored key even when there is nothing else to set up", async () => {
+    const res = await runInit(deps({ key: "new", storedKey: "old", interactive: false }));
+    expect(res.ok).toBe(false);
+    expect(saved).toEqual([]);
+    expect(text()).toContain("--yes");
+
+    answers = ["n"];
+    await runInit(deps({ key: "new", storedKey: "old" }));
+    expect(asked).toHaveLength(1);
+    expect(saved).toEqual([]);
+  });
+
   it("reuses the stored key without saving it again", async () => {
     await runInit(deps({ key: undefined, storedKey: "stored", yes: true }));
     expect(saved).toEqual([]);

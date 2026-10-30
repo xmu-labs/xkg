@@ -69,19 +69,22 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
 
   // ── Plan ──
   const agents = detectAgents(deps.env).filter((a) => !deps.only || deps.only.includes(a.id));
-  if (agents.length === 0 && !deps.inGitRepo) {
-    saveKey();
+  const keyOnly = agents.length === 0 && !deps.inGitRepo;
+  if (keyOnly) {
     log("No coding agent found (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor) and this isn't a git repo, so there's nothing else to set up.");
-    return { ok: true, steps: [] };
+    if (!isNewKey) return { ok: true, steps: [] };
+    log("");
+    log("xkg will save this key in ~/.xkg/config.json, replacing the one there.");
+  } else {
+    log("");
+    log("xkg will set up:");
   }
-  log("");
-  log("xkg will set up:");
   for (const a of agents) {
     log(`  • ${a.name}: MCP server, session-start hook${a.rules ? `, rules block in ~/${a.rules}` : ""}`);
   }
-  if (agents.length === 0) log("  (no coding agent found: Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor)");
+  if (!keyOnly && agents.length === 0) log("  (no coding agent found: Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor)");
   if (deps.inGitRepo) log(`  • This repo${deps.repo ? ` (${deps.repo})` : ""}: git hooks that record applied captures and keep the code map fresh`);
-  log("It keeps your other settings, and leaves anything xkg already set up as it is.");
+  if (!keyOnly) log("It keeps your other settings, and leaves anything xkg already set up as it is.");
   if (agents.some((a) => a.id === "claude")) log("In Claude Code, the session-start hook replaces the older xkg inbox-check hook if you have one.");
 
   if (!deps.yes) {
@@ -99,6 +102,7 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
 
   // ── Write ──
   saveKey();
+  if (keyOnly) return { ok: true, steps: [] };
   let backedUp = 0;
   for (const a of agents) {
     for (const rel of a.files) {

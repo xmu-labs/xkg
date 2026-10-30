@@ -79,7 +79,7 @@ export async function previewSessionStart(key: string): Promise<string> {
   return chunks.join("");
 }
 
-async function doctor(key: string | undefined, json: boolean): Promise<boolean> {
+async function doctor(key: string | undefined, json: boolean, only?: AgentId[]): Promise<boolean> {
   const { runChecks, formatChecks } = await import("./doctor.js");
   const { callMcp } = await import("./hooks.js");
   const { getCurrentVersion, getLatestVersion, getPackageName } = await import("./version-check.js");
@@ -93,6 +93,7 @@ async function doctor(key: string | undefined, json: boolean): Promise<boolean> 
     inbox: (k) => callMcp(k, "list_inbox", { limit: 1 }, 8000),
     preview: previewSessionStart,
     mapCachePath: join(homedir(), ".xkg", "maps.json"),
+    only,
   });
   const ok = !checks.some((c) => c.status === "fail");
   if (json) console.log(JSON.stringify({ ok, checks }, null, 2));
@@ -148,5 +149,5 @@ export async function initCommand(args: string[]): Promise<number> {
     rl?.close();
   }
   console.log("\nChecking the setup (xkg doctor):");
-  return (await doctor(readConfig().key, false)) ? 0 : 1;
+  return (await doctor(readConfig().key, false, parsed.only)) ? 0 : 1;
 }
