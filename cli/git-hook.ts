@@ -3,14 +3,16 @@ import { join, resolve } from "path";
 import { execFileSync } from "child_process";
 import { callMcp, initializeMcp } from "./hooks.js";
 import { syncCodeMap } from "./code-map.js";
+import { currentRepo } from "./session-start.js";
 import { getCurrentVersion } from "./version-check.js";
 
 /**
  * Links commits to the captures they apply, with any coding agent or none.
  * The commit message carries one `xkg-capture: <filename>` trailer per
  * capture; a git post-commit hook reports each one to apply_capture with the
- * commit sha. The server counts a capture and commit once, so an agent that
- * also calls apply_capture itself does not double count.
+ * commit sha and the repo. The server counts a capture and commit once, so an
+ * agent that also calls apply_capture itself does not double count. A
+ * `git revert` of such a commit is reported as reverted, with no agent.
  *
  * The same hooks, plus post-merge and post-checkout, keep the repo's code map
  * (code-map.ts) fresh, so every agent gets it through git alone.
@@ -104,29 +106,60 @@ export function installGitHooks(cwd: string = process.cwd(), version: string = g
 }
 
 /**
- * Runs after each commit: reports every `xkg-capture:` trailer of `sha` to apply_capture,
- * then syncs the code map if it changed. Never throws.
+ * Runs after each commit: reports every `xkg-capture:` trailer of `sha` to apply_capture
+ * (and, for a revert, the trailers of the commit it undid), then syncs the code map if it
+ * changed. Never throws.
  */
 export async function postCommit(apiKey: string, sha: string, cwd: string = process.cwd()): Promise<void> {
-  await reportTrailers(apiKey, sha, cwd);
+  // The map first: the server keeps only an apply's files that are in it, so a file the commit added must be there
   await syncCodeMap(apiKey, cwd);
+  await reportTrailers(apiKey, sha, cwd);
+}
+
+/** Changed files sent per report; the server keeps those in the repo's code map. */
+const MAX_FILES = 20;
+
+/** The commit a `git revert` undid, from git's own message ("This reverts commit <sha>."). */
+export function revertedCommit(message: string): string | null {
+  return message.match(/^This reverts commit ([0-9a-f]{7,40})\b/m)?.[1] ?? null;
 }
 
 async function reportTrailers(apiKey: string, sha: string, cwd: string): Promise<void> {
   try {
     const full = git(cwd, "rev-parse", "--verify", `${sha}^{commit}`);
-    const trailers = captureTrailers(git(cwd, "log", "-1", "--format=%B", full));
-    if (trailers.length === 0) return;
+    const message = git(cwd, "log", "-1", "--format=%B", full);
+    const repo = currentRepo(cwd);
+    const inRepo = repo ? { repo } : {};
+    const reports: Record<string, unknown>[] = [];
 
-    const files = git(cwd, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", full).split("\n").filter(Boolean);
-    const target = files.slice(0, 5).join(", ") + (files.length > 5 ? ` and ${files.length - 5} more` : "");
+    const trailers = captureTrailers(message);
+    if (trailers.length) {
+      // NUL-separated, so paths come as they are and not as git quotes them ("caf\303\251.ts")
+      const files = git(cwd, "diff-tree", "--root", "--no-commit-id", "--name-only", "-r", "-z", full).split("\0").filter(Boolean);
+      const target = files.slice(0, 5).join(", ") + (files.length > 5 ? ` and ${files.length - 5} more` : "");
+      for (const filename of trailers) reports.push({ filename, commit_sha: full, target_file: target, files: files.slice(0, MAX_FILES), ...inRepo });
+    }
+
+    // A revert of a commit that applied captures undoes those applies
+    const undone = revertedCommit(message);
+    if (undone) {
+      try {
+        const original = git(cwd, "rev-parse", "--verify", `${undone}^{commit}`);
+        for (const filename of captureTrailers(git(cwd, "log", "-1", "--format=%B", original))) {
+          reports.push({ filename, commit_sha: original, outcome: "reverted", ...inRepo });
+        }
+      } catch {
+        // The reverted commit isn't in this clone
+      }
+    }
+    if (reports.length === 0) return;
 
     // One session for all of this commit's reports. Without one they still count, as "unknown".
     const session = await initializeMcp(apiKey, HOOK_CLIENT, 10000)
       .then((res) => (res.ok ? res.headers.get("mcp-session-id") : null))
       .catch(() => null);
-    for (const filename of trailers) {
-      await callMcp(apiKey, "apply_capture", { filename, commit_sha: full, target_file: target }, 10000, session).catch(() => null);
+    for (const args of reports) {
+      await callMcp(apiKey, "apply_capture", args, 10000, session).catch(() => null);
     }
   } catch {
     // Never disturb a commit

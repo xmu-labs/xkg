@@ -108,16 +108,23 @@ describe("installPostCommitHook", () => {
 
 describe("postCommit", () => {
   let repo: string;
+  let home: string;
+  const realHome = process.env["HOME"];
   let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     repo = makeRepo();
+    // A repo with an origin syncs its code map, which caches under HOME
+    home = mkdtempSync(join(tmpdir(), "xkg-hook-home-"));
+    process.env["HOME"] = home;
     fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
       Promise.resolve(new Response(JSON.stringify({ result: { content: [{ text: "ok" }] } }), { status: 200 })));
   });
   afterEach(() => {
     fetchSpy.mockRestore();
+    process.env["HOME"] = realHome;
     rmSync(repo, { recursive: true, force: true });
+    rmSync(home, { recursive: true, force: true });
   });
 
   type Sent = { method: string; params: { name: string; arguments: Record<string, unknown>; clientInfo?: { name: string } } };
@@ -140,8 +147,8 @@ describe("postCommit", () => {
     await postCommit("key", sha, repo);
 
     expect(calls()).toEqual([
-      { name: "apply_capture", arguments: { filename: "2026-10-01-backoff.md", commit_sha: sha, target_file: "src/retry.ts" } },
-      { name: "apply_capture", arguments: { filename: "2026-10-02-jitter.md", commit_sha: sha, target_file: "src/retry.ts" } },
+      { name: "apply_capture", arguments: { filename: "2026-10-01-backoff.md", commit_sha: sha, target_file: "src/retry.ts", files: ["src/retry.ts"] } },
+      { name: "apply_capture", arguments: { filename: "2026-10-02-jitter.md", commit_sha: sha, target_file: "src/retry.ts", files: ["src/retry.ts"] } },
     ]);
   });
 
@@ -165,7 +172,62 @@ describe("postCommit", () => {
     fetchSpy.mockImplementationOnce(() => Promise.resolve(new Response("nope", { status: 500 })));
     const sha = commit(repo, "a.ts", "Fix\n\nxkg-capture: a.md");
     await postCommit("key", sha, repo);
-    expect(calls()).toEqual([{ name: "apply_capture", arguments: { filename: "a.md", commit_sha: sha, target_file: "a.ts" } }]);
+    expect(calls()).toEqual([{ name: "apply_capture", arguments: { filename: "a.md", commit_sha: sha, target_file: "a.ts", files: ["a.ts"] } }]);
+  });
+
+  // protects: AC11, the hook's report closes the handoff in this repo; fails_when: the repo or the changed files are left out; no_claim: the server side (handoff-outcomes tests)
+  it("names the repo and every changed file, up to 20", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    git(repo, "remote", "add", "origin", "git@github.com:Acme/App.git");
+    for (let i = 0; i < 22; i++) writeFileSync(join(repo, `f${String(i).padStart(2, "0")}.ts`), "x\n");
+    const sha = commit(repo, "src/a.ts", "Fix\n\nxkg-capture: a.md");
+    await postCommit("key", sha, repo);
+    const args = calls()[0]!.arguments;
+    expect(args.repo).toBe("Acme/App");
+    expect(args.files).toHaveLength(20);
+    expect(args.target_file).toBe("f00.ts, f01.ts, f02.ts, f03.ts, f04.ts and 18 more");
+  });
+
+  // protects: changed files are sent as the literal paths the code map holds; fails_when: a non-ASCII, quoted or space-containing path is sent the way git quotes it ("caf\303\251.ts"); no_claim: none
+  it("sends file names as they are, not as git quotes them", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    writeFileSync(join(repo, "café.ts"), "x\n");
+    writeFileSync(join(repo, 'say "hi".ts'), "x\n");
+    const sha = commit(repo, "with space.ts", "Fix\n\nxkg-capture: a.md");
+    await postCommit("key", sha, repo);
+    expect(calls()[0]!.arguments.files).toEqual(["café.ts", 'say "hi".ts', "with space.ts"]);
+  });
+
+  // protects: AC12, a plain `git revert` of an applied commit is reported, with no agent; fails_when: the revert isn't sent, names the revert's own sha, or is sent as an apply; no_claim: how fast the network answers (the hook runs in the background)
+  it("reports a revert of a commit with a trailer as reverted", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    git(repo, "remote", "add", "origin", "https://github.com/acme/app.git");
+    commit(repo, "base.ts", "Base");
+    const applied = commit(repo, "src/retry.ts", "Retry with backoff\n\nxkg-capture: 2026-10-01-backoff.md");
+    git(repo, "-c", "core.hooksPath=/dev/null", "revert", "--no-edit", applied);
+    const revert = git(repo, "rev-parse", "HEAD");
+    await postCommit("key", revert, repo);
+    expect(calls()).toEqual([
+      { name: "apply_capture", arguments: { filename: "2026-10-01-backoff.md", commit_sha: applied, outcome: "reverted", repo: "acme/app" } },
+    ]);
+  });
+
+  // protects: only reverts of applied commits are reported; fails_when: a revert of a plain commit sends anything; no_claim: none
+  it("ignores a revert of a commit without a trailer", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    commit(repo, "base.ts", "Base");
+    const plain = commit(repo, "a.ts", "Plain");
+    git(repo, "-c", "core.hooksPath=/dev/null", "revert", "--no-edit", plain);
+    await postCommit("key", git(repo, "rev-parse", "HEAD"), repo);
+    expect(calls()).toEqual([]);
+  });
+
+  // protects: a revert message that names a commit this clone doesn't have never stops the commit's own reports; fails_when: it throws or drops the trailer report; no_claim: none
+  it("still reports a commit's trailers when its revert line names an unknown commit", async () => {
+    const { postCommit } = await import("../git-hook.js");
+    const sha = commit(repo, "a.ts", "Redo\n\nThis reverts commit 0123456789abcdef0123456789abcdef01234567.\n\nxkg-capture: a.md");
+    await expect(postCommit("key", sha, repo)).resolves.toBeUndefined();
+    expect(calls().map((c) => [c.arguments.filename, c.arguments.outcome])).toEqual([["a.md", undefined]]);
   });
 
   it("does nothing for a commit without a trailer", async () => {
@@ -175,8 +237,8 @@ describe("postCommit", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  // protects: the map follows the code after each commit; fails_when: a commit without a trailer skips the sync, or the sync runs before the applies are reported; no_claim: the hash gate (code-map tests)
-  it("syncs the code map after reporting, even for a commit without a trailer", async () => {
+  // protects: the map follows the code after each commit, and an apply's new files are in the map before the server keeps only mapped files; fails_when: a commit without a trailer skips the sync, or the apply is reported before the sync; no_claim: the hash gate (code-map tests)
+  it("syncs the code map before reporting, even for a commit without a trailer", async () => {
     const { postCommit } = await import("../git-hook.js");
     const home = mkdtempSync(join(tmpdir(), "xkg-home-"));
     const origHome = process.env["HOME"];
@@ -189,7 +251,7 @@ describe("postCommit", () => {
 
       const applied = commit(repo, "src/b.ts", "Fix\n\nxkg-capture: a.md");
       await postCommit("key", applied, repo);
-      expect(sent().slice(1).map((s) => s.body.method ?? String(s.url))).toEqual(["initialize", "tools/call", "https://xkg.xmu.sh/api/code-map"]);
+      expect(sent().slice(1).map((s) => s.body.method ?? String(s.url))).toEqual(["https://xkg.xmu.sh/api/code-map", "initialize", "tools/call"]);
     } finally {
       process.env["HOME"] = origHome;
       rmSync(home, { recursive: true, force: true });

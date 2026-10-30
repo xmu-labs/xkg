@@ -146,13 +146,16 @@ async function main(): Promise<void> {
     const { readConfig } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
-    if (!apiKey) {
+    const specIdx = args.indexOf("--spec");
+    const spec = specIdx !== -1 ? args[specIdx + 1] : undefined;
+    // A local spec is read from disk, so it needs no key
+    if (!apiKey && !spec) {
       console.error("No API key. Pass --key YOUR_KEY or store it: xkg config set key YOUR_KEY");
       process.exit(1);
     }
     const planIdx = args.indexOf("--plan");
     const plan = planIdx !== -1 ? args[planIdx + 1] : undefined;
-    await runAgent(apiKey, { plan });
+    await runAgent(apiKey ?? "", { plan, spec });
     return;
   }
 
@@ -198,6 +201,7 @@ function printHelp(): void {
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
     xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree
+    xkg agent --spec PATH                                      Apply a handoff spec your agent wrote (.xkg/handoffs/) in an isolated worktree
     xkg help                                                   Show this help
 
     npx -y @xmu-labs/xkg@latest …                              Same CLI, via the published package

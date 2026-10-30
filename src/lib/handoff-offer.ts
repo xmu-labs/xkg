@@ -68,7 +68,10 @@ If they say no or don't answer, carry on; don't ask again this session.
    Add ".xkg/" to .git/info/exclude if it isn't there. Never commit this file, and never send its contents to xkg.
 3. Show the user the claim, the files and the checks, then ask: "Apply this now?"
 4. Yes: make the change in your normal way. Add "xkg-capture: <filename>" to the commit message.
-   Not now, or no: carry on with the user's task.
+   Not now: call apply_capture with the filename, repo and outcome "later". It comes back in 7 days.
+   No: call apply_capture with the filename, repo, outcome "declined" and reason (wrong-files, doesnt-fit or other).
+   Already done: call apply_capture with the filename, repo and outcome "done".
+   Then carry on with the user's task.
 
 ## Template
 # Apply: <capture title>
@@ -139,9 +142,9 @@ export async function handoffOffer(user: OfferUser, repo: string): Promise<strin
 
     const days = await offerDays(user.id, repo, waiting.map((r) => r.capture));
     const expired = expiredRows(waiting, days, today);
-    if (expired.length && (await setHandoffStatus(user.github_token, user.github_repo, expired, "expired"))) {
-      await Promise.all(expired.map((r) => recordHandoffEvent(user.id, r.capture, repo, "expired")));
-    }
+    // Only rows this call expired are counted: another session may have expired (or answered) them first
+    const set = expired.length ? await setHandoffStatus(user.github_token, user.github_repo, expired, "expired", today) : null;
+    await Promise.all((set ?? []).map((r) => recordHandoffEvent(user.id, r.capture, repo, "expired")));
     waiting = waiting.filter((r) => !expired.includes(r));
 
     // Captures deleted since they were queued are left out of the list and the

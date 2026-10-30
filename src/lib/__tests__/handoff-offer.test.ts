@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "fs";
+import { join } from "path";
 import type { HandoffRow } from "../handoffs";
 import { offerable, formatOffer, expiredRows, HANDOFF_GUIDE } from "../handoff-offer";
 
@@ -101,9 +103,26 @@ describe("HANDOFF_GUIDE", () => {
     expect(HANDOFF_GUIDE).toContain("xkg-capture: <filename>");
   });
 
-  // protects: until outcomes are recorded, "not now" or "no" must not mark a capture applied; fails_when: the guide tells the agent to call apply_capture for a refusal; no_claim: none
-  it("never asks for apply_capture on a refusal", () => {
-    const refusal = HANDOFF_GUIDE.split("\n").find((l) => /not now|no:/i.test(l)) ?? "";
-    expect(refusal).not.toContain("apply_capture");
+  // protects: AC10, "not now" and "no" are recorded as answers, never as an apply; fails_when: a refusal is sent without its outcome, or no reason is asked for; no_claim: agents follow it
+  it("records a refusal as later or declined, with a reason", () => {
+    const line = (start: string) => HANDOFF_GUIDE.split("\n").find((l) => l.trim().startsWith(start)) ?? "";
+    expect(line("Not now:")).toMatch(/apply_capture[^.]*outcome "later"/);
+    expect(line("No:")).toMatch(/apply_capture[^.]*outcome "declined"[^.]*reason \(wrong-files, doesnt-fit or other\)/);
+    expect(line("Already done:")).toMatch(/outcome "done"/);
+    for (const start of ["Not now:", "No:", "Already done:"]) expect(line(start)).toContain("repo");
+  });
+});
+
+describe("handoff code", () => {
+  const FILES = [
+    "src/lib/handoffs.ts", "src/lib/handoff-offer.ts", "src/lib/handoff-outcomes.ts", "src/lib/handoff-events.ts",
+    "src/app/api/handoffs/route.ts", "src/components/HandOff.tsx",
+  ];
+
+  // protects: AC17, the handoff works the same for every agent and never touches an agent's own config; fails_when: one of these files names an agent's config folder; no_claim: code outside these files
+  it("never reads or writes an agent's config folder", () => {
+    for (const file of FILES) {
+      expect(readFileSync(join(process.cwd(), file), "utf-8"), file).not.toMatch(/~?\/?\.(claude|codex|gemini|copilot|cursor)\b/);
+    }
   });
 });

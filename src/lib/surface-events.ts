@@ -57,7 +57,8 @@ export async function recordWhereEvent(userId: number, filename: string, where: 
 export type SourceBuckets = { cardOnly: number; briefingOnly: number; both: number; other: number; none: number };
 export type SourceWeek = { userId: number; weekStart: string; sources: SourceBuckets };
 
-function windowStart(today: string, weeks: number): string {
+/** The Monday that starts the oldest of the last `weeks` weeks up to `today`. */
+export function windowStart(today: string, weeks: number): string {
   const from = new Date(`${weekStart(today)}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - 7 * (weeks - 1));
   return from.toISOString().slice(0, 10);

@@ -13,6 +13,8 @@ import {
   excludePlanFiles,
   PLAN_FILE,
   AGENT_PROMPT,
+  SPEC_PROMPT,
+  readSpec,
 } from "../agent.js";
 
 const LIST_PLANS = `3 plan(s):
@@ -190,5 +192,37 @@ describe("AGENT_PROMPT", () => {
   it("points the agent at the plan file and forbids committing it", () => {
     expect(AGENT_PROMPT).toContain(PLAN_FILE);
     expect(AGENT_PROMPT).toMatch(/never commit/);
+  });
+});
+
+describe("readSpec", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "xkg-spec-")); });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  // protects: `xkg agent --spec` runs the spec the user's agent wrote, read from disk, never from xkg; fails_when: a relative path isn't read from the repo; no_claim: the worktree run
+  it("reads a spec by its path in the repo", () => {
+    writeFileSync(join(dir, "s.md"), "# Apply: Retry\n## Verification Checklist\n- [ ] npm test passes\n");
+    expect(readSpec("s.md", dir)).toContain("# Apply: Retry");
+    expect(parseChecklist(readSpec("s.md", dir))).toEqual(["npm test passes"]);
+  });
+
+  // protects: a missing or empty spec stops the run before a worktree is made; fails_when: it returns empty text; no_claim: none
+  it("refuses a missing or empty file", () => {
+    writeFileSync(join(dir, "empty.md"), "  \n");
+    expect(() => readSpec("empty.md", dir)).toThrow(/empty/);
+    expect(() => readSpec("nope.md", dir)).toThrow();
+  });
+});
+
+describe("SPEC_PROMPT", () => {
+  // protects: the agent applies the spec within its own limits and links the commit to the capture; fails_when: the checklist, the trailer or the privacy rule is missing; no_claim: the agent obeys it
+  it("points the agent at the spec's files, checks, trailer and privacy", () => {
+    expect(SPEC_PROMPT).toContain(PLAN_FILE);
+    expect(SPEC_PROMPT).toMatch(/Files and changes/);
+    expect(SPEC_PROMPT).toMatch(/Not doing/);
+    expect(SPEC_PROMPT).toMatch(/Verification Checklist/);
+    expect(SPEC_PROMPT).toContain("xkg-capture: <filename>");
+    expect(SPEC_PROMPT).toMatch(/never commit, push, or copy it/);
   });
 });

@@ -9,7 +9,9 @@ import { NextRequest } from "next/server";
 const applyGateStats = vi.fn();
 const applySourceStats = vi.fn();
 const matchingStats = vi.fn();
+const handoffStats = vi.fn();
 vi.mock("@/lib/apply-events", () => ({ applyGateStats: (...a: unknown[]) => applyGateStats(...a) }));
+vi.mock("@/lib/handoff-events", () => ({ handoffStats: (...a: unknown[]) => handoffStats(...a) }));
 vi.mock("@/lib/surface-events", () => ({
   applySourceStats: (...a: unknown[]) => applySourceStats(...a),
   matchingStats: (...a: unknown[]) => matchingStats(...a),
@@ -35,6 +37,8 @@ beforeEach(() => {
   applySourceStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", sources: { cardOnly: 1, briefingOnly: 0, both: 0, other: 0, none: 0 } }]);
   matchingStats.mockReset();
   matchingStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", matches: 3, suggestions: 2, medianTokens: 3443 }]);
+  handoffStats.mockReset();
+  handoffStats.mockResolvedValue([]);
 });
 
 describe("adminAuthorized", () => {
@@ -72,6 +76,15 @@ describe("GET /api/admin/apply-stats", () => {
     expect(body.matching).toEqual([{ userId: 7, weekStart: "2026-10-26", matches: 3, suggestions: 2, medianTokens: 3443 }]);
     expect(applySourceStats).toHaveBeenCalledWith(expect.any(String), 2);
     expect(matchingStats).toHaveBeenCalledWith(expect.any(String), 2);
+  });
+
+  // protects: the handoff numbers reach the operator, per user and week; fails_when: the handoffs bucket is missing or read for another window; no_claim: the numbers (see handoff-events tests)
+  it("adds each week's handoffs", async () => {
+    const week = { userId: 7, weekStart: "2026-10-26", counts: { offered: 2, applied: 1 } };
+    handoffStats.mockResolvedValue([week]);
+    const body = await (await GET(get("?weeks=3", "admin-test-secret"))).json();
+    expect(body.handoffs).toEqual([week]);
+    expect(handoffStats).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), 3);
   });
 
   it("takes ?weeks= and keeps it between 1 and 52", async () => {

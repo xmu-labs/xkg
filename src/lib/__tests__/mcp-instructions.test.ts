@@ -54,6 +54,12 @@ describe("MCP server instructions", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/starts with captures waiting, ask the user the question it gives/i);
   });
 
+  // protects: answers reach xkg from agents that only read the instructions; fails_when: a refusal isn't recorded, or reads as an apply; no_claim: agents follow it
+  it("has the agent record a turned-down capture as declined or later", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/call `apply_capture` with the filename, the commit sha, the repo, and one line on why/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/turns a capture down[^.]*outcome declined[^.]*later/);
+  });
+
   it("stays short enough to sit in every agent's system prompt", () => {
     expect(SERVER_INSTRUCTIONS.length).toBeLessThan(2000);
   });
@@ -79,5 +85,33 @@ describe("briefing tool schema", () => {
     const schema = briefing.inputSchema as { properties: Record<string, unknown>; required?: string[] };
     expect(schema.properties).toHaveProperty("repo");
     expect(schema.required ?? []).not.toContain("project_context");
+  });
+});
+
+describe("apply_capture tool schema", () => {
+  const apply = TOOLS.find((t) => t.name === "apply_capture")!;
+  const schema = apply.inputSchema as unknown as {
+    properties: Record<string, { type: string; description: string; enum?: readonly string[]; items?: { type: string } }>;
+    required?: readonly string[];
+  };
+
+  // protects: every answer to "Apply this now?" has a field, with fixed values; fails_when: an outcome, reason or confidence value is missing or free text; no_claim: none
+  it("takes the outcome, repo, reason, confidence and changed files", () => {
+    expect(schema.properties.outcome!.description).toMatch(/applied[\s\S]*declined[\s\S]*done[\s\S]*later[\s\S]*reverted/);
+    expect(schema.properties.repo!.type).toBe("string");
+    expect(schema.properties.reason!.enum).toEqual(["wrong-files", "doesnt-fit", "other"]);
+    expect(schema.properties.confidence!.enum).toEqual(["high", "medium", "low"]);
+    expect(schema.properties.files).toMatchObject({ type: "array", items: { type: "string" } });
+    expect(schema.required).toEqual(["filename"]);
+  });
+
+  // protects: AC1, no field can carry the spec, code or a diff; fails_when: one is added; no_claim: what an agent puts in a short note
+  it("has no field for a spec, code or a diff", () => {
+    expect(Object.keys(schema.properties).filter((k) => /spec|code|diff|patch|content|body/i.test(k))).toEqual([]);
+  });
+
+  // protects: a refusal is never recorded as an apply by an agent that reads only the tool list; fails_when: the description doesn't say so; no_claim: none
+  it("says a refusal isn't an apply", () => {
+    expect(apply.description).toMatch(/declined[^.]*never counts? as an apply/i);
   });
 });
