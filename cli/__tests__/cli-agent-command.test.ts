@@ -1,8 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 /**
- * `xkg agent` runs a saved plan with the user's own coding agent. It used to be
- * called `xkg kos`; the old name still works for now and says it was renamed.
+ * `xkg agent` runs a saved plan with the user's own coding agent.
  */
 
 const runAgent = vi.fn(async () => {});
@@ -34,18 +33,17 @@ afterEach(() => {
 });
 
 describe("xkg agent", () => {
-  // protects: AC1, the new name runs the plan exactly as kos did; fails_when: `agent` falls through to opening the browser or drops --plan; no_claim: what the agent does (agent.test.ts)
+  // protects: the command runs the plan; fails_when: `agent` falls through to opening the browser or drops --plan; no_claim: what the agent does (agent.test.ts)
   it("runs the plan with the given key and plan file", async () => {
     await cli("agent", "--key", "k1", "--plan", "2026-06-05-plan-x.md");
     expect(runAgent).toHaveBeenCalledWith("k1", { plan: "2026-06-05-plan-x.md" });
     expect(errors).toEqual([]);
   });
 
-  // protects: AC2, the old name still works and says it was renamed; fails_when: `kos` stops working or runs silently; no_claim: when the alias is removed
-  it("still runs under the old name kos, with a one-line note", async () => {
+  // protects: the old name kos is gone; fails_when: `kos` still runs the agent; no_claim: what an unknown command prints
+  it("no longer runs under the old name kos", async () => {
     await cli("kos", "--key", "k1");
-    expect(runAgent).toHaveBeenCalledWith("k1", { plan: undefined });
-    expect(errors).toEqual(["`xkg kos` is now `xkg agent`. The old name will stop working in a later release."]);
+    expect(runAgent).not.toHaveBeenCalled();
   });
 
   // protects: a local handoff spec runs without a key, since nothing is fetched from xkg; fails_when: --spec is dropped or a key is demanded; no_claim: the run (agent.test.ts)
@@ -57,7 +55,7 @@ describe("xkg agent", () => {
     expect(logs.join("\n")).toContain("xkg agent --spec PATH");
   });
 
-  // protects: AC3, help names the new command only; fails_when: help still says kos; no_claim: the rest of the help text
+  // protects: help names the command; fails_when: help still says kos; no_claim: the rest of the help text
   it("is what help shows", async () => {
     await cli("help");
     const help = logs.join("\n");
