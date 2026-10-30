@@ -8,6 +8,7 @@ import { consumeQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
 import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
 import { recordWhereEvent } from "@/lib/surface-events";
+import { queueStrongFit } from "@/lib/handoffs";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -139,11 +140,14 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
 
   const where = await matching;
   const card = where ? whereCard(where) : null;
+  let waitingIn: string | null = null;
   if (where) {
     await Promise.all([
       writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
       recordWhereEvent(user.id, `inbox/${filename}`, where, card !== null),
     ]);
+    // A Strong fit waits for the next coding session in that repo.
+    if (card) waitingIn = await queueStrongFit(user, `inbox/${filename}`, where, date);
   }
 
   return NextResponse.json({
@@ -151,5 +155,6 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     filename,
     fileUrl: captureFileUrl(user.github_repo, filename),
     ...(card ? { where: card } : {}),
+    ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
   });
 }
