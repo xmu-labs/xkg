@@ -143,9 +143,8 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "agent" || command === "kos") {
-    const { runAgent, RENAMED_NOTE } = await import("./agent.js");
-    if (command === "kos") console.error(RENAMED_NOTE);
+  if (command === "agent") {
+    const { runAgent } = await import("./agent.js");
     const { readConfig } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;

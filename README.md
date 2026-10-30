@@ -297,7 +297,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    npx -y @xmu-labs/xkg@latest agent --key YOUR_API_KEY
    ```
 
-   `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes. Older CLI versions call it `xkg kos`, and that name still works for now.
+   `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "codex exec"
