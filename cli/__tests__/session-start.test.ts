@@ -63,7 +63,7 @@ describe("sessionStart", () => {
     await captureStdout(() => sessionStart("key", { repo: null }));
     expect(sent()).toEqual([
       { method: "initialize", name: "xkg-session-start", session: undefined },
-      { method: "tools/call", name: "list_inbox", session: "start-session" },
+      { method: "tools/call", name: "search", session: "start-session" },
     ]);
   });
 

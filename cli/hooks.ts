@@ -303,6 +303,9 @@ export async function callMcp(
   return data.result?.content?.[0]?.text ?? null;
 }
 
+/** vault_scan's cutoff, kept now that the hook asks briefing. */
+const VAULT_MIN_SCORE = 70;
+
 export async function vaultCheck(apiKey: string): Promise<void> {
   try {
     const inputJson = await readStdin();
@@ -326,12 +329,16 @@ export async function vaultCheck(apiKey: string): Promise<void> {
     const activityContext = `Editing file: ${filePath}\nProject context:\n${projectCtx}`;
     const sessionSurfaced = readSessionSurfaced();
 
-    const text = await callMcp(apiKey, "vault_scan", {
-      activity_context: activityContext,
-      session_surfaced: sessionSurfaced,
+    const text = await callMcp(apiKey, "briefing", {
+      task: activityContext,
+      files: [filePath],
+      exclude: sessionSurfaced,
+      limit: 1,
     }, 8000);
 
-    if (!text?.trim()) return;
+    // The vault is ambient: only a strong fit interrupts an edit.
+    const score = parseInt(text?.match(/\(relevance: (\d+)%\)/)?.[1] ?? "0", 10);
+    if (!text?.trim() || score < VAULT_MIN_SCORE) return;
 
     // Track surfaced filenames to avoid repetition within the session
     const filenameMatches = text.match(/(?:inbox|applied|archived)\/[\w-]+\.md/g) ?? [];
@@ -378,7 +385,7 @@ export async function inboxCheck(
         const filenames = applyNow.map((s) => `'${s.filename}'`).join(", ");
         process.stdout.write(
           `\n---\nxkg: ${applyNow.length} insight${applyNow.length === 1 ? "" : "s"} ready to apply now.\n` +
-          `Run generate_plan with selected_captures: [${filenames}] to get a full implementation plan.\n` +
+          `Read ${applyNow.length === 1 ? "it" : "them"} with read_capture: ${filenames}.\n` +
           `When you commit a change that applies one, add a trailer per capture to the commit message (e.g. xkg-capture: ${applyNow[0]!.filename}), ` +
           `then call apply_capture with its filename and the commit sha (git rev-parse HEAD). xkg counts each capture and commit once.\n`,
         );
@@ -386,18 +393,18 @@ export async function inboxCheck(
       return;
     }
 
-    // Default: fast count via list_inbox (no LLM call)
-    const text = await callMcp(apiKey, "list_inbox", {});
+    // Default: fast count via search (no LLM call)
+    const text = await callMcp(apiKey, "search", { status: "inbox", limit: 1 });
     if (!text) return;
 
-    // list_inbox returns "N capture(s) in inbox:" or "Inbox is empty."
+    // search returns "N capture(s):" or "No captures."
     const match = text.match(/^(\d+)\s+capture/);
     if (!match) return;
 
     const count = parseInt(match[1] as string, 10);
     if (count > 0) {
       process.stdout.write(
-        `xkg: ${count} capture${count === 1 ? "" : "s"} in inbox — run list_inbox to review\n`,
+        `xkg: ${count} capture${count === 1 ? "" : "s"} in inbox — call search with status inbox to review\n`,
       );
     }
   } catch {
