@@ -34,8 +34,15 @@ describe("MCP server instructions", () => {
 
   it("gives setup commands the published CLI actually has", () => {
     const commands = [...SERVER_INSTRUCTIONS.matchAll(/npx -y @xmu-labs\/xkg@latest ([a-z-]+)/g)].map((m) => m[1]!);
-    expect(commands).toEqual(expect.arrayContaining(["setup-git-hook", "setup-hooks"]));
+    expect(commands).toEqual(expect.arrayContaining(["setup-git-hook", "init"]));
     for (const cmd of commands) expect(cliSource).toContain(`command === "${cmd}"`);
+  });
+
+  // protects: setup works the same for every coding agent; fails_when: a setup step is for one agent only; no_claim: init supports every agent
+  it("sends the user to init for the session-start hook instead of a Claude-only command", () => {
+    expect(SERVER_INSTRUCTIONS).not.toMatch(/Claude Code only/i);
+    expect(SERVER_INSTRUCTIONS).not.toContain("setup-hooks");
+    expect(SERVER_INSTRUCTIONS).toMatch(/run `npx -y @xmu-labs\/xkg@latest init` in their own terminal/);
   });
 
   it("has the agent check briefing candidates against the code, since xkg never sees it", () => {

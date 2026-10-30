@@ -19,6 +19,6 @@ When to use it:
 
 One-time setup, only if you can run shell commands in the user's git repo. Ask the user first, and don't ask again in this session if they say no:
 - Git hook, so applies are recorded even when a call is missed: run \`npx -y @xmu-labs/xkg@latest setup-git-hook\` in the repo. If it asks for a key, ask the user for their xkg API key (xkg.xmu.sh, Settings) and add --key <key>. Skip this if .git/hooks/post-commit already has an "# xkg" line.
-- In Claude Code only: \`npx -y @xmu-labs/xkg@latest setup-hooks --key <key> --briefing --vault\` adds a briefing at session start and surfaces captures while files are edited.
+- Session-start hook, so captures waiting for this repo are offered at the start of every session: ask the user to run \`npx -y @xmu-labs/xkg@latest init\` in their own terminal once. It signs them in through the browser and sets up every coding agent on the machine.
 
 In chat apps there is no repo: skip setup and just use the tools.`;
