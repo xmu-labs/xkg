@@ -9,6 +9,8 @@ const sessionStart = vi.fn(async () => {});
 vi.mock("../session-start.js", () => ({ sessionStart: (...a: unknown[]) => sessionStart(...(a as [])) }));
 let storedKey: string | undefined;
 vi.mock("../config.js", () => ({ readConfig: () => ({ key: storedKey }) }));
+let hookInput = "";
+vi.mock("../hooks.js", () => ({ readStdin: async () => hookInput }));
 
 let logs: string[] = [];
 const argv = process.argv;
@@ -24,6 +26,7 @@ async function cli(...args: string[]) {
 beforeEach(() => {
   sessionStart.mockClear();
   storedKey = undefined;
+  hookInput = "";
   logs = [];
   vi.spyOn(console, "log").mockImplementation((...a: unknown[]) => { logs.push(a.join(" ")); });
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -37,13 +40,21 @@ describe("xkg session-start", () => {
   it("uses the stored key and passes the agent name", async () => {
     storedKey = "stored";
     await cli("session-start", "--agent", "cursor");
-    expect(sessionStart).toHaveBeenCalledWith("stored", { agent: "cursor" });
+    expect(sessionStart).toHaveBeenCalledWith("stored", { agent: "cursor", input: "" });
   });
 
   it("prefers --key over the stored key", async () => {
     storedKey = "stored";
     await cli("session-start", "--key", "k1");
-    expect(sessionStart).toHaveBeenCalledWith("k1", { agent: undefined });
+    expect(sessionStart).toHaveBeenCalledWith("k1", { agent: undefined, input: "" });
+  });
+
+  // protects: the hook's stdin reaches session-start, so a continued session can be told apart; fails_when: the command drops what the agent sent; no_claim: real pipes (QA)
+  it("passes what the agent's hook sent on stdin", async () => {
+    storedKey = "stored";
+    hookInput = '{"source":"compact"}';
+    await cli("session-start", "--agent", "codex");
+    expect(sessionStart).toHaveBeenCalledWith("stored", { agent: "codex", input: '{"source":"compact"}' });
   });
 
   it("does nothing, and doesn't open the browser, without a key", async () => {
