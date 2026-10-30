@@ -11,6 +11,18 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "init") {
+    const { initCommand } = await import("./setup-command.js");
+    process.exitCode = await initCommand(args.slice(1));
+    return;
+  }
+
+  if (command === "doctor") {
+    const { doctorCommand } = await import("./setup-command.js");
+    process.exitCode = await doctorCommand(args.slice(1));
+    return;
+  }
+
   if (command === "serve-mcp") {
     const { serveMcp } = await import("./mcp-server.js");
     await serveMcp();
@@ -192,7 +204,13 @@ function printHelp(): void {
 
   Usage:
     xkg                                                        Open xkg in your browser
-    xkg serve-mcp --key KEY                                    Start the MCP server for your AI worker
+    xkg init [--key KEY] [--yes] [--agents a,b]                Set up xkg in every coding agent it finds (Claude Code, Codex,
+                                                               Gemini CLI, GitHub Copilot, Cursor): MCP server, session-start hook,
+                                                               rules block; plus the git hooks in this repo. Asks once, backs up
+                                                               each file to ~/.xkg/backups/, and prints how to undo
+    xkg doctor [--json]                                        Check the key, server, knowledge repo, each agent and this repo,
+                                                               with the command that fixes each problem. Changes nothing
+    xkg serve-mcp [--key KEY]                                  Start the MCP server for your AI worker (key from ~/.xkg/config.json)
     xkg setup-hooks --key KEY                                  Install inbox count hook (fast)
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
@@ -229,7 +247,8 @@ function printHelp(): void {
     1. Run: npx @xmu-labs/xkg
     2. Sign in with GitHub (creates your knowledge repo automatically)
     3. Set a PIN for quick mobile access
-    4. Start capturing!
+    4. Connect your coding agents: npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY
+    5. Start capturing!
 
   Connect to Claude Code:
     claude mcp add xkg -- npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY

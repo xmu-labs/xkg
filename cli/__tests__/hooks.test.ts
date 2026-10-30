@@ -174,6 +174,14 @@ describe("setupHooks", () => {
     expect(commands(readSettings(), "SessionStart")).toEqual([current, other]);
   });
 
+  it("skipIfExists: adds no inbox hook when a session-start hook already offers captures", async () => {
+    const start = "npx -y @xmu-labs/xkg@latest session-start --agent claude";
+    writeSettings({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: start }] }] } });
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("k", { silent: true, skipIfExists: true });
+    expect(commands(readSettings(), "SessionStart")).toEqual([start]);
+  });
+
   it("skipIfExists: does not treat other packages named like xkg as ours", async () => {
     const scoped = "npx -y @acme/xkg@latest inbox-check --key theirs";
     const prefixed = "npx -y my-xkg inbox-check --key theirs";
