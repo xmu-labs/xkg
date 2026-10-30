@@ -137,7 +137,7 @@ describe("formatBriefing", () => {
     expect(text).toMatch(/ask before changing anything/i);
     expect(text).toContain("xkg-capture: <filename>");
     expect(text).toContain("`apply_capture`");
-    expect(text).toContain("call `search_captures` with no query");
+    expect(text).toContain("call `search` with no query");
   });
 
   it("lists candidates in rank order with filename, fit, reason, main idea and key points", () => {
@@ -156,9 +156,9 @@ describe("formatBriefing", () => {
   });
 
   it("points to the full capture list when nothing fits", () => {
-    // search_captures lists inbox, applied and archived captures; list_inbox only the inbox
+    // search lists inbox, applied and archived captures
     expect(formatBriefing([], "")).toBe(
-      "xkg briefing: no capture looks related to this repo's recent work. To check every capture, call `search_captures` with no query and page through the results.",
+      "xkg briefing: no capture looks related to this repo's recent work. To check every capture, call `search` with no query and page through the results.",
     );
   });
 
@@ -167,7 +167,7 @@ describe("formatBriefing", () => {
     const long = formatBriefing([FEWER], "r".repeat(3000));
     const rules = long.slice(long.indexOf("## Rules\n") + "## Rules\n".length);
     expect(rules.length).toBeLessThan(1600);
-    expect(rules).toContain("call `get_rules` for the rest");
+    expect(rules).toContain("call `read_capture` with RULES.md for the rest");
   });
 
   it("leaves the rules out when there are none", () => {

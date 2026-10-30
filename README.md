@@ -308,7 +308,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
 2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
-3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. The worker can name the files the plan should cover; xkg passes on the paths only, since it never reads your code, and your worker checks each step against the code. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
+3. **Plan** — The handoff spec from step 1 is the plan: your agent writes it after reading the files. Plans that older versions saved to `plans/` in your knowledge repo still run with `xkg agent --plan`.
 
 4. **Execute** — Hand the plan to your worker in the current session, or run it in an isolated git worktree:
 
@@ -395,22 +395,19 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | Tool | What it does |
 | --- | --- |
 | `capture` | Save new knowledge from pasted text or a URL |
-| `list_inbox` | List captures waiting for review |
-| `search_captures` | Keyword search across your captures |
-| `read_capture` | Read a capture in full |
-| `recall` | Find relevant context from a description of your task |
-| `briefing` | Get captures that may fit the current project, for the agent to check against the code |
-| `generate_plan` | Turn selected captures into an implementation plan |
-| `list_plans` | List or read saved plans |
+| `briefing` | At session start, captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting for the repo. Mid-task, with `task` (and optional `files`), the captures that fit what the agent is doing now |
+| `search` | Find captures by words, tag, status (`inbox`, `applied`, `archived`) or date, or list them all |
+| `read_capture` | Read a capture in full (or `RULES.md`) |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
-| `apply_stats` | Captures applied per week, and how many came with a commit |
 | `archive_capture` | Archive a capture |
 | `delete_capture` | Delete a capture |
-| `apply_to_context` | Get file-level suggestions for the current task |
-| `synthesize` | Combine related captures into reusable rules |
-| `get_rules` | Retrieve those rules |
 | `curate` | Review and clean up captures |
-| `vault_scan` | Find relevant context for what you're about to edit |
+| `synthesize` | Combine related captures into reusable rules |
+| `apply_stats` | Captures applied per week, and how many came with a commit |
+
+The last five are your own decisions and reports, not agent work. They stay listed until the web app has them.
+
+Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 
 ## CLI
 

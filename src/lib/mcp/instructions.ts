@@ -12,8 +12,8 @@
 export const SERVER_INSTRUCTIONS = `xkg holds the user's outside knowledge (articles, docs, notes, ideas) as checked captures in their own GitHub repo. Use it to apply that knowledge in their code.
 
 When to use it:
-- At the start of a coding session in a repo, call \`briefing\` with repo set to the origin's owner/name, and the repo name, branch, and last few commit messages as project_context. If it starts with captures waiting, ask the user the question it gives. Mid-task, call \`recall\` with a short description of the task.
-- xkg sees only file and function names from repos the user syncs, never code, so a briefing gives candidates, not answers: check each candidate against the code and never name a file you have not opened. To look through every capture, call \`search_captures\` with no query and page through the results.
+- At the start of a coding session in a repo, call \`briefing\` with repo set to the origin's owner/name, and the repo name, branch, and last few commit messages as project_context. If it starts with captures waiting, ask the user the question it gives. Mid-task, call \`briefing\` with task set to a short description of what you are doing.
+- xkg sees only file and function names from repos the user syncs, never code, so a briefing gives candidates, not answers: check each candidate against the code and never name a file you have not opened. To look through every capture, call \`search\` with no query and page through the results.
 - When the user shares something worth keeping (a link, notes, an idea), call \`capture\`.
 - When you commit a change that used a capture, include a line \`xkg-capture: <filename>\` in that commit message. After the commit, call \`apply_capture\` with the filename, the commit sha, the repo, and one line on why. If the user turns a capture down, call it with outcome declined, or later for not now.
 

@@ -1085,7 +1085,7 @@ export function pageFooter(
  * the result deterministic for pagination.
  *
  * An empty/whitespace query is enumeration mode: every row is returned in
- * input order, letting search_captures double as a "list all" tool.
+ * input order, letting search double as a "list all" tool.
  */
 export function matchIndexRows(rows: string[], query: string): string[] {
   const tokens = query.toLowerCase().split(/\s+/).map((t) => t.trim()).filter(Boolean);

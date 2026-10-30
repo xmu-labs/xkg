@@ -41,7 +41,12 @@ describe("MCP server instructions", () => {
   it("has the agent check briefing candidates against the code, since xkg never sees it", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/check each candidate against the code/i);
     expect(SERVER_INSTRUCTIONS).toMatch(/never name a file you have not opened/i);
-    expect(SERVER_INSTRUCTIONS).toContain("call `search_captures` with no query");
+    expect(SERVER_INSTRUCTIONS).toContain("call `search` with no query");
+  });
+
+  // protects: mid-task lookups go through a listed tool; fails_when: the instructions send the agent to recall or another hidden name; no_claim: agents follow it
+  it("has the agent call briefing with a task mid-task", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/Mid-task, call `briefing` with task/);
   });
 
   it("has the agent ask the user before changing their machine", () => {

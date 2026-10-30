@@ -1,18 +1,20 @@
 /**
- * MCP tool schemas — the wire contract advertised by `tools/list`.
+ * MCP tool schemas: the wire contract advertised by `tools/list`.
  *
  * Kept apart from the handlers so the shape a client sees can be reviewed
  * without reading the implementations, and so route.ts stays transport-only.
- * The names here are the single source of truth: `ToolName` is derived from
- * this array, and lib/mcp/handlers keys its registry by that union, so a tool
- * added here without a handler (or vice versa) is a compile error.
+ * Every connected agent loads this list into its context in every session, so
+ * it is kept short: five tools for agent work, plus, until the web app has
+ * them, the human actions. `ToolName` covers the listed tools and the hidden
+ * names below, and lib/mcp/handlers keys its registry by that union, so a name
+ * without a handler (or vice versa) is a compile error.
  */
 
-export const TOOLS = [
+/** The tools for agent work. */
+export const CORE_TOOLS = [
   {
     name: "capture",
-    description:
-      "Capture a resource (article, thread, notes, transcript) into the knowledge hub. Extracts insights, tags them, and commits to the knowledge repo.",
+    description: "Save outside knowledge (an article, thread, notes or idea) to the user's xkg repo, with checked insights and where in their code it may apply.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -23,74 +25,76 @@ export const TOOLS = [
     },
   },
   {
-    name: "search_captures",
-    description: "Search the knowledge hub for captures. The query is tokenized on whitespace and matched with OR semantics (a capture surfaces if it contains any term), ranked by how many terms it matches, with a bonus for an exact phrase match — so a single unknown word no longer zeroes the whole query. Omit query (or pass an empty string) to list ALL captures. Supports tag/date filtering and offset/limit pagination; the response footer reports the total and next offset.",
+    name: "briefing",
+    description: "Call at the start of a coding session, and mid-task with task. Returns captures that may fit as candidates: xkg has not seen the code, so check each one against the code before you suggest it.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        query: { type: "string", description: "Search terms (whitespace-separated, OR-matched). Omit or leave empty to list all captures." },
-        tag: { type: "string", description: "Filter by tag (e.g. 'ai-agents', 'pricing')" },
-        since: { type: "string", description: "Only include captures dated on/after this date (inclusive, 'YYYY-MM-DD')" },
-        until: { type: "string", description: "Only include captures dated on/before this date (inclusive, 'YYYY-MM-DD')" },
-        offset: { type: "number", description: "Number of matches to skip for pagination (default 0)" },
-        limit: { type: "number", description: "Max matches to return (default 20, max 50)" },
+        repo: { type: "string", description: "owner/name of the origin remote. Captures waiting for it come first, with the question to ask the user." },
+        project_context: { type: "string", description: "At session start: repo name, branch, last few commit messages" },
+        task: { type: "string", description: "Mid-task: what you are doing now. Returns the best fits with scores." },
+        files: { type: "array" as const, items: { type: "string" }, description: "Paths you are working on (names only, never code)" },
+        exclude: { type: "array" as const, items: { type: "string" }, description: "Captures already shown this session" },
+        limit: { type: "number", description: "With task: max captures (default 5, max 10)" },
+        min_score: { type: "number", description: "With task: drop fits under this (0-1)" },
+        include_rules: { type: "boolean", description: "Add the user's rules (default true at session start, false with task)" },
       },
     },
   },
   {
-    name: "list_inbox",
-    description: "List unprocessed captures in the inbox with summaries (title, type, tags, core idea). Supports date filtering and pagination — page through the entire inbox with offset/limit; the response footer reports the total and the next offset.",
+    name: "search",
+    description: "Find captures by words, tag, status or date, or list them all (omit query). Words are OR-matched and ranked. The footer gives the total and the next offset.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        since: { type: "string", description: "Only include captures dated on/after this date (inclusive, 'YYYY-MM-DD')" },
-        until: { type: "string", description: "Only include captures dated on/before this date (inclusive, 'YYYY-MM-DD')" },
-        offset: { type: "number", description: "Number of captures to skip for pagination (default 0)" },
-        limit: { type: "number", description: "Max captures to summarize (default 10, max 50)" },
+        query: { type: "string", description: "Search words; omit to list all" },
+        tag: { type: "string", description: "Only captures with this tag" },
+        status: { type: "string", enum: ["inbox", "applied", "archived"], description: "Only captures in this folder" },
+        since: { type: "string", description: "On or after this date (YYYY-MM-DD)" },
+        until: { type: "string", description: "On or before this date (YYYY-MM-DD)" },
+        offset: { type: "number", description: "Matches to skip" },
+        limit: { type: "number", description: "Max matches (default 20, max 50)" },
       },
     },
   },
   {
     name: "read_capture",
-    description: "Read the full content of a capture from the knowledge repo. Defaults to inbox/ if no path prefix given.",
+    description: "Read a capture in full, by a filename from briefing or search. Without a folder, inbox/ is assumed.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        filename: { type: "string", description: "Filename (e.g. '2026-04-02-some-slug.md') or full path (e.g. 'applied/2026-04-02-some-slug.md')" },
+        filename: { type: "string", description: "e.g. '2026-04-02-slug.md' or 'applied/2026-04-02-slug.md'" },
       },
       required: ["filename"],
     },
   },
   {
     name: "apply_capture",
-    description: "Mark a capture as applied, or record the user's answer to a handoff. Call it right after you commit a change that applies a capture, with the commit sha and the repo. Records how and where the knowledge was used. The first time, moves the capture from inbox/ to applied/, updates status and index, and triggers rule re-synthesis; calling it for an already-applied capture adds another application log entry. If the user turned the capture down, pass outcome declined (with a reason), done or later instead: the capture stays where it is, and a declined capture never counts as an apply.",
+    description: "Record that a commit applied a capture, or the user's answer to a handoff. Call it right after the commit, with the sha and the repo. If the user turned the capture down, pass outcome declined (with a reason), done or later: the capture stays put, and a declined capture never counts as an apply.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        filename: { type: "string", description: "Capture filename (e.g. '2026-04-02-some-slug.md'); an 'inbox/' or 'applied/' prefix is accepted" },
-        commit_sha: { type: "string", description: "Sha of the commit that applied the capture (from `git rev-parse HEAD`). Links the insight to the code change it caused. With outcome reverted, the sha of the commit that was reverted." },
-        applied_note: { type: "string", description: "Why this capture applied here and what you did, in one line of up to 200 characters (e.g. 'Retries hid a timeout bug, so added the capture's backoff rule to the API client')" },
-        target_file: { type: "string", description: "File path where the knowledge was applied (e.g. 'docs/conventions.md', 'src/utils/pricing.ts')" },
-        outcome: { type: "string", description: "applied (the default), declined (the user said no), done (it was already done), later (the user said not now: offered again in 7 days), or reverted (the change was undone). Any other text is kept in the application log as what changed." },
-        repo: { type: "string", description: "The code repo, as owner/name (from `git remote get-url origin`). Says which handoff this answers." },
-        reason: { type: "string", enum: ["wrong-files", "doesnt-fit", "other"], description: "With outcome declined: wrong-files (it fits, but not in those files), doesnt-fit (it doesn't fit this repo), or other." },
-        confidence: { type: "string", enum: ["high", "medium", "low"], description: "Your confidence in the change, from the spec's Confidence line." },
-        files: { type: "array", items: { type: "string" }, description: "Paths you changed, relative to the repo root. Only paths in the repo's code map are kept." },
-        plan_file: { type: "string", description: "Optional plan filename that drove this application (e.g. 'plans/2026-06-04-plan-slug.md') — creates an audit trail linking captures to plans" },
+        filename: { type: "string", description: "Capture filename; an inbox/ or applied/ prefix is accepted" },
+        commit_sha: { type: "string", description: "The commit (git rev-parse HEAD); with reverted, the reverted one" },
+        repo: { type: "string", description: "The code repo, as owner/name" },
+        applied_note: { type: "string", description: "Why it applied here and what you did, in one line of up to 200 characters" },
+        target_file: { type: "string", description: "Main file changed" },
+        files: { type: "array", items: { type: "string" }, description: "Paths you changed, relative to the repo root" },
+        outcome: { type: "string", description: "applied (default), declined, done (already done), later (offered again in 7 days) or reverted" },
+        reason: { type: "string", enum: ["wrong-files", "doesnt-fit", "other"], description: "With declined: it fits but not in those files, it doesn't fit this repo, or other" },
+        confidence: { type: "string", enum: ["high", "medium", "low"], description: "From the spec" },
+        plan_file: { type: "string", description: "Plan that drove it" },
       },
       required: ["filename"],
     },
   },
-  {
-    name: "apply_stats",
-    description: "Show how many captures were applied per week, and how many of those came with a commit. Reads the APPLIED.md ledger that apply_capture writes.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        weeks: { type: "number", description: "How many recent weeks to show (1 to 52, default 4)" },
-      },
-    },
-  },
+] as const;
+
+/**
+ * Human decisions and reports. Listed until the web app has them, then
+ * unlisted like the names in LEGACY_TOOL_NAMES.
+ */
+export const HUMAN_TOOLS = [
   {
     name: "archive_capture",
     description: "Archive a capture — reviewed but not actionable now. Moves from inbox/ to archived/ and updates the index.",
@@ -101,8 +105,7 @@ export const TOOLS = [
       },
       required: ["filename"],
     },
-  },
-  {
+  },  {
     name: "delete_capture",
     description: "Permanently delete a capture and remove its index entry.",
     inputSchema: {
@@ -112,118 +115,7 @@ export const TOOLS = [
       },
       required: ["filename"],
     },
-  },
-  {
-    name: "recall",
-    description: "Describe your current task or problem, and get back the most relevant knowledge from your capture library. More powerful than keyword search — understands semantic relevance.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        context: { type: "string", description: "What you're working on or thinking about (1-3 sentences)" },
-        max_results: { type: "number", description: "Max captures to return (default 5, max 10)" },
-      },
-      required: ["context"],
-    },
-  },
-  {
-    name: "synthesize",
-    description: "Synthesize accumulated knowledge on a topic into actionable rules. Updates RULES.md in your knowledge repo. Can target a specific tag or synthesize all knowledge.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        tag: { type: "string", description: "Tag to synthesize (e.g. 'product-discovery'). Required." },
-      },
-      required: ["tag"],
-    },
-  },
-  {
-    name: "get_rules",
-    description: "Get the synthesized knowledge rules file. Use to populate project guidance or a system prompt with accumulated knowledge. Returns RULES.md content.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        tag: { type: "string", description: "Filter to rules for a specific tag/topic. Omit for all rules." },
-      },
-    },
-  },
-  {
-    name: "briefing",
-    description: "Call at the start of a coding session: returns up to 5 captures that may fit the current project, plus the user's rules. xkg has not seen the code, so these are candidates: check each one against the code before you suggest it.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        project_context: { type: "string", description: "Describe the project you're working on (tech stack, domain, current focus area)" },
-        include_rules: { type: "boolean", description: "Include synthesized rules in the briefing (default true)" },
-        repo: { type: "string", description: "The repo's owner/name from its origin remote. Captures waiting for this repo come first, with the question to ask the user. With repo and no project_context, only those are returned." },
-      },
-    },
-  },
-  {
-    name: "apply_to_context",
-    description: "Describe your current task, stack, and optionally paste code — get back concrete, code-level suggestions for applying captured knowledge. Translates insights into specific guidance for your codebase.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        task: { type: "string", description: "What you're building or fixing" },
-        stack: { type: "string", description: "Tech stack (e.g. 'Next.js, TypeScript, Stripe')" },
-        files: {
-          type: "array" as const,
-          items: { type: "string" },
-          description: "File paths you're working on (e.g. ['src/api/payments.ts'])",
-        },
-        code_snippet: { type: "string", description: "Relevant code snippet for targeted suggestions" },
-      },
-      required: ["task"],
-    },
-  },
-  {
-    name: "generate_plan",
-    description: "Generate a structured implementation plan from selected knowledge captures. Reads full capture content and produces a Markdown plan saved to plans/ in your knowledge repo. xkg never sees your code, so check each step against the files before applying it. Use after briefing to turn insights into actionable steps.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        selected_captures: {
-          type: "array" as const,
-          items: { type: "string" },
-          description: "Filenames of captures to include (e.g. ['inbox/2026-05-14-slug.md', 'applied/2026-04-02-slug.md'])",
-        },
-        project_context: { type: "string", description: "Description of current project context (branch, what you're working on)" },
-        codebase_files: {
-          type: "array" as const,
-          items: { type: "string" },
-          description: "Optional: up to 5 repo-relative paths of files the plan should cover (e.g. ['src/app/api/capture/route.ts']). Paths only: xkg never reads code, so don't send file contents.",
-        },
-      },
-      required: ["selected_captures", "project_context"],
-    },
-  },
-  {
-    name: "list_plans",
-    description: "List saved implementation plans, or read a specific plan in full. Plans are generated by generate_plan and saved to the plans/ folder.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        filename: { type: "string", description: "Optional plan filename to read in full (e.g. '2026-06-04-plan-slug.md')" },
-      },
-    },
-  },
-  {
-    name: "vault_scan",
-    description: "Scan the full knowledge vault for captures relevant to your current activity. Searches inbox, applied, and archived captures. Returns matches with score >= 0.7 not already surfaced this session.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        activity_context: { type: "string", description: "What you're about to do — include the file path and operation (e.g. 'editing src/api/capture/route.ts to add error handling')" },
-        session_surfaced: {
-          type: "array" as const,
-          items: { type: "string" },
-          description: "Filenames already surfaced this session — excluded from results to avoid repetition",
-        },
-      },
-      required: ["activity_context"],
-    },
-  },
-  {
+  },  {
     name: "curate",
     description: "Validate knowledge captures: check for stale URLs (404/410), flag low-confidence extractions, and optionally auto-archive stale ones. Returns a curation report.",
     inputSchema: {
@@ -237,7 +129,46 @@ export const TOOLS = [
         limit: { type: "number", description: "Max files to check in one call (default 20, max 50)" },
       },
     },
-  },
+  },  {
+    name: "synthesize",
+    description: "Synthesize accumulated knowledge on a topic into actionable rules. Updates RULES.md in your knowledge repo. Can target a specific tag or synthesize all knowledge.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        tag: { type: "string", description: "Tag to synthesize (e.g. 'product-discovery'). Required." },
+      },
+      required: ["tag"],
+    },
+  },  {
+    name: "apply_stats",
+    description: "Show how many captures were applied per week, and how many of those came with a commit. Reads the APPLIED.md ledger that apply_capture writes.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        weeks: { type: "number", description: "How many recent weeks to show (1 to 52, default 4)" },
+      },
+    },
+  },] as const;
+
+/** What `tools/list` returns. */
+export const TOOLS = [...CORE_TOOLS, ...HUMAN_TOOLS] as const;
+
+/**
+ * Names merged into the listed tools. Not listed, but still answered, because
+ * published CLIs and installed hooks call them: search_captures and list_inbox
+ * are `search`; recall, vault_scan, apply_to_context and get_rules are
+ * `briefing`; generate_plan and list_plans gave way to handoffs. Remove them
+ * two CLI releases after the CLI stopped calling them.
+ */
+export const LEGACY_TOOL_NAMES = [
+  "search_captures",
+  "list_inbox",
+  "recall",
+  "vault_scan",
+  "apply_to_context",
+  "get_rules",
+  "generate_plan",
+  "list_plans",
 ] as const;
 
-export type ToolName = (typeof TOOLS)[number]["name"];
+export type ToolName = (typeof TOOLS)[number]["name"] | (typeof LEGACY_TOOL_NAMES)[number];
