@@ -115,3 +115,47 @@ test("Your knowledge has no sideways scroll at 320 px", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBe(0);
 });
+
+test("checking more links after an archive still checks the rest", async ({ page }) => {
+  const many = Array.from({ length: 21 }, (_, i) => ({
+    date: `2026-09-${String(i + 1).padStart(2, "0")}`, slug: `c${i}`, filename: `2026-09-${String(i + 1).padStart(2, "0")}-c${i}.md`,
+    status: "inbox", summary: `Capture number ${i}.`, tags: [], type: null,
+  }));
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: many } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await page.route("**/api/captures/archive", (r) => r.fulfill({ json: { ok: true } }));
+  const offsets: unknown[] = [];
+  await page.route("**/api/captures/check", async (r) => {
+    const { offset } = r.request().postDataJSON() as { offset: number };
+    offsets.push(offset);
+    const page1 = many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" }));
+    await r.fulfill({ json: offset === 0 ? { results: page1, total: 21, next: 20 } : { results: [{ filename: many[20]!.filename, status: "ok", httpStatus: 200, reason: "" }], total: 20, next: null } });
+  });
+  await page.goto("/knowledge");
+  await page.getByRole("button", { name: "Check links" }).tap();
+  await expect(page.getByRole("button", { name: "Check more links" })).toBeVisible();
+  await page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 3." }).getByRole("button", { name: "Archive" }).tap();
+  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(20);
+  await page.getByRole("button", { name: "Check more links" }).tap();
+  await expect(page.getByText("0 of 20 need a look.")).toBeVisible();
+  expect(offsets).toEqual([0, 19]);
+});
+
+test("make rules uses a tag that still exists after its last capture is deleted", async ({ page }) => {
+  await open(page);
+  await page.route("**/api/captures/delete", (r) => r.fulfill({ json: { ok: true } }));
+  const sent: unknown[] = [];
+  await page.route("**/api/rules", async (r) => {
+    sent.push(r.request().postDataJSON());
+    await r.fulfill({ json: { topic: "llm", rules: ["Keep memory small."] } });
+  });
+  await page.getByLabel("Tag").selectOption("memory");
+  const row = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Memory goes into the prompt" });
+  await row.getByRole("button", { name: "Delete" }).tap();
+  await row.getByRole("button", { name: "Delete for good" }).tap();
+  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(1);
+  await page.getByRole("button", { name: "Make rules" }).tap();
+  await expect(page.getByText("Keep memory small.")).toBeVisible();
+  expect(sent).toEqual([{ tag: "llm" }]);
+});

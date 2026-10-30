@@ -90,6 +90,16 @@ export default function KnowledgePage() {
 
   function moved(filename: string, to: CaptureStatus | null) {
     setCaptures((list) => (list ?? []).flatMap((c) => (c.filename !== filename ? [c] : to ? [{ ...c, status: to }] : [])));
+    // It left the inbox, so the next link check's offset counts one file fewer
+    // when this one was already checked; otherwise a file would be skipped.
+    const wasChecked = filename in checks;
+    setChecks(({ [filename]: _, ...rest }) => rest);
+    setCheckState((s) => ({
+      ...s,
+      total: Math.max(s.total - 1, 0),
+      checked: wasChecked ? s.checked - 1 : s.checked,
+      next: wasChecked && s.next !== null ? s.next - 1 : s.next,
+    }));
   }
 
   async function checkLinks() {
@@ -236,7 +246,9 @@ function CaptureItem({ capture, flag, onMoved }: {
 
 /** Rules for your AI: turns the captures with a tag into rules in RULES.md, which briefings include. */
 function Rules({ tags }: { tags: string[] }) {
-  const [tag, setTag] = useState(tags[0]!);
+  const [picked, setTag] = useState(tags[0]!);
+  // The picked tag goes away when its last capture is deleted.
+  const tag = tags.includes(picked) ? picked : tags[0]!;
   const [busy, setBusy] = useState(false);
   const [rules, setRules] = useState<{ topic: string; rules: string[] } | null>(null);
   const [error, setError] = useState("");
