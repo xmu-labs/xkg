@@ -19,19 +19,18 @@ import { env } from "@/lib/env";
 import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
 import { recordApplyEvent } from "@/lib/apply-events";
 import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
-import { safeFetch } from "@/lib/fetch-source";
 import { consumeQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
-import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
+import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
-import { forgetCapture } from "@/lib/handoff-learning";
 import { repoName } from "@/lib/code-repos";
+import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, type LinkCheck } from "@/lib/captures";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
-import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted, weeklyApplyStats } from "@/lib/ledger";
+import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -396,12 +395,10 @@ export async function handleApplyCapture(
 /** The apply metric: captures applied per week, and how many came with a commit. */
 export async function handleApplyStats(user: User, args: { weeks?: number }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  const weeks = Math.min(Math.max(Math.trunc(args.weeks ?? 4), 1), 52);
-  const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
-  if (!ledger) return `No captures applied yet. Each apply_capture call adds a row to ${LEDGER_PATH}.`;
+  const weeks = clampWeeks(args.weeks);
+  const stats = await applyStats(user, weeks);
+  if (!stats) return `No captures applied yet. Each apply_capture call adds a row to ${LEDGER_PATH}.`;
 
-  const today = new Date().toISOString().slice(0, 10);
-  const stats = weeklyApplyStats(ledger.content, today, weeks);
   const applied = stats.reduce((n, w) => n + w.applied, 0);
   const withCommit = stats.reduce((n, w) => n + w.withCommit, 0);
   const lines = stats.map((w) => `- Week of ${w.weekStart}: ${w.applied} applied, ${w.withCommit} with a commit`);
@@ -410,29 +407,13 @@ export async function handleApplyStats(user: User, args: { weeks?: number }): Pr
 
 export async function handleArchiveCapture(user: User, args: { filename: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  const inboxPath = `inbox/${args.filename}`;
-  const file = await readFile(user.github_token, user.github_repo, inboxPath);
-  if (!file) return `File not found: ${inboxPath}. It may have already been processed.`;
-
-  const content = file.content.replace(/^status:\s*inbox$/m, "status: archived");
-
-  await githubPut(user.github_token, user.github_repo, `archived/${args.filename}`, content, `archive: ${args.filename}`);
-  await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `archive: remove ${args.filename} from inbox`);
-  await updateIndexEntry(user.github_token, user.github_repo, args.filename, "archive");
-
+  if (!(await archiveCapture(user, args.filename))) return `File not found: inbox/${args.filename}. It may have already been processed.`;
   return `Archived: ${args.filename} → archived/${args.filename}`;
 }
 
 export async function handleDeleteCapture(user: User, args: { filename: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  const inboxPath = `inbox/${args.filename}`;
-  const file = await readFile(user.github_token, user.github_repo, inboxPath);
-  if (!file) return `File not found: ${inboxPath}. It may have already been deleted.`;
-
-  await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `delete: ${args.filename}`);
-  await updateIndexEntry(user.github_token, user.github_repo, args.filename, "delete");
-  await forgetCapture(user.id, args.filename);
-
+  if (!(await deleteCapture(user, args.filename))) return `File not found: inbox/${args.filename}. It may have already been deleted.`;
   return `Deleted: ${args.filename}`;
 }
 
@@ -769,46 +750,17 @@ export async function handleCurate(
 ): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
 
-  // Liveness check for a capture's source URL. The `url:` frontmatter is
-  // attacker-influenced (it comes from LLM extraction of user-supplied
-  // content), and the returned status is echoed back to the caller — so an
-  // unguarded fetch here is an SSRF with a status oracle. Reuse the same
-  // redirect-validating guard the capture path uses.
-  async function checkUrl(url: string): Promise<number | null> {
-    const res = await safeFetch(url, {
-      method: "HEAD",
-      signal: AbortSignal.timeout(5000),
-    });
-    return res?.status ?? null;
-  }
-
-  async function curateFile(
-    filename: string,
-  ): Promise<{ filename: string; status: string; httpStatus: number | null; reason: string; archived: boolean }> {
-    const path = `inbox/${filename}`;
-    const file = await readFile(user.github_token, user.github_repo!, path);
-    if (!file) return { filename, status: "not_found", httpStatus: null, reason: "File not found in inbox.", archived: false };
-
-    const fmMatch = file.content.match(/^---\n([\s\S]*?)\n---/);
-    const fm = fmMatch?.[1] ?? "";
-    const urlField = fm.match(/^url:\s*(.+)$/m)?.[1]?.trim() ?? "";
-    const url = urlField && urlField !== "none" ? urlField : null;
-    const isLowConfidence = /^lowConfidence:\s*true$/m.test(fm);
-
-    const httpStatus = url ? await checkUrl(url) : null;
-    const { status, reason } = curateSingle(httpStatus, isLowConfidence);
-
+  async function curateFile(filename: string): Promise<LinkCheck & { archived: boolean }> {
+    const result = await checkCapture(user, filename);
     let archived = false;
-    if (args.auto_archive && status !== "ok") {
+    if (args.auto_archive && result.status !== "ok" && result.status !== "not_found") {
       try {
-        await handleArchiveCapture(user, { filename });
-        archived = true;
+        archived = await archiveCapture(user, filename);
       } catch {
         // archive best-effort
       }
     }
-
-    return { filename, status, httpStatus, reason, archived };
+    return { ...result, archived };
   }
 
   if (args.filename) {
@@ -818,17 +770,13 @@ export async function handleCurate(
   }
 
   // Scan the inbox, one page at a time (deterministic, date-sorted order).
-  const res = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
-  if (!res.ok || !res.data) return "Inbox is empty.";
-  const allMd = res.data.filter((f) => f.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
-  if (allMd.length === 0) return "Inbox is empty.";
-
-  const filtered = filterByDateRange(allMd, args.since, args.until);
-  if (filtered.length === 0) {
-    return `No captures in inbox match the given date range (${allMd.length} total in inbox).`;
+  const inbox = await inboxPage(user, args, 20);
+  if (!inbox) return "Inbox is empty.";
+  const { page } = inbox;
+  if (page.total === 0) {
+    return `No captures in inbox match the given date range (${inbox.inInbox} total in inbox).`;
   }
 
-  const page = paginate(filtered, args.offset ?? 0, args.limit ?? 20);
   const results = await Promise.all(page.items.map((f) => curateFile(f.name)));
 
   const rows = results.map((r) => {

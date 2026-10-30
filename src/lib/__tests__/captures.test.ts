@@ -1,0 +1,81 @@
+import { describe, it, expect } from "vitest";
+import { captureName, parseIndexRows } from "../captures";
+
+/**
+ * The web app's captures list reads INDEX.md, the same table search reads, so
+ * the list and the agent's search always agree on what exists and where.
+ */
+
+const INDEX = `# Knowledge Index
+
+| Date | Capture | Summary | Tags | Type |
+|------|---------|---------|------|------|
+| 2026-10-28 | [llm-memory](inbox/2026-10-28-llm-memory.md) | Memory goes into the prompt.... | llm, memory | article |
+| 2026-10-20 | [old-post](archived/2026-10-20-old-post.md) | An old post.... | blog | post |
+| 2026-10-25 | [routing](applied/2026-10-25-routing.md) | Route by cost.... | llm |
+not a row
+`;
+
+describe("parseIndexRows", () => {
+  // protects: the list shows each capture with its folder as status; fails_when: a row's path, status, tags or type is misread; no_claim: how rows are written
+  it("reads each row's date, path, status, summary, tags and type, newest first", () => {
+    expect(parseIndexRows(INDEX)).toEqual([
+      { date: "2026-10-28", slug: "llm-memory", filename: "2026-10-28-llm-memory.md", status: "inbox", summary: "Memory goes into the prompt.", tags: ["llm", "memory"], type: "article" },
+      { date: "2026-10-25", slug: "routing", filename: "2026-10-25-routing.md", status: "applied", summary: "Route by cost.", tags: ["llm"], type: null },
+      { date: "2026-10-20", slug: "old-post", filename: "2026-10-20-old-post.md", status: "archived", summary: "An old post.", tags: ["blog"], type: "post" },
+    ]);
+  });
+
+  // protects: an index with no captures; fails_when: the header row is read as a capture; no_claim: a missing INDEX.md (the route's job)
+  it("returns nothing for an index with only its header", () => {
+    expect(parseIndexRows("| Date | Capture | Summary | Tags | Type |\n|---|---|---|---|---|\n")).toEqual([]);
+  });
+
+  // protects: a row whose link points outside the three folders is skipped; fails_when: a plans/ or odd link shows as a capture; no_claim: repairing the index
+  it("skips rows that don't link a capture in inbox, applied or archived", () => {
+    expect(parseIndexRows("| 2026-10-01 | [x](plans/x.md) | x | | |\n| 2026-10-01 | no link | x | | |")).toEqual([]);
+  });
+});
+
+describe("captureName", () => {
+  // protects: the web routes only touch a capture file by its own name; fails_when: a path, '..' or a non-.md name is accepted; no_claim: whether the file exists
+  it("accepts a bare capture filename and nothing else", () => {
+    expect(captureName("2026-10-28-llm-memory.md")).toBe("2026-10-28-llm-memory.md");
+    expect(captureName("inbox/2026-10-28-llm-memory.md")).toBeNull();
+    expect(captureName("../INDEX.md")).toBeNull();
+    expect(captureName("..md")).toBeNull();
+    expect(captureName("notes.txt")).toBeNull();
+    expect(captureName(42)).toBeNull();
+  });
+});
+
+describe("captureName, non-ASCII names", () => {
+  // Regression: ISSUE-001 — a capture whose slug has accents could not be archived or deleted from the web app
+  // Found by /qa on 2026-10-30
+  // Report: project files qa/2026-10-30-xkg-84-captures-page/
+  // protects: captures with accented or non-Latin slugs get working Archive and Delete buttons; fails_when: the guard only allows ASCII word characters; no_claim: what the model writes as a slug
+  it("accepts a capture name with accents or non-Latin letters, still nothing outside the folder", () => {
+    expect(captureName("2026-10-30-configuración-de-agentes.md")).toBe("2026-10-30-configuración-de-agentes.md");
+    expect(captureName("2026-10-30-記憶.md")).toBe("2026-10-30-記憶.md");
+    expect(captureName("2026-10-30-a\\b.md")).toBeNull();
+    expect(captureName(".hidden.md")).toBeNull();
+    expect(captureName("2026-10-30-a\nb.md")).toBeNull();
+  });
+});
+
+
+describe("parseIndexRows, pipes in a summary", () => {
+  // protects: a summary like "A | B" keeps its tags and type; fails_when: the part after the pipe is read as tags; no_claim: rows without the trailing "..."
+  it("reads an older row whose summary holds a bare pipe", () => {
+    const row = "| 2026-10-28 | [pipes](inbox/2026-10-28-pipes.md) | Use A | B to pipe output... | shell, unix | url |";
+    expect(parseIndexRows(row)).toEqual([
+      { date: "2026-10-28", slug: "pipes", filename: "2026-10-28-pipes.md", status: "inbox", summary: "Use A | B to pipe output", tags: ["shell", "unix"], type: "url" },
+    ]);
+  });
+
+  // protects: rows written with escaped pipes read back as the original text; fails_when: "\|" splits a cell or stays escaped; no_claim: other escapes
+  it("reads escaped pipes as plain pipes", () => {
+    const row = "| 2026-10-28 | [pipes](inbox/2026-10-28-pipes.md) | Use A \\| B... | shell \\| unix | url |";
+    expect(parseIndexRows(row)[0]).toMatchObject({ summary: "Use A | B", tags: ["shell | unix"], type: "url" });
+  });
+});

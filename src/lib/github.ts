@@ -190,6 +190,31 @@ export async function readFile(
   return { content: decoded, sha: res.data.sha };
 }
 
+/** GitHub answered a read with an error other than 404 (rate limit, revoked token, outage). */
+export class GitHubReadError extends Error {
+  constructor(readonly path: string, readonly status: number | undefined) {
+    super(`GitHub read of ${path} failed (HTTP ${status ?? "?"})`);
+    this.name = "GitHubReadError";
+  }
+}
+
+/**
+ * Like readFile, but null means only that the file doesn't exist; any other
+ * failed read throws GitHubReadError, so a GitHub outage isn't shown as an
+ * empty repo.
+ */
+export async function readFileStrict(
+  token: string,
+  repo: string,
+  filePath: string,
+): Promise<{ content: string; sha: string } | null> {
+  const res = await githubGet<GitHubFileResponse>(token, repo, filePath);
+  if (res.status === 404) return null;
+  if (!res.ok || !res.data) throw new GitHubReadError(filePath, res.status);
+  const decoded = Buffer.from(res.data.content.replace(/\n/g, ""), "base64").toString("utf-8");
+  return { content: decoded, sha: res.data.sha };
+}
+
 /** Append a row to INDEX.md, creating it if it doesn't exist. */
 export async function appendToIndex(
   token: string,

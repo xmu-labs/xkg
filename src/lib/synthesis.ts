@@ -5,6 +5,7 @@
 import { readFile, githubPut } from "./github";
 import { synthesizeRules, type LlmConfig } from "./llm";
 import type { SynthesisResult } from "./types";
+import { parseIndexRows } from "./captures";
 
 /** Update (or create) a topic section in RULES.md. */
 export async function updateRulesFile(
@@ -66,20 +67,11 @@ export async function synthesizeTopic(
   indexContent: string,
   llm: LlmConfig = "anthropic",
 ): Promise<SynthesisResult> {
-  // Find captures matching this tag from the index
-  const lines = indexContent
-    .split("\n")
-    .filter((l) => l.startsWith("|") && !l.startsWith("| Date") && !l.startsWith("|---"));
-
-  const matchingLines = lines.filter((l) => l.toLowerCase().includes(tag.toLowerCase()));
-
-  // Extract filenames from matching index rows
-  const filenameRegex = /\[([^\]]+)\]\(([^)]+)\)/;
-  const filenames: string[] = [];
-  for (const line of matchingLines) {
-    const match = line.match(filenameRegex);
-    if (match?.[2]) filenames.push(match[2]);
-  }
+  // The captures tagged exactly with this tag (any case), by the index's tag column
+  const wanted = tag.trim().toLowerCase();
+  const filenames = parseIndexRows(indexContent)
+    .filter((row) => row.tags.some((t) => t.toLowerCase() === wanted))
+    .map((row) => `${row.status}/${row.filename}`);
 
   if (filenames.length === 0) {
     return { topic: tag, rules: [] };
