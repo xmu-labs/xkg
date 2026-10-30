@@ -83,17 +83,26 @@ function appendSessionSurfaced(filenames: string[]): void {
 
 // ── Stdin reader for hook context ──
 
-async function readStdin(): Promise<string> {
+/**
+ * What an agent's hook sent on stdin, or what arrived within `timeoutMs`. Nothing is read from
+ * a terminal. Lets go of stdin once done, so a pipe the agent keeps open can't hold the process.
+ */
+export async function readStdin(timeoutMs = 2000): Promise<string> {
   return new Promise((resolve) => {
     if (process.stdin.isTTY) {
       resolve("");
       return;
     }
     let data = "";
+    const done = () => {
+      clearTimeout(timer);
+      process.stdin.destroy();
+      resolve(data);
+    };
+    const timer = setTimeout(done, timeoutMs);
     process.stdin.setEncoding("utf-8");
     process.stdin.on("data", (chunk: string) => { data += chunk; });
-    process.stdin.on("end", () => resolve(data));
-    setTimeout(() => resolve(data), 2000);
+    process.stdin.on("end", done);
   });
 }
 

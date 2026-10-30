@@ -378,6 +378,7 @@ describe("vaultCheck", () => {
     const mockStdin = {
       isTTY: false,
       setEncoding: vi.fn(),
+      destroy: vi.fn(),
       on: vi.fn((event: string, cb: (data?: string) => void) => {
         if (event === "data") cb(hookData);
         if (event === "end") cb();
@@ -403,6 +404,7 @@ describe("vaultCheck", () => {
     const mockStdin = {
       isTTY: false,
       setEncoding: vi.fn(),
+      destroy: vi.fn(),
       on: vi.fn((event: string, cb: (data?: string) => void) => {
         if (event === "data") cb(JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "src/foo.ts" } }));
         if (event === "end") cb();
@@ -424,6 +426,7 @@ describe("vaultCheck", () => {
     const mockStdin = {
       isTTY: false,
       setEncoding: vi.fn(),
+      destroy: vi.fn(),
       on: vi.fn((event: string, cb: (data?: string) => void) => {
         if (event === "data") cb(JSON.stringify({ tool_name: "Bash", tool_input: { command: "ls" } }));
         if (event === "end") cb();
@@ -462,6 +465,7 @@ describe("vaultCheck", () => {
     const mockStdin = {
       isTTY: false,
       setEncoding: vi.fn(),
+      destroy: vi.fn(),
       on: vi.fn((event: string, cb: (data?: string) => void) => {
         if (event === "data") cb(JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "src/foo.ts" } }));
         if (event === "end") cb();

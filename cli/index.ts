@@ -118,7 +118,10 @@ async function main(): Promise<void> {
     const agentIdx = args.indexOf("--agent");
     const agent = agentIdx !== -1 ? args[agentIdx + 1] : undefined;
     if (!apiKey) return process.exit(0); // silent fail in hook context
-    await sessionStart(apiKey, { agent });
+    // The hook's JSON on stdin says whether the agent compacted or forked the chat
+    const { readStdin } = await import("./hooks.js");
+    const input = await readStdin(500);
+    await sessionStart(apiKey, { agent, input });
     return;
   }
 
