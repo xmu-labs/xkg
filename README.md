@@ -78,6 +78,13 @@ xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and th
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
+**Your captures** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
+
+- **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
+- **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.
+- **Make rules** from every capture with a tag. The rules go in `RULES.md`, and your agent gets them with the session-start briefing. This runs on your own AI model and key.
+- See how many captures were applied each week, and how many came with a commit (from `APPLIED.md`).
+
 ### 3. Connect a worker (optional)
 
 Skip this if you only want the app today. When you're ready, pick your tool under [Connect your AI workers](#connect-your-ai-workers). Capture now, connect later — the knowledge is already in your repo.
@@ -407,7 +414,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `synthesize` | Combine related captures into reusable rules |
 | `apply_stats` | Captures applied per week, and how many came with a commit |
 
-The last five are your own decisions and reports, not agent work. They stay listed until the web app has them.
+The last five are your own decisions and reports, not agent work, and the app has them under **Your captures**. They stay listed for now and will be unlisted in a later release.
 
 Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 
@@ -490,7 +497,7 @@ The whole point of this repo being public is that you can check these claims rat
 | code maps (`code_maps`) | per repo you sync with the git hooks or add in Settings (at most 20): file paths, exported function and class names, and which mapped files import which; for a repo added from GitHub, file paths only (`source = 'github'`). Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it, `src/lib/code-repos.ts` reads GitHub's file list) |
 | surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan, session-start handoff offer): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
 | handoff counts (`handoff_events`) | one row each time something happens to a handoff (queued, offered in a session at most once a day, expired, and your answer: applied, declined, done, later, reverted): a keyed hash of the capture's file name, the repo (`owner/name`), what happened, whether it was queued automatically or by you, the reason for a no, your agent's confidence, whether an apply came with a commit, and the time. Never the capture's name or content, and never the spec your agent writes; `HANDOFFS.md` and each capture's Handoff log in your repo are the record |
-| handoff learning (`handoff_scores`) | what xkg learned from your answers: per capture and file, and per capture and repo, a weight, the number of nos and the number of answers in the log it came from, with a keyed hash of the capture's file name, keyed hashes of its tags, the repo (`owner/name`), the file path and the date. Never the capture's name, content or tags in plain text. A cache of the Handoff logs in your repo: `POST /api/admin/rebuild-handoff-index?user=<id>` makes it again from git for every capture in `HANDOFFS.md`. Deleting a capture with `delete_capture` deletes its rows |
+| handoff learning (`handoff_scores`) | what xkg learned from your answers: per capture and file, and per capture and repo, a weight, the number of nos and the number of answers in the log it came from, with a keyed hash of the capture's file name, keyed hashes of its tags, the repo (`owner/name`), the file path and the date. Never the capture's name, content or tags in plain text. A cache of the Handoff logs in your repo: `POST /api/admin/rebuild-handoff-index?user=<id>` makes it again from git for every capture in `HANDOFFS.md`. Deleting a capture (in the app or with `delete_capture`) deletes its rows |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly four kinds of destination:

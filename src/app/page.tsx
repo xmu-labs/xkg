@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
@@ -175,7 +176,10 @@ export default function CapturePage() {
         <div className="flex items-center gap-3 mb-1 overflow-visible">
           <BrandMark size={56} />
           <h1 className="wordmark text-2xl" style={{ color: "var(--fg)" }}>xkg</h1>
-          <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
+          <div className="ml-auto flex items-center gap-4 shrink-0">
+            <Link href="/captures" className="text-sm font-medium" style={{ color: "var(--gold)" }}>Your captures</Link>
+            <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
+          </div>
         </div>
         <p className="text-[15px] leading-snug mt-3" style={{ color: "var(--fg-muted)" }}>
           Learn it once. Your AI applies it.
