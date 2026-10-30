@@ -59,8 +59,13 @@ function hooksDirOf(cwd: string): string {
   return resolve(cwd, git(cwd, "rev-parse", "--git-path", "hooks"));
 }
 
+/**
+ * The command a hook line runs. `--prefix "$HOME"` keeps npx from taking the repo as its
+ * project: in a clone of xkg itself at the pinned version, npx would run the clone's own
+ * (unbuilt) bin instead of the published package. The hook still runs in the repo.
+ */
 function runner(version: string): string {
-  return `npx -y ${PACKAGE}@${version === "0.0.0" ? "latest" : version}`;
+  return `npx --prefix "$HOME" -y ${PACKAGE}@${version === "0.0.0" ? "latest" : version}`;
 }
 
 /**
