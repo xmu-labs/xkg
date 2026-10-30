@@ -1,5 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseInitArgs } from "../setup-command.js";
+import { parseInitArgs, previewSessionStart } from "../setup-command.js";
+
+const sessionStart = vi.fn(async (_key: string, _opts: Record<string, unknown>) => { process.stdout.write("xkg: 2 new captures\n"); });
+vi.mock("../session-start.js", () => ({ sessionStart: (k: string, o: Record<string, unknown>) => sessionStart(k, o) }));
+
+describe("previewSessionStart", () => {
+  it("shows the inbox offer without asking for this repo's handoffs, which would count as an offer", async () => {
+    const text = await previewSessionStart("k");
+    expect(text).toBe("xkg: 2 new captures\n");
+    expect(sessionStart).toHaveBeenCalledWith("k", { repo: null });
+  });
+});
 
 describe("parseInitArgs", () => {
   it("reads --key, --yes and --agents", () => {

@@ -68,7 +68,7 @@ export async function runChecks(deps: DoctorDeps): Promise<DoctorCheck[]> {
   if (deps.key && reachable) {
     const inbox = await deps.inbox(deps.key).catch(() => null);
     if (inbox === null) add("Account", "Knowledge repo", "warn", "Couldn't read your inbox just now");
-    else if (/not configured/i.test(inbox)) add("Account", "Knowledge repo", "fail", "Your account has no knowledge repo yet", "Finish setup at https://xkg.xmu.sh/onboard");
+    else if (/^Knowledge repo not configured\.?$/.test(inbox.trim())) add("Account", "Knowledge repo", "fail", "Your account has no knowledge repo yet", "Finish setup at https://xkg.xmu.sh/onboard");
     else add("Account", "Knowledge repo", "ok", "Your inbox reads");
   }
 

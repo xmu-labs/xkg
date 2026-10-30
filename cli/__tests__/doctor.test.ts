@@ -77,6 +77,11 @@ describe("account checks", () => {
     expect(find(checks, "Knowledge repo")).toMatchObject({ status: "fail", fix: expect.stringContaining("xkg.xmu.sh") });
   });
 
+  it("doesn't mistake a capture that says 'not configured' for a missing repo", async () => {
+    const inbox = "1 capture(s) in inbox:\n\n1. Core idea: Handle services that are not configured without crashing.";
+    expect(find(await runChecks(deps({ inbox: async () => inbox })), "Knowledge repo").status).toBe("ok");
+  });
+
   it("passes the knowledge repo when the inbox reads", async () => {
     expect(find(await runChecks(deps()), "Knowledge repo").status).toBe("ok");
   });

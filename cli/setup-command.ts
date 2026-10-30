@@ -50,8 +50,11 @@ async function connect(key: string): Promise<{ ok: true } | { ok: false; reason:
   return res.ok ? res : { ok: false, reason: res.reason.replace(/ Run setup-git-hook again with a current key\.$/, "") };
 }
 
-/** What `xkg session-start` would print here, as plain text. */
-async function preview(key: string): Promise<string> {
+/**
+ * What `xkg session-start` would print, as plain text. Without the repo, so doctor
+ * doesn't ask for this repo's handoffs: the server counts that as an offer.
+ */
+export async function previewSessionStart(key: string): Promise<string> {
   const { sessionStart } = await import("./session-start.js");
   const chunks: string[] = [];
   const write = process.stdout.write.bind(process.stdout);
@@ -60,7 +63,7 @@ async function preview(key: string): Promise<string> {
     return true;
   }) as typeof process.stdout.write;
   try {
-    await sessionStart(key, {});
+    await sessionStart(key, { repo: null });
   } finally {
     process.stdout.write = write;
   }
@@ -79,7 +82,7 @@ async function doctor(key: string | undefined, json: boolean): Promise<boolean> 
     connect,
     latestVersion: () => getLatestVersion(getPackageName()),
     inbox: (k) => callMcp(k, "list_inbox", { limit: 1 }, 8000),
-    preview,
+    preview: previewSessionStart,
     mapCachePath: join(homedir(), ".xkg", "maps.json"),
   });
   const ok = !checks.some((c) => c.status === "fail");

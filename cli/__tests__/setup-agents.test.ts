@@ -108,6 +108,32 @@ describe("Codex", () => {
     expect(steps.find((s) => s.part === "mcp")?.result).toBe("unchanged");
   });
 
+  it.each([
+    ["a quoted table name", "[mcp_servers.'xkg']\ncommand = \"npx\"\n"],
+    ["a key under [mcp_servers]", "[mcp_servers]\nxkg = { command = \"npx\" }\n"],
+    ["a dotted key", "mcp_servers.xkg.command = \"npx\"\n"],
+  ])("finds an existing xkg server written as %s", (_, before) => {
+    put(".codex/config.toml", before);
+    const steps = setupAgent(agent("codex"), env());
+    expect(file(".codex/config.toml")).toBe(before);
+    expect(steps.find((s) => s.part === "mcp")?.result).toBe("unchanged");
+    expect(inspectAgent(agent("codex"), env()).find((c) => c.part === "mcp")?.status).toBe("ok");
+  });
+
+  it("doesn't append a table after an inline mcp_servers table, which TOML can't extend", () => {
+    const before = 'mcp_servers = { other = { command = "other" } }\n';
+    put(".codex/config.toml", before);
+    const mcp = setupAgent(agent("codex"), env()).find((s) => s.part === "mcp")!;
+    expect(file(".codex/config.toml")).toBe(before);
+    expect(mcp.result).toBe("manual");
+    expect(mcp.note).toContain("[mcp_servers.xkg]");
+  });
+
+  it("ignores a commented-out xkg table", () => {
+    put(".codex/config.toml", "# [mcp_servers.xkg]\n");
+    expect(setupAgent(agent("codex"), env()).find((s) => s.part === "mcp")?.result).toBe("added");
+  });
+
   it("changes nothing on a second run", () => {
     setupAgent(agent("codex"), env());
     const first = [file(".codex/config.toml"), file(".codex/hooks.json"), file(".codex/AGENTS.md")];
@@ -166,6 +192,37 @@ describe("Claude Code", () => {
     expect(s.model).toBe("opus");
     expect(s.hooks.PreToolUse).toEqual([{ matcher: "Bash", hooks: [] }]);
     expect(s.hooks.SessionStart).toEqual([{ hooks: [{ type: "command", command: hookCommand("claude") }] }]);
+  });
+
+  it("replaces the older inbox-check hook, so a session doesn't get two offers", () => {
+    const legacy = "npx -y @xmu-labs/xkg@latest inbox-check --key k --briefing";
+    put(".claude/settings.json", JSON.stringify({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: legacy }, { type: "command", command: "echo mine" }] }] } }));
+    const hook = setupAgent(agent("claude"), env()).find((s) => s.part === "hook")!;
+    const groups = json(".claude/settings.json").hooks.SessionStart;
+    expect(groups).toEqual([
+      { hooks: [{ type: "command", command: "echo mine" }] },
+      { hooks: [{ type: "command", command: hookCommand("claude") }] },
+    ]);
+    expect(hook.note).toMatch(/inbox-check/);
+  });
+
+  it("removes the older inbox-check hook even when session-start is already there", () => {
+    put(".claude/settings.json", JSON.stringify({ hooks: { SessionStart: [
+      { hooks: [{ type: "command", command: "npx -y mnemos-capture@latest inbox-check --key k" }] },
+      { hooks: [{ type: "command", command: hookCommand("claude") }] },
+    ] } }));
+    setupAgent(agent("claude"), env());
+    expect(json(".claude/settings.json").hooks.SessionStart).toEqual([{ hooks: [{ type: "command", command: hookCommand("claude") }] }]);
+  });
+
+  it("warns in doctor when the older inbox-check hook runs next to session-start", () => {
+    put(".claude/settings.json", JSON.stringify({ hooks: { SessionStart: [
+      { hooks: [{ type: "command", command: "npx -y @xmu-labs/xkg@latest inbox-check --key k" }] },
+      { hooks: [{ type: "command", command: hookCommand("claude") }] },
+    ] } }));
+    const hook = inspectAgent(agent("claude"), env()).find((c) => c.part === "hook")!;
+    expect(hook.status).toBe("warn");
+    expect(hook.fix).toContain("init");
   });
 
   it("adds the rules block under the user's own CLAUDE.md text", () => {

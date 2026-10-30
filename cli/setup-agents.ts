@@ -179,21 +179,53 @@ function jsonServer(rel: string, entry: Json): Writer {
   };
 }
 
-const CODEX_TABLE = /^\s*\[\s*mcp_servers\.(?:"?(?:xkg|xmu|mnemos)"?)\s*\]/m;
+const NAME = `(["']?)(?:${SERVER_NAMES.join("|")})\\1`;
+const TABLE_HEADER = /^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$/;
+
+/**
+ * How config.toml holds MCP servers, read line by line (no TOML parser in the CLI):
+ * whether an xkg server is already defined in any spelling, and whether
+ * `mcp_servers` is an inline table, which a `[mcp_servers.xkg]` table can't extend.
+ */
+function codexServers(text: string): { hasXkg: boolean; inline: boolean } {
+  let table = "";
+  let hasXkg = false;
+  let inline = false;
+  for (const line of text.split("\n")) {
+    if (/^\s*#/.test(line)) continue;
+    const header = line.match(TABLE_HEADER);
+    if (header) {
+      table = header[1]!.replace(/\s+/g, "");
+      if (new RegExp(`^mcp_servers\\.${NAME}(?:\\.|$)`).test(table)) hasXkg = true;
+      continue;
+    }
+    if (table === "") {
+      if (/^\s*mcp_servers\s*=/.test(line)) inline = true;
+      if (new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${NAME}\\s*[.=]`).test(line)) hasXkg = true;
+    } else if (table === "mcp_servers" && new RegExp(`^\\s*${NAME}\\s*[.=]`).test(line)) {
+      hasXkg = true;
+    }
+  }
+  return { hasXkg, inline };
+}
 
 /** `[mcp_servers.xkg]` appended to Codex's config.toml as text, so the user's comments stay. */
 const codexServer: Writer = {
   write(env, id) {
     const file = join(env.home, ".codex", "config.toml");
     const current = existsSync(file) ? readFileSync(file, "utf-8") : "";
-    if (CODEX_TABLE.test(current)) return { agent: id, part: "mcp", file, result: "unchanged" };
+    const servers = codexServers(current);
+    if (servers.hasXkg) return { agent: id, part: "mcp", file, result: "unchanged" };
     const table = `[mcp_servers.xkg]\ncommand = "npx"\nargs = [${MCP_ARGS.map((a) => JSON.stringify(a)).join(", ")}]\n`;
+    if (servers.inline) {
+      return { agent: id, part: "mcp", file, result: "manual", note: `${tilde(env, file)} sets mcp_servers as an inline table, so it was left as is. Add xkg to it, or move it to tables and add:\n${table}` };
+    }
     writeText(file, current ? `${current.replace(/\n*$/, "\n")}\n${table}` : table);
     return { agent: id, part: "mcp", file, result: "added", undo: `delete the [mcp_servers.xkg] table in ${tilde(env, file)}` };
   },
   check(env, id) {
     const file = join(env.home, ".codex", "config.toml");
-    return existsSync(file) && CODEX_TABLE.test(readFileSync(file, "utf-8"))
+    return existsSync(file) && codexServers(readFileSync(file, "utf-8")).hasXkg
       ? { agent: id, part: "mcp", status: "ok", detail: `Registered in ${tilde(env, file)}` }
       : { agent: id, part: "mcp", status: "fail", detail: `No [mcp_servers.xkg] in ${tilde(env, file)}`, fix: INIT };
   },
@@ -244,6 +276,17 @@ interface HookShape {
   /** Top-level fields a new file starts with. */
   base?: Json;
   trustNote?: string;
+  /** Older xkg hooks this one replaces, so a session doesn't get two offers. */
+  legacy?: RegExp;
+}
+
+/** Drops hook entries whose command matches `legacy`, and groups left empty. */
+function withoutLegacy(groups: Json[], legacy: RegExp): Json[] {
+  const old = (h: Json) => typeof h?.command === "string" && legacy.test(h.command);
+  return groups
+    .filter((g) => !old(g))
+    .map((g) => (Array.isArray(g?.hooks) ? { ...g, hooks: g.hooks.filter((h: Json) => !old(h)) } : g))
+    .filter((g) => !Array.isArray(g?.hooks) || g.hooks.length > 0);
 }
 
 function jsonHook(shape: HookShape): Writer {
@@ -256,15 +299,30 @@ function jsonHook(shape: HookShape): Writer {
         return { agent: id, part: "hook", file, result: "manual", note: `${tilde(env, file)} isn't plain JSON, so it was left as is. Add to hooks.${shape.event}: ${JSON.stringify(entry)}` };
       }
       const hooks: Json = data.hooks && typeof data.hooks === "object" ? data.hooks : {};
-      if (commands(hooks[shape.event]).some((c) => isOurHook(c, id))) return { agent: id, part: "hook", file, result: "unchanged" };
-      const list = Array.isArray(hooks[shape.event]) ? hooks[shape.event] : [];
-      writeJson(file, { ...(existsSync(file) ? {} : shape.base), ...data, hooks: { ...hooks, [shape.event]: [...list, entry] } });
-      return { agent: id, part: "hook", file, result: "added", note: shape.trustNote, undo: `remove the session-start hook from hooks.${shape.event} in ${tilde(env, file)}` };
+      const current: Json[] = Array.isArray(hooks[shape.event]) ? hooks[shape.event] : [];
+      const kept = shape.legacy ? withoutLegacy(current, shape.legacy) : current;
+      const replaced = kept.length !== current.length || JSON.stringify(kept) !== JSON.stringify(current);
+      const present = commands(kept).some((c) => isOurHook(c, id));
+      if (present && !replaced) return { agent: id, part: "hook", file, result: "unchanged" };
+      const list = present ? kept : [...kept, entry];
+      writeJson(file, { ...(existsSync(file) ? {} : shape.base), ...data, hooks: { ...hooks, [shape.event]: list } });
+      const notes = [replaced ? "it replaces the older xkg inbox-check hook, so sessions don't get two offers" : "", shape.trustNote ?? ""].filter(Boolean);
+      return {
+        agent: id,
+        part: "hook",
+        file,
+        result: "added",
+        ...(notes.length ? { note: notes.join("; ") } : {}),
+        undo: `remove the session-start hook from hooks.${shape.event} in ${tilde(env, file)}${replaced ? " (the inbox-check hook it replaced is in the backup)" : ""}`,
+      };
     },
     check(env, id) {
       const file = join(env.home, shape.rel);
       const found = commands(readJsonLoose(file)?.hooks?.[shape.event]);
       if (found.some((c) => isOurHook(c, id))) {
+        if (shape.legacy && found.some((c) => typeof c === "string" && shape.legacy!.test(c))) {
+          return { agent: id, part: "hook", status: "warn", detail: `The older xkg inbox-check hook also runs in ${tilde(env, file)}, so sessions get two offers`, fix: INIT };
+        }
         return { agent: id, part: "hook", status: "ok", detail: `In ${tilde(env, file)}${shape.trustNote ? `. ${shape.trustNote}` : ""}` };
       }
       if (found.some(anyXkgSessionStart)) {
@@ -325,7 +383,13 @@ export const AGENTS: AgentSpec[] = [
     bin: "claude",
     files: [".claude.json", ".claude/settings.json", ".claude/CLAUDE.md"],
     mcp: claudeServer,
-    hook: jsonHook({ rel: ".claude/settings.json", event: "SessionStart", entry: nested }),
+    hook: jsonHook({
+      rel: ".claude/settings.json",
+      event: "SessionStart",
+      entry: nested,
+      // What serve-mcp --key and setup-hooks installed before session-start existed
+      legacy: /(?:^|\s)(?:@xmu-labs\/xkg|mnemos-capture)(?:@[\w.-]+)?\s+inbox-check\b/,
+    }),
     rules: ".claude/CLAUDE.md",
   },
   {

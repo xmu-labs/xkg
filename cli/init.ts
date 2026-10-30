@@ -80,6 +80,7 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
   if (agents.length === 0) log("  (no coding agent found: Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor)");
   if (deps.repo) log(`  • This repo (${deps.repo}): git hooks that record applied captures and keep the code map fresh`);
   log("It keeps your other settings, and leaves anything xkg already set up as it is.");
+  if (agents.some((a) => a.id === "claude")) log("In Claude Code, the session-start hook replaces the older xkg inbox-check hook if you have one.");
 
   if (!deps.yes) {
     if (!deps.interactive) {
