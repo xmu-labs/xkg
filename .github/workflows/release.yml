@@ -127,8 +127,10 @@ jobs:
         run: |
           EXPECTED=$(git rev-parse HEAD)
           for NAME in $PACKAGES; do
+            # npm can take several minutes to list a new version ("Your
+            # package is being processed"); 1.9.0 took more than one.
             GIT_HEAD=""
-            for attempt in 1 2 3 4 5 6; do
+            for attempt in $(seq 1 30); do
               GIT_HEAD=$(npm view "$NAME@$VERSION" gitHead 2>/dev/null || true)
               [ -n "$GIT_HEAD" ] && break
               sleep 10
