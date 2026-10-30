@@ -2,10 +2,10 @@
 //
 // Strategy: on serve-mcp startup, query npm for the latest published version.
 // If behind, respawn the process via npx (see upgradeArgs) and proxy stdio.
-// <name> is the package this copy was installed as: every release is published
-// as both `@xmu-labs/xkg` and `mnemos-capture`, so each install updates under its own
-// name. An XKG_UPGRADED=1 env var (MNEMOS_UPGRADED=1 from releases before
-// 1.4.1) prevents infinite recursion.
+// <name> is the package this copy was installed as, so each install updates
+// under its own name. Releases up to 1.8.0 were also published as
+// `mnemos-capture`; that name gets no new versions. An XKG_UPGRADED=1 env var
+// (MNEMOS_UPGRADED=1 from releases before 1.4.1) prevents infinite recursion.
 
 import { readFileSync } from "fs";
 import { homedir } from "os";

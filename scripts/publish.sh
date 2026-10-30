@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# Publishes the current version to npm under both package names:
-#   @xmu-labs/xkg   — the name going forward (scoped: npm rejects plain `xkg`
-#                     as too similar to existing packages)
-#   mnemos-capture  — the old name, kept so existing installs, MCP configs and
-#                     hooks that run `npx mnemos-capture@latest` keep updating
+# Publishes the current version to npm as @xmu-labs/xkg (scoped: npm rejects
+# plain `xkg` as too similar to existing packages). Up to 1.8.0 every version
+# was also published as `mnemos-capture`, the old name; that name gets no new
+# versions, so installs that still run it stay on 1.8.0.
 #
 # Usage: scripts/publish.sh [dist-tag] [extra npm publish flags…]
 #   scripts/publish.sh                      # by hand: latest
@@ -13,7 +12,7 @@
 # Run it from a clean checkout of the commit being released: npm records that
 # commit as the package's gitHead, and the release workflow checks it.
 # A name that already has this version from this commit is skipped, so the
-# script is safe to re-run after one of the two publishes fails.
+# script is safe to re-run.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -28,7 +27,7 @@ fi
 VERSION=$(node -p 'require("./package.json").version')
 HEAD=$(git rev-parse HEAD)
 
-PACKAGES=(@xmu-labs/xkg mnemos-capture)
+PACKAGES=(@xmu-labs/xkg)
 
 # Check every name before publishing any: npm versions can never be replaced,
 # so a conflict found after the first publish would leave the names out of sync.
@@ -66,7 +65,7 @@ fi
 # found" on a fresh clone.
 npm run build:cli
 
-# The other names publish the same tarball: rename in package.json for each,
+# Each name publishes the same tarball: rename in package.json for each,
 # then put it back whatever happens.
 cp package.json package.json.publish-backup
 trap 'mv package.json.publish-backup package.json' EXIT
