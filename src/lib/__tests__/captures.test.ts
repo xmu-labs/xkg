@@ -48,3 +48,18 @@ describe("captureName", () => {
     expect(captureName(42)).toBeNull();
   });
 });
+
+describe("captureName, non-ASCII names", () => {
+  // Regression: ISSUE-001 — a capture whose slug has accents could not be archived or deleted from the web app
+  // Found by /qa on 2026-10-30
+  // Report: project files qa/2026-10-30-xkg-84-captures-page/
+  // protects: captures with accented or non-Latin slugs get working Archive and Delete buttons; fails_when: the guard only allows ASCII word characters; no_claim: what the model writes as a slug
+  it("accepts a capture name with accents or non-Latin letters, still nothing outside the folder", () => {
+    expect(captureName("2026-10-30-configuración-de-agentes.md")).toBe("2026-10-30-configuración-de-agentes.md");
+    expect(captureName("2026-10-30-記憶.md")).toBe("2026-10-30-記憶.md");
+    expect(captureName("2026-10-30-a\\b.md")).toBeNull();
+    expect(captureName(".hidden.md")).toBeNull();
+    expect(captureName("2026-10-30-a\nb.md")).toBeNull();
+  });
+});
+

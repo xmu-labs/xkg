@@ -48,9 +48,14 @@ export function parseIndexRows(content: string): CaptureRow[] {
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
 
-/** A bare capture filename (`2026-10-28-slug.md`), or null for anything else. */
+/**
+ * A bare capture filename (`2026-10-28-slug.md`), or null for anything else.
+ * Slugs come from the model and may hold accents or non-Latin letters, so any
+ * letter or number is allowed; what's refused is anything that could leave the
+ * folder (separators, `..`, a leading dot) or break a path (spaces, controls).
+ */
 export function captureName(value: unknown): string | null {
-  if (typeof value !== "string" || !/^[\w.-]+\.md$/.test(value) || value.includes("..")) return null;
+  if (typeof value !== "string" || !/^[\p{L}\p{N}_-][\p{L}\p{N}\p{M}_.-]*\.md$/u.test(value) || value.includes("..")) return null;
   return value;
 }
 
