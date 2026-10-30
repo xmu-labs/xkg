@@ -30,16 +30,27 @@ vi.mock("@/lib/rate-limit", () => ({ consumeQuota: (...a: unknown[]) => consumeQ
 vi.mock("@/lib/handoff-learning", () => ({ forgetCapture: (...a: unknown[]) => forgetCapture(...a) }));
 vi.mock("@/lib/fetch-source", () => ({ safeFetch: (...a: unknown[]) => safeFetch(...a) }));
 vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: (...a: unknown[]) => synthesizeTopic(...a) }));
-vi.mock("@/lib/github", () => ({
-  readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
+/** Paths GitHub answers with a 503, as for a rate limit, revoked token or outage. */
+const down = new Set<string>();
+vi.mock("@/lib/github", async () => {
+  const { GitHubReadError } = await vi.importActual<typeof import("@/lib/github")>("@/lib/github");
+  return {
+  GitHubReadError,
+  readFile: async (_t: string, _r: string, path: string) => (down.has(path) ? null : files.get(path) ?? null),
+  readFileStrict: async (_t: string, _r: string, path: string) => {
+    if (down.has(path)) throw new GitHubReadError(path, 503);
+    return files.get(path) ?? null;
+  },
   githubGet: async (_t: string, _r: string, dir: string) => {
+    if (down.has(dir)) return { ok: false, data: null, status: 503 };
     const names = [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => ({ name: p.slice(dir.length + 1) }));
-    return names.length ? { ok: true, data: names } : { ok: false, data: null };
+    return names.length ? { ok: true, data: names, status: 200 } : { ok: false, data: null, status: 404 };
   },
   githubPut: (...a: Parameters<typeof githubPut>) => githubPut(...a),
   githubDelete: (...a: Parameters<typeof githubDelete>) => githubDelete(...a),
   updateIndexEntry: (...a: unknown[]) => updateIndexEntry(...a),
-}));
+  };
+});
 
 const list = await import("@/app/api/captures/route");
 const archive = await import("@/app/api/captures/archive/route");
@@ -67,6 +78,7 @@ function req(path: string, body?: unknown): NextRequest {
 
 beforeEach(() => {
   session = user;
+  down.clear();
   files.clear();
   files.set("INDEX.md", { content: INDEX, sha: "i" });
   files.set(`inbox/${CAPTURE}`, { content: captureFile(), sha: "c" });
@@ -226,3 +238,24 @@ describe("GET /api/apply-stats", () => {
     expect(body.weeks.every((w) => w.applied === 0)).toBe(true);
   });
 });
+
+describe("when GitHub fails (not a missing file)", () => {
+  // Regression: review finding on PR #155 — a GitHub outage looked like an empty knowledge repo
+  // protects: a rate limit, revoked token or outage says so instead of showing an empty repo, no captures or zero applies; fails_when: a non-404 failure reads as missing; no_claim: GitHub's own error codes
+  it.each([
+    ["the list", "INDEX.md", () => list.GET(req("/api/captures"))],
+    ["weekly applies", "APPLIED.md", () => stats.GET(req("/api/apply-stats"))],
+    ["check links", "inbox", () => check.POST(req("/api/captures/check", {}))],
+    ["archive", `inbox/${CAPTURE}`, () => archive.POST(req("/api/captures/archive", { filename: CAPTURE }))],
+    ["delete", `inbox/${CAPTURE}`, () => del.POST(req("/api/captures/delete", { filename: CAPTURE }))],
+    ["rules", "INDEX.md", () => rules.POST(req("/api/rules", { tag: "llm" }))],
+  ])("%s answers 502 with a GitHub message", async (_name, path, run) => {
+    down.add(path);
+    const res = await run();
+    expect(res.status).toBe(502);
+    expect(((await res.json()) as { error: string }).error).toMatch(/GitHub/);
+    expect(githubPut).not.toHaveBeenCalled();
+    expect(synthesizeTopic).not.toHaveBeenCalled();
+  });
+});
+

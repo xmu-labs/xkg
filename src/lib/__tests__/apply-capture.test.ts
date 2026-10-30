@@ -35,6 +35,8 @@ vi.mock("../github", () => ({
   githubPut: (...a: unknown[]) => githubPut(...a),
   githubDelete: (...a: unknown[]) => githubDelete(...a),
   readFile: (...a: unknown[]) => readFile(...a),
+  readFileStrict: (...a: unknown[]) => readFile(...a),
+  GitHubReadError: class extends Error {},
   updateIndexEntry: (...a: unknown[]) => updateIndexEntry(...a),
 }));
 vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));

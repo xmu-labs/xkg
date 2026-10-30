@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumeQuota } from "@/lib/rate-limit";
 import { checkCapture, inboxPage } from "@/lib/captures";
-import { fail, jsonBody, repoUser } from "@/lib/captures-route";
+import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 
 const CHECKS_PER_HOUR = 30;
 const PAGE = 20;
@@ -29,6 +29,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const results = await Promise.all(inbox.page.items.map((f) => checkCapture(user, f.name)));
     return NextResponse.json({ results, total: inbox.page.total, next: inbox.page.nextOffset });
   } catch (err) {
+    const github = githubFailure(err);
+    if (github) return github;
     return fail(500, `[check] ${err instanceof Error ? err.message : "Failed to check links"}`);
   }
 }

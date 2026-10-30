@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { captureName, deleteCapture } from "@/lib/captures";
-import { fail, jsonBody, repoUser } from "@/lib/captures-route";
+import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 
 /** The captures page's Delete button. Body: { filename } of an inbox capture. */
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -14,6 +14,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!(await deleteCapture(user, filename))) return fail(404, "That capture isn't in your inbox anymore.");
     return NextResponse.json({ ok: true });
   } catch (err) {
+    const github = githubFailure(err);
+    if (github) return github;
     return fail(500, `[delete] ${err instanceof Error ? err.message : "Failed to delete the capture"}`);
   }
 }

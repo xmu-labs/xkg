@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
+import { GitHubReadError } from "@/lib/github";
 
 /** Shared guards for the web app's captures routes. */
 
@@ -14,6 +15,12 @@ export async function repoUser(): Promise<User | NextResponse> {
   if (!user) return fail(401, "Not authenticated");
   if (!user.github_repo) return fail(400, "Knowledge repo not configured. Complete onboarding first.");
   return user;
+}
+
+/** The response for a failed GitHub read, or null when `err` is something else. */
+export function githubFailure(err: unknown): NextResponse | null {
+  if (!(err instanceof GitHubReadError)) return null;
+  return fail(502, `Couldn't read your knowledge repo on GitHub (HTTP ${err.status ?? "error"}). Try again in a moment.`);
 }
 
 /** The JSON body as an object, or null when it isn't one. */

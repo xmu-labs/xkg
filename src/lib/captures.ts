@@ -6,7 +6,7 @@
  */
 
 import type { User } from "@/lib/db";
-import { githubDelete, githubGet, githubPut, readFile, updateIndexEntry } from "@/lib/github";
+import { GitHubReadError, githubDelete, githubGet, githubPut, readFileStrict, updateIndexEntry } from "@/lib/github";
 import { forgetCapture } from "@/lib/handoff-learning";
 import { safeFetch } from "@/lib/fetch-source";
 import { curateSingle, filterByDateRange, paginate, type PageResult } from "@/lib/llm";
@@ -63,7 +63,7 @@ export function captureName(value: unknown): string | null {
 export async function archiveCapture(user: User, filename: string): Promise<boolean> {
   if (!user.github_repo) return false;
   const inboxPath = `inbox/${filename}`;
-  const file = await readFile(user.github_token, user.github_repo, inboxPath);
+  const file = await readFileStrict(user.github_token, user.github_repo, inboxPath);
   if (!file) return false;
 
   const content = file.content.replace(/^status:\s*inbox$/m, "status: archived");
@@ -77,7 +77,7 @@ export async function archiveCapture(user: User, filename: string): Promise<bool
 export async function deleteCapture(user: User, filename: string): Promise<boolean> {
   if (!user.github_repo) return false;
   const inboxPath = `inbox/${filename}`;
-  const file = await readFile(user.github_token, user.github_repo, inboxPath);
+  const file = await readFileStrict(user.github_token, user.github_repo, inboxPath);
   if (!file) return false;
 
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `delete: ${filename}`);
@@ -107,7 +107,7 @@ async function urlStatus(url: string): Promise<number | null> {
 
 /** Checks one inbox capture: is its source still there, and was the extraction confident? */
 export async function checkCapture(user: User, filename: string): Promise<LinkCheck> {
-  const file = user.github_repo ? await readFile(user.github_token, user.github_repo, `inbox/${filename}`) : null;
+  const file = user.github_repo ? await readFileStrict(user.github_token, user.github_repo, `inbox/${filename}`) : null;
   if (!file) return { filename, status: "not_found", httpStatus: null, reason: "File not found in inbox." };
 
   const fm = file.content.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? "";
@@ -131,7 +131,8 @@ export async function inboxPage(
 ): Promise<{ page: PageResult<{ name: string }>; inInbox: number } | null> {
   if (!user.github_repo) return null;
   const res = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
-  if (!res.ok || !res.data) return null;
+  if (res.status === 404) return null;
+  if (!res.ok || !res.data) throw new GitHubReadError("inbox", res.status);
   const allMd = res.data.filter((f) => f.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
   if (allMd.length === 0) return null;
   const filtered = filterByDateRange(allMd, args.since, args.until);
@@ -141,7 +142,7 @@ export async function inboxPage(
 /** Captures applied per week, newest first, from the APPLIED.md ledger; null when nothing was applied yet. */
 export async function applyStats(user: User, weeks: number): Promise<WeekStats[] | null> {
   if (!user.github_repo) return null;
-  const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
+  const ledger = await readFileStrict(user.github_token, user.github_repo, LEDGER_PATH);
   if (!ledger) return null;
   return weeklyApplyStats(ledger.content, new Date().toISOString().slice(0, 10), weeks);
 }

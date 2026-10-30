@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumeQuota } from "@/lib/rate-limit";
-import { readFile } from "@/lib/github";
+import { readFileStrict } from "@/lib/github";
 import { synthesizeTopic } from "@/lib/synthesis";
 import { llmSettings } from "@/lib/llm";
-import { fail, jsonBody, repoUser } from "@/lib/captures-route";
+import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 
 const RULES_PER_HOUR = 20;
 
@@ -26,11 +26,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return fail(429, `Rate limit reached: ${quota.limit} rule runs per hour.`, { "Retry-After": String(quota.resetIn) });
     }
 
-    const index = await readFile(user.github_token, user.github_repo!, "INDEX.md");
+    const index = await readFileStrict(user.github_token, user.github_repo!, "INDEX.md");
     if (!index) return NextResponse.json({ topic: tag, rules: [] });
     const result = await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo!, tag, index.content, llmSettings(user));
     return NextResponse.json({ topic: result.topic, rules: result.rules });
   } catch (err) {
+    const github = githubFailure(err);
+    if (github) return github;
     return fail(500, `[rules] ${err instanceof Error ? err.message : "Failed to make rules"}`);
   }
 }
