@@ -51,7 +51,7 @@ You find useful stuff, you capture through the web app, then xkg connects it int
 xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
 
 > [!IMPORTANT]
-> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). The npm package is now `@xmu-labs/xkg`. Connectors set up with `mnemos-capture.vercel.app` and commands that run `npx mnemos-capture@latest` keep working: every release is published under both names. Sorry for the inconvenience.
+> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). The npm package is now `@xmu-labs/xkg`. Connectors set up with `mnemos-capture.vercel.app` keep working. The `mnemos-capture` npm package stopped at 1.8.0 and is deprecated: change commands that run `npx mnemos-capture@latest` to `npx -y @xmu-labs/xkg@latest` to get `init`, `doctor` and later fixes. Sorry for the inconvenience.
 
 ## Start here
 
@@ -96,7 +96,7 @@ https://xkg.xmu.sh/api/mcp
 npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 ```
 
-The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). An MCP server already registered as `xmu` or `mnemos`, or set up with `mnemos-capture@latest`, keeps working.
+The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). An MCP server already registered as `xmu` or `mnemos` keeps working. One set up with `mnemos-capture@latest` still runs 1.8.0, the last version under that name: switch its command to `@xmu-labs/xkg@latest`.
 
 **On the web** — paste the URL (no terminal). **In the terminal** — run the command. Finish xkg onboarding first, then ask: *list my inbox* or *brief me*.
 
@@ -110,10 +110,10 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHu
 
 #### ChatGPT
 
-1. Settings → Plugins → Browse plugins
-2. Name it xkg
-3. Paste `https://xkg.xmu.sh/api/mcp`
-4. Sign in with GitHub when asked
+1. Settings → Security and login → turn on **Developer mode** (on Business, Enterprise and Edu plans an admin may have to allow it)
+2. Settings → Plugins → Browse plugins → **+** (top right)
+3. Name it xkg, choose **Server URL**, paste `https://xkg.xmu.sh/api/mcp`, and pick **OAuth**
+4. Tick the risk box, click **Create**, then sign in with GitHub when asked
 
 #### Grok
 
@@ -151,7 +151,7 @@ npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 
 Register that command in the tool you use.
 
-When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own, so there's nothing to paste into rules files. Codex CLI doesn't read it yet: see [Codex](#codex) for the lines to add.
+When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own. Codex CLI doesn't read it yet, so `init` writes the same lines into `~/.codex/AGENTS.md`; if you set Codex up by hand, see [Codex](#codex) for the lines to add.
 
 #### Offer new captures when a session starts
 
@@ -215,7 +215,7 @@ args = ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
 
 Codex App: Settings → MCP → add the same `npx` command.
 
-Codex CLI doesn't read the instructions xkg sends when it connects, so add these lines to `~/.codex/AGENTS.md` (all projects) or the repo's `AGENTS.md`:
+Codex CLI doesn't read the instructions xkg sends when it connects. `init` adds these lines for you; by hand, add them to `~/.codex/AGENTS.md` (all projects) or the repo's `AGENTS.md`:
 
 ```markdown
 ## xkg
@@ -459,7 +459,7 @@ Settings → Account shows the repo your captures are saved in, with a link to i
 | `inbox/YYYY-MM-DD-<slug>.md` | one Markdown file per capture |
 | `applied/` | captures that have been applied in a commit |
 | `archived/` | captures you archived |
-| `plans/` | plans you generated |
+| `plans/` | plans saved by versions before handoffs (`xkg agent --plan` still runs them) |
 | `INDEX.md` | a table of every capture: date, title, keywords, tags |
 | `APPLIED.md` | which capture went into which commit |
 | `HANDOFFS.md` | captures waiting for your coding agent: one row per capture and repo, with the suggested files, the fit, a status (`pending`, `snoozed:<date>`, `applied`, `declined`, `done`, `expired`, `dead`), the date of its last change, and whether it was queued automatically or by you. Done rows leave after 90 days |
@@ -481,6 +481,8 @@ The whole point of this repo being public is that you can check these claims rat
 | `github_repo` | the *name* of your hub, not its contents |
 | `pin_hash` | salted scrypt (`src/lib/pin.ts`) |
 | `api_key` | hashed — not recoverable |
+| computer keys (`cli_keys`) | one per computer you signed in from with `xkg init`: a hash of its key (not recoverable), the computer's name, and when it was made and last used. Generating a new MCP key in Settings deletes them all |
+| sign-ins in progress (`cli_logins`) | a browser sign-in, which expires after 10 minutes: a hash of the CLI's secret code, the code you check, the computer's name, and, once you approve, the new key encrypted until the CLI picks it up. The row is deleted when the CLI picks up the key or the sign-in is denied; an expired one is unusable and is deleted at the next sign-in (`src/lib/cli-login.ts`) |
 | `llm_provider`, `llm_model`, `llm_effort`, `llm_api_key` | the key is encrypted; the provider, model and effort are plain text |
 | `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
 | `token_version` | bumped to revoke everything |
@@ -507,20 +509,22 @@ No third-party analytics, telemetry or tracking. The only usage xkg records is t
 | GitHub token | Encrypted at rest (AES-256-GCM). Uses the `repo` scope, required to read and write a **private** knowledge hub |
 | Your LLM API key | Encrypted at rest (AES-256-GCM) |
 | Your MCP API key | Hashed — never recoverable, not even by xkg |
+| Each computer's key from browser sign-in | Hashed, like the MCP key |
 | Your PIN | Salted scrypt hash |
 
 Your MCP key is shown exactly once. If you lose it, generate a new one.
 
 **PIN unlock is device-bound.** It only works on a device that has already signed in with GitHub. A PIN on its own is not enough to reach your account.
 
-**Revoking access.** Generating a new MCP key invalidates the old key, every other signed-in session, and every connected MCP client. Sessions also expire after 30 days.
+**Revoking access.** Generating a new MCP key invalidates the old key, every computer's key from browser sign-in, every other signed-in session, and every connected MCP client. Sessions also expire after 30 days.
 
 **Removing xkg from a computer.** Your account and captures are not touched:
 
-1. `claude mcp remove xkg` (or delete the `xkg` block from your editor's MCP config). Remove web connectors in each app's Connectors settings.
-2. Delete the xkg entries under `hooks` in `~/.claude/settings.json`.
-3. In each repo with the git hook, delete the lines ending in `# xkg` from `.git/hooks/post-commit`, `post-merge` and `post-checkout`.
-4. `rm -rf ~/.xkg`
+1. Remove the `xkg` MCP server from each agent: `claude mcp remove xkg` for Claude Code, and delete the `xkg` entry from the agent's MCP file in the [table above](#in-the-terminal) (or your editor's MCP config). Remove web connectors in each app's Connectors settings.
+2. Delete the xkg session-start hook from each agent's hook file in the same table, and any older xkg hooks (`inbox-check`, `vault-check`) under `hooks` in `~/.claude/settings.json`.
+3. Delete the lines from `<!-- xkg -->` to `<!-- /xkg -->` in each rules file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.copilot/copilot-instructions.md`).
+4. In each repo with the git hook, delete the lines ending in `# xkg` from `.git/hooks/post-commit`, `post-merge` and `post-checkout`.
+5. `rm -rf ~/.xkg` (your key and the backups `init` made)
 
 Generate a new MCP key afterwards to cut off any connection you missed.
 

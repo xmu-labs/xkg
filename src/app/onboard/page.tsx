@@ -84,6 +84,15 @@ export default function OnboardPage() {
             </div>
             <div>
               <p className="eyebrow mb-1" style={{ color: "var(--gold)" }}>Connect with your AI worker</p>
+              <p className="text-xs mb-1" style={{ color: "var(--fg-muted)" }}>
+                Set up every coding agent on a computer (signs in through the browser):
+              </p>
+              <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
+                npx -y @xmu-labs/xkg@latest init
+              </code>
+              <p className="text-xs mt-2 mb-1" style={{ color: "var(--fg-muted)" }}>
+                Or add one tool by hand:
+              </p>
               <code className="text-xs block p-2 rounded-lg break-all" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
                 npx -y @xmu-labs/xkg@latest serve-mcp --key {result.apiKey}
               </code>

@@ -739,7 +739,9 @@ export default function SettingsDrawer({
                       </button>
                     </div>
                     <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
-                      In a terminal, use a key instead. A new key replaces the old one.
+                      In a terminal, run <code>npx -y @xmu-labs/xkg@latest init</code>. It signs you in through the
+                      browser and sets up every coding agent on that computer. To set up a tool by hand, use a key.
+                      A new key replaces the old one and signs out every computer.
                     </p>
                     {!mcpKey ? (
                       <>
