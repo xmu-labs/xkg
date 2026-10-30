@@ -115,15 +115,24 @@ function track(p: Promise<void>): void {
   void p.finally(() => pending.delete(p));
 }
 
-export async function serveMcp(): Promise<void> {
-  // Parse --key flag
-  const args = process.argv.slice(2);
+/**
+ * The key from --key, else the one in ~/.xkg/config.json, so an MCP entry written
+ * by `xkg init` carries no key.
+ */
+export function serveKey(args: string[], config: { key?: string }): { key: string | undefined; fromFlag: boolean } {
   const keyIdx = args.indexOf("--key");
-  const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
+  if (keyIdx !== -1) return { key: args[keyIdx + 1], fromFlag: true };
+  return { key: config.key, fromFlag: false };
+}
+
+export async function serveMcp(): Promise<void> {
+  const { readConfig } = await import("./config.js");
+  const { key: apiKey, fromFlag } = serveKey(process.argv.slice(2), readConfig());
 
   if (!apiKey) {
     process.stderr.write("\nxkg MCP server requires an API key.\n");
-    process.stderr.write("Usage: npx -y @xmu-labs/xkg@latest serve-mcp --key <your-api-key>\n\n");
+    process.stderr.write("Run: npx -y @xmu-labs/xkg@latest init\n");
+    process.stderr.write("Or: npx -y @xmu-labs/xkg@latest serve-mcp --key <your-api-key>\n\n");
     process.stderr.write("Get your API key at: https://xkg.xmu.sh/onboard\n\n");
     process.exit(1);
   }
@@ -140,11 +149,14 @@ export async function serveMcp(): Promise<void> {
 
   // Auto-install the inbox hook the first time the MCP server is registered.
   // Uses silent mode so it never prints to stdout (which is reserved for MCP protocol).
-  try {
-    const { setupHooks } = await import("./hooks.js");
-    setupHooks(apiKey, { silent: true, skipIfExists: true });
-  } catch {
-    // Non-fatal — hook setup should never block the MCP server from starting
+  // A server registered without --key was set up by init, which writes the session-start hook instead.
+  if (fromFlag) {
+    try {
+      const { setupHooks } = await import("./hooks.js");
+      setupHooks(apiKey, { silent: true, skipIfExists: true });
+    } catch {
+      // Non-fatal — hook setup should never block the MCP server from starting
+    }
   }
 
   process.stderr.write("xkg MCP server starting (proxying to hosted instance)...\n");

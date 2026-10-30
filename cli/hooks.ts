@@ -25,6 +25,10 @@ function isOurHook(cmd: string, subcommand: "inbox-check" | "vault-check"): bool
   return new RegExp(`(?:^|\\s)(?:${PACKAGE}|mnemos-capture)(?:@[\\w.-]+)?\\s+${subcommand}\\b`).test(cmd);
 }
 
+function isSessionStartHook(cmd: string): boolean {
+  return new RegExp(`(?:^|\\s)(?:${PACKAGE}|mnemos-capture)(?:@[\\w.-]+)?\\s+session-start\\b`).test(cmd);
+}
+
 function isXkgHook(cmd: string): boolean {
   return isOurHook(cmd, "inbox-check");
 }
@@ -125,6 +129,9 @@ export function setupHooks(
     }
     if (existingCmd) break;
   }
+
+  // `xkg session-start` (set up by init or by hand) already offers captures; a second hook would ask twice.
+  if (opts.skipIfExists && sessionStart.some((g) => (g.hooks ?? []).some((h) => typeof h.command === "string" && isSessionStartHook(h.command)))) return;
 
   // skipIfExists (serve-mcp auto-install): preserve user-configured hooks but
   // silently migrate hooks that pin a version or use the old package name.
