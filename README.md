@@ -121,7 +121,27 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHu
 
 ### In the terminal
 
-The same command works in every CLI — Cursor, Codex, Gemini CLI, VS Code, Claude Code, or anything that can launch a local MCP server:
+One command sets up every coding agent on your machine:
+
+```bash
+npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY
+```
+
+It checks the key and saves it in `~/.xkg/config.json`, finds Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor, lists what it will change, and asks once (`--yes` skips the question, `--agents codex,cursor` limits it). For each agent it adds three things, all without a key:
+
+| Agent | MCP server | Session-start hook | Rules block |
+| --- | --- | --- | --- |
+| Claude Code | `claude mcp add-json -s user xkg` | `~/.claude/settings.json` | `~/.claude/CLAUDE.md` |
+| Codex | `~/.codex/config.toml` | `~/.codex/hooks.json` (trust it once in `/hooks`) | `~/.codex/AGENTS.md` |
+| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` |
+| GitHub Copilot | `~/.copilot/mcp-config.json` | `~/.copilot/hooks/xkg.json` | `~/.copilot/copilot-instructions.md` |
+| Cursor | `~/.cursor/mcp.json` | `~/.cursor/hooks.json` | none (Cursor keeps User Rules in the app) |
+
+The hook is the one in [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts). The rules block is the same text in every file, between `<!-- xkg -->` and `<!-- /xkg -->`. Inside a git repo, `init` also installs the [git hooks](#workflow) and sends the code map. It keeps your other settings, leaves anything xkg already set up as it is (a hand-written `## xkg` section too), replaces the older `inbox-check` hook in Claude Code so a session doesn't get two offers, backs up each file to `~/.xkg/backups/` first, and prints how to undo each change. Then it runs `xkg doctor`.
+
+`xkg doctor` checks the key, the server, your knowledge repo, each agent's three pieces, this repo's git hooks (and the version they run) and code map, then shows what your agent would see at session start. Each problem comes with the command that fixes it. It changes nothing; `--json` prints the result for scripts, and it exits 1 when a check fails.
+
+To set up an agent by hand instead, the same command works in every CLI — Cursor, Codex, Gemini CLI, VS Code, Claude Code, or anything that can launch a local MCP server:
 
 ```bash
 npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
@@ -220,7 +240,7 @@ Or the URL, no API key:
 claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
 ```
 
-`serve-mcp` installs a light session hook the first time it runs. More hooks, all optional (MCP works without them):
+`serve-mcp --key` installs a light session hook the first time it runs, unless a `session-start` hook is already there (a server set up by `init` has no key in its entry and installs nothing). More hooks, all optional (MCP works without them):
 
 ```bash
 npx -y @xmu-labs/xkg@latest setup-hooks --key YOUR_API_KEY --briefing --vault
@@ -400,12 +420,14 @@ npx -y @xmu-labs/xkg@latest <command>
 | Command | What it does |
 | --- | --- |
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
-| `serve-mcp --key YOUR_API_KEY` | Run the local MCP proxy |
+| `init [--key YOUR_API_KEY] [--yes] [--agents NAMES]` | Set up xkg in every coding agent found (MCP server, session-start hook, rules block) and the git hooks in this repo. See [In the terminal](#in-the-terminal) |
+| `doctor [--json]` | Check the key, server, knowledge repo, each agent and this repo, with the fix for each problem. Changes nothing |
+| `serve-mcp [--key YOUR_API_KEY]` | Run the local MCP proxy. Without `--key` it uses the key in `~/.xkg/config.json` |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
 | `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer, and keep the repo's code map up to date after commits, pulls and branch switches (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once; the hooks run the CLI version that installed them (run setup again to update) |
 | `map [--key YOUR_API_KEY]` | In a repo: send its code map now (file paths and exported names, never code) |
 | `session-start [--agent NAME]` | For an agent's session-start hook: ask whether to see and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot` or `cursor`; without it the output is plain text. See [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts) |
-| `config set key YOUR_API_KEY` | Store the key that `session-start`, the git hooks, `map` and `agent` use |
+| `config set key YOUR_API_KEY` | Store the key that `serve-mcp`, `session-start`, the git hooks, `map` and `agent` use |
 | `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
 | `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
 | `agent --spec PATH` | Apply a handoff spec your agent wrote (`.xkg/handoffs/<capture>.md`) in an isolated worktree. Reads it from disk; no key needed |

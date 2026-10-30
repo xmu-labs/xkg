@@ -130,3 +130,20 @@ describe("createHostedSession", () => {
     expect(await hosted.send(call)).toEqual({ error: "Could not reach xkg at https://xkg.test/api/mcp: offline" });
   });
 });
+
+describe("serveKey", () => {
+  it("takes --key when given", async () => {
+    const { serveKey } = await import("../mcp-server");
+    expect(serveKey(["serve-mcp", "--key", "flag"], { key: "stored" })).toEqual({ key: "flag", fromFlag: true });
+  });
+
+  it("falls back to the stored key, so agent configs written by init carry none", async () => {
+    const { serveKey } = await import("../mcp-server");
+    expect(serveKey(["serve-mcp"], { key: "stored" })).toEqual({ key: "stored", fromFlag: false });
+  });
+
+  it("has no key when neither is set", async () => {
+    const { serveKey } = await import("../mcp-server");
+    expect(serveKey(["serve-mcp"], {})).toEqual({ key: undefined, fromFlag: false });
+  });
+});

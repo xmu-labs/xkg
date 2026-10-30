@@ -52,7 +52,7 @@ export function isNewer(latest: string, current: string): boolean {
   return false;
 }
 
-async function getLatestVersion(name: string): Promise<string | null> {
+export async function getLatestVersion(name: string): Promise<string | null> {
   try {
     const res = await fetch(`https://registry.npmjs.org/${name}/latest`, {
       signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
