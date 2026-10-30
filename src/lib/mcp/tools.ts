@@ -150,8 +150,8 @@ export const TOOLS = [
       properties: {
         project_context: { type: "string", description: "Describe the project you're working on (tech stack, domain, current focus area)" },
         include_rules: { type: "boolean", description: "Include synthesized rules in the briefing (default true)" },
+        repo: { type: "string", description: "The repo's owner/name from its origin remote. Captures waiting for this repo come first, with the question to ask the user. With repo and no project_context, only those are returned." },
       },
-      required: ["project_context"],
     },
   },
   {

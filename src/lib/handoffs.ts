@@ -51,7 +51,7 @@ export const encodePath = (path: string) => path.replace(/%/g, "%25").replace(/,
 export const decodePath = (path: string) => path.replace(/%(25|2C)/gi, (_, code: string) => (code === "25" ? "%" : ","));
 
 /** The same capture whether it sits in inbox/ or applied/. */
-const captureName = (path: string) => path.replace(/^(inbox|applied|archived)\//, "");
+export const captureName = (path: string) => path.replace(/^(inbox|applied|archived)\//, "");
 
 function rowOf(cells: string[]): HandoffRow | null {
   const [capture, repo, kind, files, fit, status, since, source] = cells;
@@ -101,7 +101,7 @@ const sameRow = (a: HandoffRow, b: HandoffRow) => JSON.stringify(a) === JSON.str
  * (newest first). A dead row stays dead: that pair is never offered again.
  */
 export function upsertHandoff(rows: HandoffRow[], row: HandoffRow): { rows: HandoffRow[]; row: HandoffRow; changed: boolean } {
-  const same = (r: HandoffRow) => r.repo === row.repo && captureName(r.capture) === captureName(row.capture);
+  const same = (r: HandoffRow) => r.repo.toLowerCase() === row.repo.toLowerCase() && captureName(r.capture) === captureName(row.capture);
   const existing = rows.find(same);
   if (existing?.status === "dead") return { rows, row: existing, changed: false };
   if (existing && sameRow(existing, row)) return { rows, row: existing, changed: false };
@@ -124,24 +124,59 @@ export function autoHandoff(capturePath: string, where: WhereResult, today: stri
 }
 
 /**
- * Writes the row to HANDOFFS.md with the file's sha. A failed write (another
- * commit got there first) is retried once from a fresh read; after that it
- * gives up and returns null, so a capture never fails because of the queue.
+ * Applies `change` to HANDOFFS.md and writes it with the file's sha. A failed
+ * write (another commit got there first) is retried once from a fresh read;
+ * after that it gives up and returns null, so the caller never fails because
+ * of the queue.
  */
-export async function queueHandoff(token: string, repo: string, row: HandoffRow): Promise<{ row: HandoffRow; changed: boolean } | null> {
+async function updateHandoffs<T>(
+  token: string,
+  repo: string,
+  message: string,
+  change: (rows: HandoffRow[]) => { rows: HandoffRow[]; changed: boolean; result: T },
+): Promise<T | null> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const file = await readFile(token, repo, HANDOFFS_PATH);
       const parsed = file ? parseHandoffs(file.content) : { head: INTRO, rows: [], other: [], tail: "" };
-      const result = upsertHandoff(parsed.rows, row);
-      if (!result.changed) return { row: result.row, changed: false };
-      await githubPut(token, repo, HANDOFFS_PATH, renderHandoffs(result.rows, parsed), `handoff: queue ${captureName(row.capture)} for ${row.repo}`, file?.sha);
-      return { row: result.row, changed: true };
+      const { rows, changed, result } = change(parsed.rows);
+      if (changed) await githubPut(token, repo, HANDOFFS_PATH, renderHandoffs(rows, parsed), message, file?.sha);
+      return result;
     } catch (err) {
-      if (attempt === 1) console.error("[handoffs] queue write failed:", err instanceof Error ? err.message : err);
+      if (attempt === 1) console.error("[handoffs] write failed:", err instanceof Error ? err.message : err);
     }
   }
   return null;
+}
+
+/** Writes the row to HANDOFFS.md (see upsertHandoff). Null when it couldn't be written. */
+export function queueHandoff(token: string, repo: string, row: HandoffRow): Promise<{ row: HandoffRow; changed: boolean } | null> {
+  return updateHandoffs(token, repo, `handoff: queue ${captureName(row.capture)} for ${row.repo}`, (rows) => {
+    const result = upsertHandoff(rows, row);
+    return { rows: result.rows, changed: result.changed, result: { row: result.row, changed: result.changed } };
+  });
+}
+
+const samePair = (a: Pick<HandoffRow, "capture" | "repo">, b: Pick<HandoffRow, "capture" | "repo">) =>
+  a.repo.toLowerCase() === b.repo.toLowerCase() && captureName(a.capture) === captureName(b.capture);
+
+/**
+ * Sets the status of these rows, each only if it's still as it was read (same
+ * status and date), so a change the user or another call made meanwhile is
+ * kept. A dead row stays dead. True when written (or nothing to change).
+ */
+export async function setHandoffStatus(token: string, repo: string, read: HandoffRow[], status: string): Promise<boolean> {
+  const done = await updateHandoffs(token, repo, `handoff: mark ${read.length} ${status}`, (rows) => {
+    let changed = false;
+    const next = rows.map((r) => {
+      const unchanged = read.some((p) => samePair(p, r) && p.status === r.status && p.since === r.since);
+      if (!unchanged || r.status === status || r.status === "dead") return r;
+      changed = true;
+      return { ...r, status };
+    });
+    return { rows: next, changed, result: true };
+  });
+  return done === true;
 }
 
 /**

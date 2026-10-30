@@ -26,6 +26,8 @@ import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApp
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { queueStrongFit } from "@/lib/handoffs";
+import { handoffOffer } from "@/lib/handoff-offer";
+import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
@@ -454,12 +456,20 @@ export async function handleGetRules(user: User, args: { tag?: string }): Promis
   return `## ${args.tag}\n${match[1]}`;
 }
 
-export async function handleBriefing(user: User, args: { project_context: string; include_rules?: boolean }): Promise<string> {
+export async function handleBriefing(user: User, args: { project_context?: string; include_rules?: boolean; repo?: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  if (!user.llm_api_key) return "API key not configured.";
+
+  // Captures waiting for this repo come first. With only a repo (a session-start
+  // hook), that offer is all: no ranking, so no LLM call and no wait.
+  const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
+  const offer = repo ? await handoffOffer(user, repo) : null;
+  if (!args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
+  const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
+
+  if (!user.llm_api_key) return withOffer("API key not configured.");
 
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
-  if (!existing) return "No captures yet. Build your knowledge base with the capture tool first.";
+  if (!existing) return withOffer("No captures yet. Build your knowledge base with the capture tool first.");
 
   // 1. Rank captures against the project (the only LLM call: xkg can't see the code,
   //    so the agent decides where each candidate applies)
@@ -482,7 +492,7 @@ export async function handleBriefing(user: User, args: { project_context: string
 
   const shown = candidates.filter((c): c is BriefingCandidate => c !== null);
   await recordSurfaceEvents(user.id, shown.map((c) => c.filename), "briefing");
-  return formatBriefing(shown, rules);
+  return withOffer(formatBriefing(shown, rules));
 }
 
 export async function handleApplyToContext(user: User, args: { task: string; stack?: string; files?: string[]; code_snippet?: string }): Promise<string> {
