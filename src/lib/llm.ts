@@ -1108,9 +1108,9 @@ export function matchIndexRows(rows: string[], query: string): string[] {
 
 // ── Markdown formatting ──
 
-/** Text made safe for one INDEX.md table cell: no newlines, pipes escaped. */
+/** Text made safe for one INDEX.md table cell: no newlines, backslashes and pipes escaped. */
 function indexCell(text: string): string {
-  return text.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
+  return text.replace(/\s*\n\s*/g, " ").replace(/[\\|]/g, "\\$&");
 }
 
 /** Build the INDEX.md row for a capture. */

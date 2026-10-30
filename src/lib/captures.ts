@@ -26,13 +26,29 @@ export type CaptureRow = {
 
 const ROW_LINK = /\[([^\]]*)\]\((inbox|applied|archived)\/([^)]+)\)/;
 
-/** A table row's cells, split on unescaped pipes, with an escaped "\|" read back as "|". */
+/**
+ * A table row's cells. A backslash escapes a following backslash or pipe, so
+ * an escaped pipe stays inside its cell; any other backslash is kept as written.
+ */
 function rowCells(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\||(?<!\\)\|$/g, "")
-    .split(/(?<!\\)\|/)
-    .map((c) => c.trim().replace(/\\\|/g, "|"));
+  const text = line.trim().replace(/^\|/, "");
+  const cells: string[] = [];
+  let cell = "";
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]!;
+    const next = text[i + 1];
+    if (ch === "\\" && (next === "\\" || next === "|")) {
+      cell += next;
+      i++;
+    } else if (ch === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += ch;
+    }
+  }
+  if (cell.trim()) cells.push(cell.trim());
+  return cells;
 }
 
 /** The capture rows of INDEX.md, newest first. Rows that don't link a capture are skipped. */
