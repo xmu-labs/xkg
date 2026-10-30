@@ -498,7 +498,7 @@ Your MCP key is shown exactly once. If you lose it, generate a new one.
 
 1. `claude mcp remove xkg` (or delete the `xkg` block from your editor's MCP config). Remove web connectors in each app's Connectors settings.
 2. Delete the xkg entries under `hooks` in `~/.claude/settings.json`.
-3. In each repo with the git hook, delete the line ending in `# xkg` from `.git/hooks/post-commit`.
+3. In each repo with the git hook, delete the lines ending in `# xkg` from `.git/hooks/post-commit`, `post-merge` and `post-checkout`.
 4. `rm -rf ~/.xkg`
 
 Generate a new MCP key afterwards to cut off any connection you missed.

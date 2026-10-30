@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, mkdirSync, chmodSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, mkdirSync, chmodSync, existsSync, realpathSync } from "fs";
 import { execFileSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -56,7 +56,7 @@ describe("installPostCommitHook", () => {
   beforeEach(() => { repo = makeRepo(); });
   afterEach(() => rmSync(repo, { recursive: true, force: true }));
 
-  const LINE = 'xkg_sha=$(git rev-parse HEAD); npx -y @xmu-labs/xkg@1.7.0 post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg';
+  const LINE = 'xkg_sha=$(git rev-parse HEAD); npx --prefix "$HOME" -y @xmu-labs/xkg@1.7.0 post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg';
 
   it("creates an executable hook that records the commit sha before going to the background", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
@@ -78,14 +78,14 @@ describe("installPostCommitHook", () => {
   it("pins the CLI version that installed it, so a release can't change every repo's hook at once", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
     const path = installPostCommitHook(repo, "1.7.0");
-    expect(readFileSync(path, "utf-8")).toContain("npx -y @xmu-labs/xkg@1.7.0 post-commit");
+    expect(readFileSync(path, "utf-8")).toContain('npx --prefix "$HOME" -y @xmu-labs/xkg@1.7.0 post-commit');
     expect(readFileSync(path, "utf-8")).not.toContain("@latest");
   });
 
   it("falls back to @latest when its own version is unknown", async () => {
     const { installPostCommitHook } = await import("../git-hook.js");
     const path = installPostCommitHook(repo, "0.0.0");
-    expect(readFileSync(path, "utf-8")).toContain("npx -y @xmu-labs/xkg@latest post-commit");
+    expect(readFileSync(path, "utf-8")).toContain('npx --prefix "$HOME" -y @xmu-labs/xkg@latest post-commit');
   });
 
   it("refuses to touch a hook written in another language", async () => {
@@ -305,10 +305,10 @@ describe("map sync hooks (any agent, or plain git)", () => {
     run(repo, "add", "-A");
     run(repo, "commit", "-q", "-m", "First");
     const sha = run(repo, "rev-parse", "HEAD");
-    expect(await calls(1)).toEqual([`-y @xmu-labs/xkg@1.8.0 post-commit --sha ${sha}`]);
+    expect(await calls(1)).toEqual([`--prefix ${process.env["HOME"]} -y @xmu-labs/xkg@1.8.0 post-commit --sha ${sha}`]);
 
     run(repo, "checkout", "-q", "-b", "feature");
-    expect((await calls(2))[1]).toBe("-y @xmu-labs/xkg@1.8.0 sync-map");
+    expect((await calls(2))[1]).toBe(`--prefix ${process.env["HOME"]} -y @xmu-labs/xkg@1.8.0 sync-map`);
 
     const clone = mkdtempSync(join(tmpdir(), "xkg-clone-"));
     try {
@@ -318,9 +318,32 @@ describe("map sync hooks (any agent, or plain git)", () => {
       execFileSync("git", ["add", "-A"], { cwd: repo });
       execFileSync("git", ["-c", "core.hooksPath=/dev/null", "-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "-m", "Second"], { cwd: repo });
       run(clone, "-c", "pull.rebase=false", "pull", "-q", "origin", "feature");
-      expect((await calls(3))[2]).toBe("-y @xmu-labs/xkg@1.8.0 sync-map");
+      expect((await calls(3))[2]).toBe(`--prefix ${process.env["HOME"]} -y @xmu-labs/xkg@1.8.0 sync-map`);
     } finally {
       rmSync(clone, { recursive: true, force: true });
+    }
+  });
+
+  // protects: hooks in a clone of xkg itself run the published CLI, and reinstalling fixes a hook from 1.8.0; fails_when: npx starts with the repo as its project (in a clone of xkg at the pinned version it then runs the clone's unbuilt bin: "mnemos-capture: command not found"), the hook leaves the repo, or the old line stays next to the new one; no_claim: npm's own package resolution (checked by hand with real npx)
+  it("starts npx in the repo with a project outside it, so a clone of xkg can't stand in for the published CLI", async () => {
+    const { installGitHooks } = await import("../git-hook.js");
+    const home = mkdtempSync(join(tmpdir(), "xkg-home-"));
+    try {
+      writeFileSync(join(bin, "npx"), `#!/bin/sh\necho "$PWD $*" >> "${log}"\n`);
+      writeFileSync(join(repo, "package.json"), '{"name":"@xmu-labs/xkg","version":"1.9.0"}\n');
+      writeFileSync(join(repo, ".git", "hooks", "post-commit"),
+        '#!/bin/sh\nxkg_sha=$(git rev-parse HEAD); npx -y @xmu-labs/xkg@1.8.0 post-commit --sha "$xkg_sha" >/dev/null 2>&1 & # xkg\n');
+      installGitHooks(repo, "1.9.0");
+
+      const opts = { cwd: repo, encoding: "utf-8" as const, env: { ...env(), HOME: home } };
+      execFileSync("git", ["add", "-A"], opts);
+      execFileSync("git", ["commit", "-q", "-m", "First"], opts);
+      const sha = git(repo, "rev-parse", "HEAD");
+      await calls(1);
+      await new Promise((r) => setTimeout(r, 200));
+      expect(await calls(1)).toEqual([`${realpathSync(repo)} --prefix ${home} -y @xmu-labs/xkg@1.9.0 post-commit --sha ${sha}`]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
     }
   });
 
@@ -341,9 +364,9 @@ describe("map sync hooks (any agent, or plain git)", () => {
     installGitHooks(repo, "1.7.0");
     const paths = installGitHooks(repo, "1.8.0");
     expect(paths).toEqual(["post-commit", "post-merge", "post-checkout"].map((h) => join(repo, ".git", "hooks", h)));
-    expect(readFileSync(merge, "utf-8")).toBe("#!/bin/sh\necho mine\nnpx -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n");
+    expect(readFileSync(merge, "utf-8")).toBe('#!/bin/sh\necho mine\nnpx --prefix "$HOME" -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n');
     expect(readFileSync(join(repo, ".git", "hooks", "post-checkout"), "utf-8")).toBe(
-      '#!/bin/sh\n[ "$3" = "1" ] && npx -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n');
+      '#!/bin/sh\n[ "$3" = "1" ] && npx --prefix "$HOME" -y @xmu-labs/xkg@1.8.0 sync-map >/dev/null 2>&1 & # xkg\n');
   });
 
   // protects: D3, a handoff spec the agent writes in .xkg/ is never committed; fails_when: git would track .xkg/handoffs/*.md, or the line is added twice or replaces the user's own; no_claim: agents that commit with --force

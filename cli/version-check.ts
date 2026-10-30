@@ -1,13 +1,14 @@
 // Self-update enforcement: ensures users always run the latest xkg CLI.
 //
 // Strategy: on serve-mcp startup, query npm for the latest published version.
-// If behind, respawn the process via `npx -y <name>@<latest>` and proxy stdio.
+// If behind, respawn the process via npx (see upgradeArgs) and proxy stdio.
 // <name> is the package this copy was installed as: every release is published
 // as both `@xmu-labs/xkg` and `mnemos-capture`, so each install updates under its own
 // name. An XKG_UPGRADED=1 env var (MNEMOS_UPGRADED=1 from releases before
 // 1.4.1) prevents infinite recursion.
 
 import { readFileSync } from "fs";
+import { homedir } from "os";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { spawn } from "child_process";
@@ -65,7 +66,16 @@ async function getLatestVersion(name: string): Promise<string | null> {
 }
 
 /**
- * If a newer version exists on npm, respawn via `npx -y <name>@<latest>` under
+ * npx arguments that run `name@version` with `argv`. The npx project is the home directory, so
+ * in a clone of xkg itself at that version npx runs the published release, not the clone's
+ * own (unbuilt) bin. The child still runs in the current directory.
+ */
+export function upgradeArgs(name: string, version: string, argv: string[], home: string = homedir()): string[] {
+  return ["--prefix", home, "-y", `${name}@${version}`, ...argv];
+}
+
+/**
+ * If a newer version exists on npm, respawn `<name>@<latest>` via npx under
  * the name this copy was installed as, with the original argv, piping stdio. Returns true if the caller should stop
  * (because the child is taking over). Returns false otherwise — caller should
  * continue with normal startup.
@@ -86,7 +96,7 @@ export async function maybeSelfUpgrade(): Promise<boolean> {
 
   const child = spawn(
     "npx",
-    ["-y", `${name}@${latest}`, ...process.argv.slice(2)],
+    upgradeArgs(name, latest, process.argv.slice(2)),
     {
       stdio: "inherit",
       env: { ...process.env, XKG_UPGRADED: "1" },
