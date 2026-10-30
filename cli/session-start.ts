@@ -92,7 +92,7 @@ export async function sessionStart(
       if (offer?.startsWith(OFFER_PREFIX)) return void print(offer);
     }
 
-    const text = await callMcp(apiKey, "list_inbox", {}, remaining(), session);
+    const text = await callMcp(apiKey, "search", { status: "inbox", limit: 1 }, remaining(), session);
     const count = parseInt(text?.match(/^(\d+)\s+capture/)?.[1] ?? "0", 10);
     if (count <= 0) return;
     print(message(count));

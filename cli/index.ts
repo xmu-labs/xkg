@@ -209,17 +209,16 @@ function printHelp(): void {
     npx -y @xmu-labs/xkg@latest …                              Same CLI, via the published package
 
   MCP tools (via your AI worker):
-    briefing          — Session-start briefing with ranked insights to apply
-    generate_plan     — Turn selected captures into a full implementation plan
-    list_plans        — List or read saved implementation plans
-    vault_scan        — Scan all captures for relevance to current activity
-    apply_stats       — Captures applied per week, and how many came with a commit
-    curate            — Validate URLs and flag stale captures
+    capture           — Save an article, notes or an idea
+    briefing          — Captures that fit this repo (session start) or this task (mid-task)
+    search            — Find or list captures by words, tag, status or date
+    read_capture      — Read a capture in full
+    apply_capture     — Record that a commit applied a capture, or the answer to a handoff
 
   xkg agent — implement plans with your own AI worker (model-agnostic):
     1. Tell xkg which assistant to drive (once):
          xkg config set agent "claude -p"      # or "codex exec", "aider --yes --message"
-    2. Generate a plan via the generate_plan MCP tool.
+    2. Have a plan in plans/ of your knowledge repo, or use --spec with a handoff spec.
     3. Run: xkg agent --key YOUR_KEY
        It creates an isolated git worktree, hands the plan to your assistant,
        and reports the branch + the plan's Verification Checklist when done.

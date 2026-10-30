@@ -139,7 +139,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   if (line) result += `\n${line}`;
   if (waitingIn) result += `\nQueued for your next coding session in ${waitingIn}.`;
   if (inboxCount > 0) {
-    result += `\n\n---\n📬 You have ${inboxCount} item(s) in your inbox. Use list_inbox to review and apply them.`;
+    result += `\n\n---\n📬 You have ${inboxCount} item(s) in your inbox. Use search with status inbox to review them.`;
   }
   return result;
 }
@@ -186,8 +186,15 @@ export async function handleListInbox(
 
 export async function handleSearch(
   user: User,
-  args: { query?: string; tag?: string; since?: string; until?: string; offset?: number; limit?: number },
+  args: SearchArgs,
 ): Promise<string> {
+  return searchIndex(user, args, "search");
+}
+
+type SearchArgs = { query?: string; tag?: string; status?: string; since?: string; until?: string; offset?: number; limit?: number };
+
+/** `tool` is the name the paging footer tells the caller to call again. */
+async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
   if (!existing) return "No captures yet.";
@@ -200,7 +207,10 @@ export async function handleSearch(
   // leading date column drives filterByDateRange via a synthetic `name`).
   const tag = args.tag?.toLowerCase();
   const tagged = tag ? lines.filter((l) => l.toLowerCase().includes(tag)) : lines;
-  const dated = tagged.map((row) => ({ name: (row.match(/\|\s*(\d{4}-\d{2}-\d{2})/)?.[1] ?? "") + " " + row, row }));
+  // Each row links its capture by folder, so the folder is its status.
+  const status = typeof args.status === "string" && STATUSES.has(args.status) ? args.status : null;
+  const filed = status ? tagged.filter((l) => l.includes(`](${status}/`)) : tagged;
+  const dated = filed.map((row) => ({ name: (row.match(/\|\s*(\d{4}-\d{2}-\d{2})/)?.[1] ?? "") + " " + row, row }));
   const inScope = filterByDateRange(dated, args.since, args.until).map((m) => m.row);
 
   // Then rank by query tokens (OR + relevance). An empty query lists all.
@@ -215,14 +225,17 @@ export async function handleSearch(
 
   const page = paginate(matches, args.offset ?? 0, args.limit ?? 20);
   const header = query.trim() ? `${page.total} match(es):` : `${page.total} capture(s):`;
-  return `${header}\n${page.items.join("\n")}${pageFooter(page, "search_captures")}`;
+  return `${header}\n${page.items.join("\n")}${pageFooter(page, tool)}`;
 }
+
+const STATUSES = new Set(["inbox", "applied", "archived"]);
 
 export async function handleReadCapture(user: User, args: { filename: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  const path = args.filename.includes("/") ? args.filename : `inbox/${args.filename}`;
+  // RULES.md sits at the repo root; a bare capture name means the inbox.
+  const path = args.filename.includes("/") || args.filename === "RULES.md" ? args.filename : `inbox/${args.filename}`;
   const file = await readFile(user.github_token, user.github_repo, path);
-  if (!file) return `File not found: ${path}. Use list_inbox to see available captures.`;
+  if (!file) return `File not found: ${path}. Use search to find it.`;
   return file.content;
 }
 
@@ -259,7 +272,7 @@ export async function handleApplyCapture(
   const appliedPath = `applied/${filename}`;
   const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
-  if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
+  if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use search to find it.`;
   const today = new Date().toISOString().split("T")[0]!;
 
   // A handoff waiting for this capture is done once it's applied
@@ -423,17 +436,28 @@ export async function handleDeleteCapture(user: User, args: { filename: string }
   return `Deleted: ${args.filename}`;
 }
 
-export async function handleRecall(user: User, args: { context: string; max_results?: number }): Promise<string> {
-  if (!user.github_repo) return "Knowledge repo not configured.";
-  if (!user.llm_api_key) return "API key not configured.";
-
-  const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
+/**
+ * Captures that fit a task, each with its score, why, idea and takeaways. One
+ * LLM call ranks the index. Captures named in `exclude` are taken out of the
+ * index first, so they don't use up `max`; fits under `minScore` are dropped
+ * before anything is counted as shown.
+ */
+async function taskMatches(
+  user: User,
+  context: string,
+  max: number,
+  exclude: string[] = [],
+  minScore = 0,
+): Promise<{ found: number; text: string } | string> {
+  const existing = await readFile(user.github_token, user.github_repo!, "INDEX.md");
   if (!existing) return "No captures yet. Use the capture tool to build your knowledge base.";
 
-  const maxResults = Math.min(args.max_results ?? 5, 10);
-  const ranked = await rankByRelevance(user.llm_api_key, args.context, existing.content, maxResults, llmSettings(user));
-
-  if (ranked.length === 0) return `No relevant captures found for: "${args.context}"`;
+  // Index rows link their capture as ](inbox/name.md)
+  const skip = exclude.map((f) => (f.includes("/") ? `](${f})` : `/${f})`));
+  const index = skip.length ? existing.content.split("\n").filter((l) => !skip.some((k) => l.includes(k))).join("\n") : existing.content;
+  const ranked = (await rankByRelevance(user.llm_api_key!, context, index, max, llmSettings(user)))
+    .filter((r) => r.score >= minScore && !exclude.includes(r.filename));
+  if (ranked.length === 0) return "";
 
   // Read top captures in parallel
   const captures = await Promise.all(
@@ -451,9 +475,18 @@ export async function handleRecall(user: User, args: { context: string; max_resu
     }),
   );
 
-  const validCaptures = captures.filter((c): c is string => c !== null);
+  const valid = captures.filter((c): c is string => c !== null);
   await recordSurfaceEvents(user.id, ranked.filter((_, i) => captures[i] !== null).map((r) => r.filename), "recall");
-  return `Found ${validCaptures.length} relevant capture(s) for: "${args.context}"\n\n${validCaptures.join("\n\n---\n\n")}`;
+  return { found: valid.length, text: valid.join("\n\n---\n\n") };
+}
+
+export async function handleRecall(user: User, args: { context: string; max_results?: number }): Promise<string> {
+  if (!user.github_repo) return "Knowledge repo not configured.";
+  if (!user.llm_api_key) return "API key not configured.";
+
+  const matches = await taskMatches(user, args.context, Math.min(args.max_results ?? 5, 10));
+  if (typeof matches === "string") return matches || `No relevant captures found for: "${args.context}"`;
+  return `Found ${matches.found} relevant capture(s) for: "${args.context}"\n\n${matches.text}`;
 }
 
 export async function handleSynthesize(user: User, args: { tag: string }): Promise<string> {
@@ -466,7 +499,7 @@ export async function handleSynthesize(user: User, args: { tag: string }): Promi
   const result = await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo, args.tag, existing.content, llmSettings(user));
 
   if (result.rules.length === 0) {
-    return `No captures found matching tag "${args.tag}". Use search_captures to find available tags.`;
+    return `No captures found matching tag "${args.tag}". Use search to find available tags.`;
   }
 
   return `Synthesized ${result.rules.length} rule(s) for "${result.topic}" and updated RULES.md:\n\n${result.rules.map((r, i) => `${i + 1}. ${r}`).join("\n")}`;
@@ -491,24 +524,29 @@ export async function handleGetRules(user: User, args: { tag?: string }): Promis
   return `## ${args.tag}\n${match[1]}`;
 }
 
-export async function handleBriefing(user: User, args: { project_context?: string; include_rules?: boolean; repo?: string }): Promise<string> {
+export async function handleBriefing(
+  user: User,
+  args: { project_context?: string; include_rules?: boolean; repo?: string; task?: string; files?: unknown[]; exclude?: unknown[]; limit?: number; min_score?: number },
+): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
 
   // Captures waiting for this repo come first. With only a repo (a session-start
   // hook), that offer is all: no ranking, so no LLM call and no wait.
   const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
   const offer = repo ? await handoffOffer(user, repo) : null;
-  if (!args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
+  const task = typeof args.task === "string" ? args.task.trim() : "";
+  if (!task && !args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
 
   if (!user.llm_api_key) return withOffer("API key not configured.");
+  if (task) return withOffer(await taskBriefing(user, task, args));
 
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
   if (!existing) return withOffer("No captures yet. Build your knowledge base with the capture tool first.");
 
   // 1. Rank captures against the project (the only LLM call: xkg can't see the code,
   //    so the agent decides where each candidate applies)
-  const ranked = await rankByRelevance(user.llm_api_key, args.project_context, existing.content, 5, llmSettings(user));
+  const ranked = await rankByRelevance(user.llm_api_key, args.project_context!, existing.content, 5, llmSettings(user));
 
   // 2. Read the candidates in parallel, skipping any that can no longer be read
   const candidates = await Promise.all(
@@ -528,6 +566,36 @@ export async function handleBriefing(user: User, args: { project_context?: strin
   const shown = candidates.filter((c): c is BriefingCandidate => c !== null);
   await recordSurfaceEvents(user.id, shown.map((c) => c.filename), "briefing");
   return withOffer(formatBriefing(shown, rules));
+}
+
+/** Names only: anything that isn't a short one-line string, such as pasted code, is dropped. */
+function names(list: unknown[] | undefined, max: number): string[] {
+  return (Array.isArray(list) ? list : [])
+    .filter((p): p is string => typeof p === "string" && p.length > 0 && p.length <= 512 && !/[\r\n]/.test(p))
+    .slice(0, max);
+}
+
+/** Mid-task briefing: the captures that fit what the agent is doing now. */
+async function taskBriefing(
+  user: User,
+  task: string,
+  args: { project_context?: string; include_rules?: boolean; files?: unknown[]; exclude?: unknown[]; limit?: number; min_score?: number },
+): Promise<string> {
+  const context = [`Task: ${task}`];
+  const files = names(args.files, 20);
+  if (files.length) context.push(`Files: ${files.join(", ")}`);
+  if (args.project_context?.trim()) context.push(`Project: ${args.project_context.trim()}`);
+  const limit = Math.min(Math.max(Math.trunc(Number(args.limit) || 5), 1), 10);
+
+  const matches = await taskMatches(user, context.join("\n"), limit, names(args.exclude, 200), Number(args.min_score) || 0);
+  if (typeof matches === "string") return matches || `No captures fit: "${task}"`;
+
+  let rules = "";
+  if (args.include_rules === true) {
+    const rulesFile = await readFile(user.github_token, user.github_repo!, "RULES.md");
+    if (rulesFile?.content.trim()) rules = `\n\n## Rules\n${rulesFile.content.trim()}`;
+  }
+  return `${matches.found} capture(s) may fit: "${task}". Check each one against the code before you suggest it.\n\n${matches.text}${rules}\n\n---\n${APPLY_HINT}`;
 }
 
 export async function handleApplyToContext(user: User, args: { task: string; stack?: string; files?: string[]; code_snippet?: string }): Promise<string> {
@@ -792,7 +860,8 @@ export type ToolHandler = (user: User, args: never, ctx: ToolContext) => Promise
 export const HANDLERS: Record<ToolName, ToolHandler> = {
   capture: handleCapture as ToolHandler,
   list_inbox: handleListInbox as ToolHandler,
-  search_captures: handleSearch as ToolHandler,
+  search: handleSearch as ToolHandler,
+  search_captures: ((user: User, args: SearchArgs) => searchIndex(user, args, "search_captures")) as ToolHandler,
   read_capture: handleReadCapture as ToolHandler,
   apply_capture: handleApplyCapture as ToolHandler,
   apply_stats: handleApplyStats as ToolHandler,
