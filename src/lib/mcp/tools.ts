@@ -4,10 +4,10 @@
  * Kept apart from the handlers so the shape a client sees can be reviewed
  * without reading the implementations, and so route.ts stays transport-only.
  * Every connected agent loads this list into its context in every session, so
- * it is kept short: five tools for agent work, plus, until the web app has
- * them, the human actions. `ToolName` covers the listed tools and the hidden
- * names below, and lib/mcp/handlers keys its registry by that union, so a name
- * without a handler (or vice versa) is a compile error.
+ * it is kept short: five tools for agent work. The human actions live in the
+ * web app. `ToolName` covers the listed tools and the hidden names below, and
+ * lib/mcp/handlers keys its registry by that union, so a name without a
+ * handler (or vice versa) is a compile error.
  */
 
 /** The tools for agent work. */
@@ -90,68 +90,20 @@ export const CORE_TOOLS = [
   },
 ] as const;
 
-/**
- * Human decisions and reports. Listed until the web app has them, then
- * unlisted like the names in LEGACY_TOOL_NAMES.
- */
-export const HUMAN_TOOLS = [
-  {
-    name: "archive_capture",
-    description: "Archive a capture — reviewed but not actionable now. Moves from inbox/ to archived/ and updates the index.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        filename: { type: "string", description: "Filename in inbox (e.g. '2026-04-02-some-slug.md')" },
-      },
-      required: ["filename"],
-    },
-  },  {
-    name: "delete_capture",
-    description: "Permanently delete a capture and remove its index entry.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        filename: { type: "string", description: "Filename in inbox (e.g. '2026-04-02-some-slug.md')" },
-      },
-      required: ["filename"],
-    },
-  },  {
-    name: "curate",
-    description: "Validate knowledge captures: check for stale URLs (404/410), flag low-confidence extractions, and optionally auto-archive stale ones. Returns a curation report.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        filename: { type: "string", description: "Single inbox file to curate (e.g. '2026-05-14-slug.md'). Omit to curate the entire inbox." },
-        auto_archive: { type: "boolean", description: "If true, automatically archive captures flagged as stale or low-confidence (default false)" },
-        since: { type: "string", description: "Only curate captures dated on/after this date (inclusive, 'YYYY-MM-DD')" },
-        until: { type: "string", description: "Only curate captures dated on/before this date (inclusive, 'YYYY-MM-DD')" },
-        offset: { type: "number", description: "Number of files to skip for pagination (default 0)" },
-        limit: { type: "number", description: "Max files to check in one call (default 20, max 50)" },
-      },
-    },
-  },  {
-    name: "synthesize",
-    description: "Synthesize accumulated knowledge on a topic into actionable rules. Updates RULES.md in your knowledge repo. Can target a specific tag or synthesize all knowledge.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        tag: { type: "string", description: "Tag to synthesize (e.g. 'product-discovery'). Required." },
-      },
-      required: ["tag"],
-    },
-  },  {
-    name: "apply_stats",
-    description: "Show how many captures were applied per week, and how many of those came with a commit. Reads the APPLIED.md ledger that apply_capture writes.",
-    inputSchema: {
-      type: "object" as const,
-      properties: {
-        weeks: { type: "number", description: "How many recent weeks to show (1 to 52, default 4)" },
-      },
-    },
-  },] as const;
-
 /** What `tools/list` returns. */
-export const TOOLS = [...CORE_TOOLS, ...HUMAN_TOOLS] as const;
+export const TOOLS = CORE_TOOLS;
+
+/**
+ * Human decisions and reports. The web app's captures page has them, so they
+ * are not listed; they still answer for anyone who names one.
+ */
+export const WEB_APP_TOOL_NAMES = [
+  "archive_capture",
+  "delete_capture",
+  "curate",
+  "synthesize",
+  "apply_stats",
+] as const;
 
 /**
  * Names merged into the listed tools. Not listed, but still answered, because
@@ -171,4 +123,7 @@ export const LEGACY_TOOL_NAMES = [
   "list_plans",
 ] as const;
 
-export type ToolName = (typeof TOOLS)[number]["name"] | (typeof LEGACY_TOOL_NAMES)[number];
+export type ToolName =
+  | (typeof TOOLS)[number]["name"]
+  | (typeof WEB_APP_TOOL_NAMES)[number]
+  | (typeof LEGACY_TOOL_NAMES)[number];

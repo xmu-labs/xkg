@@ -60,7 +60,7 @@ describe("xkg agent", () => {
   it("is what help shows", async () => {
     await cli("help");
     const help = logs.join("\n");
-    expect(help).toContain("xkg agent --key KEY [--plan FILE]");
+    expect(help).toContain("xkg agent --key KEY --plan FILE");
     expect(help).not.toMatch(/\bkos\b/);
   });
 });
