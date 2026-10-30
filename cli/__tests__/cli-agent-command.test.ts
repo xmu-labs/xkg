@@ -16,8 +16,9 @@ async function cli(...args: string[]) {
   process.argv = ["node", "xkg", ...args];
   vi.resetModules();
   await import("../index.js");
-  // main() runs on import; let it finish.
-  await new Promise((r) => setTimeout(r, 20));
+  // main() runs on import; give it a moment. Tests that expect a call wait for it,
+  // since under load the dynamic imports in main() can take longer than this.
+  await new Promise((r) => setTimeout(r, 0));
 }
 
 beforeEach(() => {
@@ -36,7 +37,7 @@ describe("xkg agent", () => {
   // protects: the command runs the plan; fails_when: `agent` falls through to opening the browser or drops --plan; no_claim: what the agent does (agent.test.ts)
   it("runs the plan with the given key and plan file", async () => {
     await cli("agent", "--key", "k1", "--plan", "2026-06-05-plan-x.md");
-    expect(runAgent).toHaveBeenCalledWith("k1", { plan: "2026-06-05-plan-x.md" });
+    await vi.waitFor(() => expect(runAgent).toHaveBeenCalledWith("k1", { plan: "2026-06-05-plan-x.md" }));
     expect(errors).toEqual([]);
   });
 
@@ -49,7 +50,7 @@ describe("xkg agent", () => {
   // protects: a local handoff spec runs without a key, since nothing is fetched from xkg; fails_when: --spec is dropped or a key is demanded; no_claim: the run (agent.test.ts)
   it("runs a local spec with --spec, no key needed", async () => {
     await cli("agent", "--spec", ".xkg/handoffs/2026-10-28-llm-memory.md");
-    expect(runAgent).toHaveBeenCalledWith("", { plan: undefined, spec: ".xkg/handoffs/2026-10-28-llm-memory.md" });
+    await vi.waitFor(() => expect(runAgent).toHaveBeenCalledWith("", { plan: undefined, spec: ".xkg/handoffs/2026-10-28-llm-memory.md" }));
     expect(errors).toEqual([]);
     await cli("help");
     expect(logs.join("\n")).toContain("xkg agent --spec PATH");
