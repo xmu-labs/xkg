@@ -1,10 +1,13 @@
 /**
- * xkg agent — runs a saved plan with the user's own coding agent.
+ * xkg agent — runs a saved plan, or a handoff spec, with the user's own coding agent.
  *
  * Drives whatever AI assistant the user configured (`xkg config set agent ...`)
  * to implement a generated plan in an isolated git worktree. xkg owns the
  * harness-independent parts: fetching the plan, the worktree, and reporting the
  * Verification Checklist. The assistant is a black box — model-agnostic by design.
+ *
+ * With --spec, the plan is a spec the user's agent wrote in this repo
+ * (.xkg/handoffs/), read from disk; nothing is fetched from xkg.
  */
 
 import { tmpdir } from "os";
@@ -72,6 +75,21 @@ export const AGENT_PROMPT =
   "When finished, make sure every item in the Verification Checklist is satisfied. " +
   `${PLAN_FILE} is private: never commit, push, or copy it into another file.`;
 
+/** The instruction for a handoff spec (--spec). The spec is the contract. */
+export const SPEC_PROMPT =
+  `Apply the handoff spec in ${PLAN_FILE} to this repository. ` +
+  "Change only the files in its Files and changes table, and nothing it lists under Not doing. " +
+  "When finished, make sure every item in its Verification Checklist is satisfied. " +
+  'In each commit message, add the line "xkg-capture: <filename>" with the filename from the spec\'s capture field. ' +
+  `${PLAN_FILE} is private: never commit, push, or copy it into another file.`;
+
+/** A spec the user's agent wrote in this repo. Throws when it can't be read or is empty. */
+export function readSpec(path: string, cwd: string = process.cwd()): string {
+  const text = readFileSync(resolve(cwd, path), "utf-8");
+  if (!text.trim()) throw new Error(`${path} is empty.`);
+  return text;
+}
+
 /**
  * Return the exclude-file contents with every plan filename present, or null if
  * nothing needs adding. Pure so the matching can be tested without a repo.
@@ -107,11 +125,35 @@ export function excludePlanFiles(worktreePath: string): void {
 
 // ── Orchestrator ──
 
+function localSpec(path: string): { file: string; text: string } {
+  try {
+    return { file: path, text: readSpec(path) };
+  } catch (err) {
+    console.error(`Could not read spec: ${path}`);
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
+async function savedPlan(apiKey: string, plan: string | undefined): Promise<{ file: string; text: string }> {
+  const file = plan ?? latestPlanFilename((await callMcp(apiKey, "list_plans", {}, 15000)) ?? "");
+  if (!file) {
+    console.error("No plans found. Generate one first with the generate_plan MCP tool.");
+    process.exit(1);
+  }
+  const text = await callMcp(apiKey, "list_plans", { filename: file }, 15000);
+  if (!text || !text.trim()) {
+    console.error(`Could not read plan: ${file}`);
+    process.exit(1);
+  }
+  return { file, text };
+}
+
 function run(cmd: string, cwd?: string): string {
   return execSync(cmd, { cwd, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
 }
 
-export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Promise<void> {
+export async function runAgent(apiKey: string, opts: { plan?: string; spec?: string } = {}): Promise<void> {
   const cfg = readConfig();
   if (!cfg.agent) {
     console.error("No agent configured. Tell xkg which AI worker to drive:\n");
@@ -121,17 +163,8 @@ export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Pr
     process.exit(1);
   }
 
-  // 1. Resolve the plan — explicit filename, or the newest saved plan
-  const planFile = opts.plan ?? latestPlanFilename((await callMcp(apiKey, "list_plans", {}, 15000)) ?? "");
-  if (!planFile) {
-    console.error("No plans found. Generate one first with the generate_plan MCP tool.");
-    process.exit(1);
-  }
-  const planText = await callMcp(apiKey, "list_plans", { filename: planFile }, 15000);
-  if (!planText || !planText.trim()) {
-    console.error(`Could not read plan: ${planFile}`);
-    process.exit(1);
-  }
+  // 1. Resolve the plan — a local spec, an explicit filename, or the newest saved plan
+  const { file: planFile, text: planText } = opts.spec ? localSpec(opts.spec) : await savedPlan(apiKey, opts.plan);
 
   // 2. Must be inside a git repo
   let repoRoot: string;
@@ -164,7 +197,7 @@ export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Pr
   // 5. Hand off to the user's assistant, running inside the worktree
   console.log(`Launching: ${cfg.agent}\n`);
   try {
-    execSync(`${cfg.agent} ${JSON.stringify(AGENT_PROMPT)}`, { cwd: worktreePath, stdio: "inherit" });
+    execSync(`${cfg.agent} ${JSON.stringify(opts.spec ? SPEC_PROMPT : AGENT_PROMPT)}`, { cwd: worktreePath, stdio: "inherit" });
   } catch {
     console.error("\nThe agent exited with an error. The worktree is preserved for inspection.");
   }
@@ -172,7 +205,7 @@ export async function runAgent(apiKey: string, opts: { plan?: string } = {}): Pr
   // 6. Report — branch + the plan's own checklist as the review gate
   const checklist = parseChecklist(planText);
   console.log(`\n${"─".repeat(60)}`);
-  console.log(`xkg agent finished. Plan: ${planFile}`);
+  console.log(`xkg agent finished. ${opts.spec ? "Spec" : "Plan"}: ${planFile}`);
   console.log(`Branch:   ${branch}`);
   console.log(`Worktree: ${worktreePath}`);
   if (checklist.length > 0) {

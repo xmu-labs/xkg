@@ -256,6 +256,15 @@ export async function listCodeMaps(userId: number, limit: number): Promise<Store
   return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, source: r.source, syncedAt: new Date(r.synced_at) }));
 }
 
+/** The file paths in one repo's stored map, or null when the user has no map for it. */
+export async function codeMapPaths(userId: number, repo: string): Promise<Set<string> | null> {
+  await ensureCodeMapTable();
+  const { rows } = await sql<{ map: MapFile[] }>`
+    SELECT map FROM code_maps WHERE user_id = ${userId} AND lower(repo) = ${repo.toLowerCase()} LIMIT 1
+  `;
+  return rows[0] ? new Set(rows[0].map.map((f) => f.p)) : null;
+}
+
 export interface CodeRepo {
   repo: string;
   source: CodeMapSource;
@@ -347,6 +356,7 @@ async function createHandoffEventTable(): Promise<void> {
       at TIMESTAMP NOT NULL DEFAULT NOW()
     )
   `;
+  await sql`ALTER TABLE handoff_events ADD COLUMN IF NOT EXISTS with_commit BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS handoff_events_user_capture ON handoff_events (user_id, capture_key, repo)`;
 }
 

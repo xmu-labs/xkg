@@ -25,7 +25,10 @@ vi.mock("../github", () => ({
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
 }));
 
-const { HANDOFFS_PATH, parseHandoffs, renderHandoffs, upsertHandoff, autoHandoff, queueHandoff } = await import("../handoffs");
+const {
+  HANDOFFS_PATH, parseHandoffs, renderHandoffs, upsertHandoff, autoHandoff, queueHandoff,
+  setHandoffStatus, pruneFinished, handoffFor, readHandoffs, handoffLogLine, appendHandoffLog, addDays,
+} = await import("../handoffs");
 type Row = import("../handoffs").HandoffRow;
 
 const row = (over: Partial<Row> = {}): Row => ({
@@ -188,5 +191,133 @@ describe("queueHandoff", () => {
     files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
     expect(await queueHandoff("t", "o/k", row())).toEqual({ row: row(), changed: false });
     expect(githubPut).not.toHaveBeenCalled();
+  });
+});
+
+describe("setHandoffStatus", () => {
+  // protects: a row records when it got its status, so a snooze or an answer starts its own clock; fails_when: since keeps the queue date; no_claim: none
+  it("sets the status and the date it changed, leaving dead rows and other repos alone", async () => {
+    const rows = [row(), row({ repo: "acme/web" }), row({ capture: "inbox/dead.md", status: "dead" })];
+    files.set(HANDOFFS_PATH, { content: renderHandoffs(rows), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [row(), row({ capture: "inbox/dead.md" })], "declined", "2026-11-02"))
+      .toEqual([row({ status: "declined", since: "2026-11-02" })]);
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows).toEqual([
+      row({ status: "declined", since: "2026-11-02" }), row({ repo: "acme/web" }), row({ capture: "inbox/dead.md", status: "dead" }),
+    ]);
+  });
+
+  // protects: a status change lands only on the row as it was read, so an edit or answer made meanwhile is kept; fails_when: a row whose status or date changed since the read is overwritten; no_claim: none
+  it("changes a row only if it's unchanged since it was read", async () => {
+    const read = row();
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
+    await setHandoffStatus("t", "o/k", [read, row({ capture: "inbox/b.md" })], "expired", "2026-10-30");
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.status)).toEqual(["done", "expired"]);
+  });
+
+  // protects: callers know which rows changed, so they count only those; fails_when: a skipped row is reported as set, or a failed write as nothing to do; no_claim: none
+  it("returns the rows it set, or null when the write failed", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "done" }), row({ capture: "inbox/b.md" })]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [row(), row({ capture: "inbox/b.md" })], "expired", "2026-10-30"))
+      .toEqual([row({ capture: "inbox/b.md", status: "expired", since: "2026-10-30" })]);
+    putFailures = 2;
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    expect(await setHandoffStatus("t", "o/k", [row()], "expired", "2026-10-30")).toBeNull();
+    spy.mockRestore();
+  });
+
+  // protects: the re-read after a conflict is checked the same way; fails_when: the retry overwrites a row the conflicting write changed; no_claim: none
+  it("checks again on the retry after a conflict", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    githubPut.mockImplementationOnce(async () => {
+      files.set(HANDOFFS_PATH, { content: renderHandoffs([row({ status: "snoozed:2026-11-05" })]), sha: "s2" });
+      throw new Error("GitHub PUT HANDOFFS.md: HTTP 409");
+    });
+    await setHandoffStatus("t", "o/k", [row()], "expired", "2026-10-30");
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows[0]!.status).toBe("snoozed:2026-11-05");
+  });
+});
+
+describe("finished rows", () => {
+  // protects: HANDOFFS.md stays short, the history lives in each capture's Handoff log; fails_when: a finished row older than 90 days is kept, or a waiting, dead or recent row is dropped; no_claim: none
+  it("drops applied, declined, done and expired rows 90 days after their last change", () => {
+    const today = "2026-12-31";
+    const old = "2026-10-01";
+    const rows = [
+      row({ capture: "inbox/a.md", status: "applied", since: old }),
+      row({ capture: "inbox/b.md", status: "declined", since: old }),
+      row({ capture: "inbox/c.md", status: "done", since: old }),
+      row({ capture: "inbox/d.md", status: "expired", since: old }),
+      row({ capture: "inbox/e.md", status: "applied", since: "2026-10-02" }),
+      row({ capture: "inbox/f.md", status: "pending", since: old }),
+      row({ capture: "inbox/g.md", status: "dead", since: old }),
+      row({ capture: "inbox/h.md", status: "snoozed:2026-10-08", since: old }),
+    ];
+    expect(pruneFinished(rows, today).map((r) => r.capture)).toEqual(["inbox/e.md", "inbox/f.md", "inbox/g.md", "inbox/h.md"]);
+  });
+
+  // protects: pruning rides on writes xkg makes anyway; fails_when: a status change keeps old finished rows, or a read alone writes; no_claim: none
+  it("are dropped on the next write", async () => {
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row(), row({ capture: "inbox/old.md", status: "applied", since: "2026-01-01" })]), sha: "s1" });
+    await setHandoffStatus("t", "o/k", [row()], "done", "2026-10-30");
+    expect(parseHandoffs(files.get(HANDOFFS_PATH)!.content).rows.map((r) => r.capture)).toEqual(["inbox/2026-10-29-llm-memory.md"]);
+  });
+});
+
+describe("addDays", () => {
+  // protects: snooze and pruning dates cross months and years; fails_when: date math drifts; no_claim: none
+  it("adds and subtracts calendar days", () => {
+    expect(addDays("2026-12-28", 7)).toBe("2027-01-04");
+    expect(addDays("2026-10-01", -90)).toBe("2026-07-03");
+  });
+});
+
+describe("handoffFor", () => {
+  const rows = [row(), row({ repo: "acme/web", status: "declined" }), row({ capture: "inbox/two.md" }), row({ capture: "inbox/two.md", repo: "acme/web" })];
+
+  // protects: an answer lands on the row for that repo; fails_when: the repo is ignored or its case matters; no_claim: none
+  it("finds the row for the capture and repo, whatever its folder or case", () => {
+    expect(handoffFor(rows, "applied/2026-10-29-llm-memory.md", "ACME/Web")).toEqual(rows[1]);
+    expect(handoffFor(rows, "2026-10-29-llm-memory.md", "acme/other")).toBeNull();
+  });
+
+  // protects: an agent that leaves out repo still answers the one waiting handoff, and never guesses between two; fails_when: a finished row is picked, or one of two waiting rows is; no_claim: none
+  it("without a repo, finds the capture's only waiting row", () => {
+    expect(handoffFor(rows, "2026-10-29-llm-memory.md")).toEqual(rows[0]);
+    expect(handoffFor(rows, "two.md")).toBeNull();
+    expect(handoffFor(rows, "none.md")).toBeNull();
+  });
+});
+
+describe("readHandoffs", () => {
+  // protects: answers work before the queue exists; fails_when: a missing file throws; no_claim: none
+  it("reads the rows, or none when there is no file", async () => {
+    expect(await readHandoffs("t", "o/k")).toEqual([]);
+    files.set(HANDOFFS_PATH, { content: renderHandoffs([row()]), sha: "s1" });
+    expect(await readHandoffs("t", "o/k")).toEqual([row()]);
+  });
+});
+
+describe("Handoff log", () => {
+  // protects: each answer is kept in the capture, with no free text, so learning can be rebuilt from git; fails_when: a field is lost or a note sneaks in; no_claim: none
+  it("writes one line per answer", () => {
+    expect(handoffLogLine({ date: "2026-10-30", repo: "acme/app", outcome: "declined", reason: "wrong-files", confidence: "high" }))
+      .toBe("- 2026-10-30 · acme/app · declined (wrong-files) · confidence high");
+    expect(handoffLogLine({ date: "2026-10-30", repo: "acme/app", outcome: "applied", commit: "a".repeat(40), files: ["src/a.ts", "src/b.ts"] }))
+      .toBe(`- 2026-10-30 · acme/app · applied · commit ${"a".repeat(40)} · files src/a.ts, src/b.ts`);
+    expect(handoffLogLine({ date: "2026-10-30", outcome: "reverted", commit: "b".repeat(40) })).toBe(`- 2026-10-30 · reverted · commit ${"b".repeat(40)}`);
+    // Written like HANDOFFS.md's list, so a path with ", " stays one path
+    expect(handoffLogLine({ date: "2026-10-30", outcome: "applied", files: ["src/a, b.ts", "src/c.ts"] })).toBe("- 2026-10-30 · applied · files src/a%2C b.ts, src/c.ts");
+  });
+
+  // protects: the log sits with the capture's other logs and grows in place; fails_when: a second section is added or it lands after Links to memory; no_claim: none
+  it("adds the section before Links to memory, then appends to it", () => {
+    const capture = "# T\n\n## Core idea\nIdea.\n\n## Links to memory\n- none\n";
+    const once = appendHandoffLog(capture, "- one");
+    expect(once).toBe("# T\n\n## Core idea\nIdea.\n\n## Handoff log\n- one\n\n## Links to memory\n- none\n");
+    const twice = appendHandoffLog(once, "- two");
+    expect(twice).toBe("# T\n\n## Core idea\nIdea.\n\n## Handoff log\n- one\n- two\n\n## Links to memory\n- none\n");
+    expect(appendHandoffLog("# T\n\nBody.\n", "- one")).toBe("# T\n\nBody.\n\n## Handoff log\n- one\n");
+    expect(appendHandoffLog(appendHandoffLog("# T\n\nBody.\n", "- one"), "- two")).toBe("# T\n\nBody.\n\n## Handoff log\n- one\n- two\n");
   });
 });

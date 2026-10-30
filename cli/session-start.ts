@@ -1,4 +1,6 @@
+import { execFileSync } from "child_process";
 import { callMcp, initializeMcp } from "./hooks.js";
+import { repoFromRemote } from "./code-map.js";
 
 /** The name this command's MCP session carries, so the server can tell where a session began. */
 export const SESSION_START_CLIENT = "xkg-session-start";
@@ -31,14 +33,29 @@ function message(count: number): string {
   );
 }
 
+/** `owner/name` of the repo at `cwd` from its origin remote, or null outside a repo or without an origin. */
+export function currentRepo(cwd: string = process.cwd()): string | null {
+  try {
+    const url = execFileSync("git", ["remote", "get-url", "origin"], { cwd, encoding: "utf-8", timeout: 2000, stdio: ["ignore", "pipe", "ignore"] });
+    return repoFromRemote(url);
+  } catch {
+    return null;
+  }
+}
+
+/** What the server's briefing starts with when captures wait for the repo. */
+const OFFER_PREFIX = "xkg: ";
+
 /**
- * Runs from any agent's SessionStart hook. Counts new captures and, when there
- * are some, prints the question the agent should ask, shaped for that agent.
- * Never fails or delays a session for long: on any error it prints nothing.
+ * Runs from any agent's SessionStart hook. In a repo with captures waiting for
+ * it (HANDOFFS.md), prints the server's offer as is, so the hook and a briefing
+ * call give the same words. Otherwise counts new captures and, when there are
+ * some, prints the question the agent should ask. Either way shaped for that
+ * agent. Never fails or delays a session for long: on any error it prints nothing.
  */
 export async function sessionStart(
   apiKey: string,
-  opts: { agent?: string; timeoutMs?: number } = {},
+  opts: { agent?: string; timeoutMs?: number; repo?: string | null } = {},
 ): Promise<void> {
   // One limit for the whole command, so a hung server can't hold the session twice as long.
   const deadline = Date.now() + (opts.timeoutMs ?? 3000);
@@ -47,13 +64,19 @@ export async function sessionStart(
     const session = await initializeMcp(apiKey, SESSION_START_CLIENT, remaining())
       .then((res) => (res.ok ? res.headers.get("mcp-session-id") : null))
       .catch(() => null);
+    const format = opts.agent ? FORMATS[opts.agent] : undefined;
+    const print = (body: string) => process.stdout.write((format ? JSON.stringify(format(body)) : body) + "\n");
+
+    const repo = opts.repo === undefined ? currentRepo() : opts.repo;
+    if (repo) {
+      const offer = await callMcp(apiKey, "briefing", { repo }, remaining(), session).catch(() => null);
+      if (offer?.startsWith(OFFER_PREFIX)) return void print(offer);
+    }
+
     const text = await callMcp(apiKey, "list_inbox", {}, remaining(), session);
     const count = parseInt(text?.match(/^(\d+)\s+capture/)?.[1] ?? "0", 10);
     if (count <= 0) return;
-
-    const format = opts.agent ? FORMATS[opts.agent] : undefined;
-    const body = message(count);
-    process.stdout.write((format ? JSON.stringify(format(body)) : body) + "\n");
+    print(message(count));
   } catch {
     // Silent fail: never interrupt a session start
   }

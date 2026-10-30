@@ -48,6 +48,15 @@ describe("xkg agent", () => {
     expect(errors).toEqual(["`xkg kos` is now `xkg agent`. The old name will stop working in a later release."]);
   });
 
+  // protects: a local handoff spec runs without a key, since nothing is fetched from xkg; fails_when: --spec is dropped or a key is demanded; no_claim: the run (agent.test.ts)
+  it("runs a local spec with --spec, no key needed", async () => {
+    await cli("agent", "--spec", ".xkg/handoffs/2026-10-28-llm-memory.md");
+    expect(runAgent).toHaveBeenCalledWith("", { plan: undefined, spec: ".xkg/handoffs/2026-10-28-llm-memory.md" });
+    expect(errors).toEqual([]);
+    await cli("help");
+    expect(logs.join("\n")).toContain("xkg agent --spec PATH");
+  });
+
   // protects: AC3, help names the new command only; fails_when: help still says kos; no_claim: the rest of the help text
   it("is what help shows", async () => {
     await cli("help");

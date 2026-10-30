@@ -143,6 +143,12 @@ describe("applySourceStats", () => {
     ]);
   });
 
+  // protects: an apply after a session-start handoff offer is credited to a channel; fails_when: a capture only the offer showed counts as surfaced by nothing; no_claim: the handoff's own counts (handoff_events)
+  it("counts the handoff offer with the other channels", async () => {
+    await applySourceStats("2026-10-29", 2);
+    expect(selects()[0]!.text).toContain("bool_or(s.channel IN ('recall', 'vault', 'handoff')) AS other");
+  });
+
   it("only counts surfacing before the apply, and only reads the requested weeks", async () => {
     await applySourceStats("2026-10-29", 2);
     const q = selects()[0]!;

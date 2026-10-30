@@ -146,13 +146,16 @@ async function main(): Promise<void> {
     const { readConfig } = await import("./config.js");
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : readConfig().key;
-    if (!apiKey) {
+    const specIdx = args.indexOf("--spec");
+    const spec = specIdx !== -1 ? args[specIdx + 1] : undefined;
+    // A local spec is read from disk, so it needs no key
+    if (!apiKey && !spec) {
       console.error("No API key. Pass --key YOUR_KEY or store it: xkg config set key YOUR_KEY");
       process.exit(1);
     }
     const planIdx = args.indexOf("--plan");
     const plan = planIdx !== -1 ? args[planIdx + 1] : undefined;
-    await runAgent(apiKey, { plan });
+    await runAgent(apiKey ?? "", { plan, spec });
     return;
   }
 
@@ -191,12 +194,14 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
-    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent)
+    xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent);
+                                                               keeps .xkg/ (handoff specs) out of git
     xkg map [--key KEY]                                        Send this repo's code map now (file paths and exported names, never code)
-    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer new captures
+    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else new ones
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
     xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree
+    xkg agent --spec PATH                                      Apply a handoff spec your agent wrote (.xkg/handoffs/) in an isolated worktree
     xkg help                                                   Show this help
 
     npx -y @xmu-labs/xkg@latest …                              Same CLI, via the published package

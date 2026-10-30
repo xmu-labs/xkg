@@ -133,7 +133,7 @@ When your agent connects, xkg tells it how to work with your knowledge: get a br
 
 #### Offer new captures when a session starts
 
-`xkg session-start` counts the captures in your inbox. When there are some, it tells your agent to ask you "You have 3 new xkg captures. Want to see them and apply one here?" before your task. It prints nothing when the inbox is empty or xkg can't be reached, and gives up after 3 seconds. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files carry no key.
+`xkg session-start` first checks `HANDOFFS.md` for captures waiting for the repo you're in (its `origin`). When some wait, it prints the same text a `briefing` call with that repo returns: your agent asks you "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?", lists up to 3, and knows how to hand one off (see [Workflow](#workflow)). Otherwise it counts the captures in your inbox and, when there are some, tells your agent to ask you "You have 3 new xkg captures. Want to see them and apply one here?" before your task. It prints nothing when nothing waits or xkg can't be reached, and gives up after 3 seconds. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files carry no key.
 
 Add it as a session-start hook in your agent. `--agent` picks the output shape that agent reads:
 
@@ -199,7 +199,7 @@ Codex CLI doesn't read the instructions xkg sends when it connects, so add these
 ## xkg
 - At the start of a coding session, call the xkg `briefing` tool with the repo name, branch, and last few commit messages. Check each capture it returns against the code before naming a file.
 - When the user shares something worth keeping, call `capture`.
-- When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, and one line on why.
+- When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, the repo, and one line on why. If the user turns a capture down, call it with outcome `declined`, or `later` for not now.
 ```
 
 #### Gemini CLI
@@ -278,6 +278,12 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
    A **Strong fit** is also queued for your coding agent: xkg adds a row to `HANDOFFS.md` in your knowledge repo with the capture, the repo and the suggested files. Any other fit waits for you: tap **Hand off to your coding agent** on the capture card, and pick an "also fits" repo first if you want it there instead (that row has no files; your agent finds them). The row holds names only, never code, and you can edit or delete the file at any time.
 
+   In your next coding session in that repo, your agent offers what's waiting (a `briefing` call with `repo`, or `xkg session-start` as a hook): "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?" If you say yes and pick one, your agent reads the capture and the files, writes a spec to `.xkg/handoffs/<capture>.md` in that repo (claim, evidence quoted from the capture, why here, the files it opened and the change, checks, and its confidence as High, Medium or Low), and asks "Apply this now?" The spec stays on your machine: `.xkg/` is kept out of git (`setup-git-hook` adds it to `.git/info/exclude`), and it never goes to xkg. If you say yes, your agent makes the change in its normal way, with the `xkg-capture:` trailer in the commit. A file xkg suggested that's no longer in your current map is marked "moved or deleted since the capture", so your agent looks for where it applies now. A capture offered on 3 days without an answer stops being offered (its row says `expired`).
+
+   Your agent records your answer with `apply_capture`, so xkg knows what happened. **Not now** (`outcome: later`) offers it again in 7 days. **No** (`declined`) takes a reason: `wrong-files` (it fits, but not in those files), `doesnt-fit` (not in this repo) or `other`. **Already done** is `done`. None of these counts as an apply, moves the capture or adds an `APPLIED.md` row. A commit with the trailer marks the row `applied`, and a plain `git revert` of that commit is recorded as `reverted` (see step 5). Every answer adds a line to the capture's `## Handoff log`: the date, the repo, the answer and its reason, and for an apply the commit and the files it changed (only files in your code map). When your agent and the git hook both report one commit, the apply is logged once, and the later report fills in the changed files or your agent's confidence if the first left them out. No answer carries the spec, code or a diff. Rows that are done (`applied`, `declined`, `done`, `expired`) leave `HANDOFFS.md` 90 days after their last change; the capture's Handoff log keeps the history.
+
+   To apply a spec in an isolated worktree instead of your current session, run `xkg agent --spec .xkg/handoffs/<capture>.md` (see step 4). It reads the spec from your disk and needs no key.
+
 2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
 3. **Plan** — Select the captures you want and ask your worker to call `generate_plan`. The worker can name the files the plan should cover; xkg passes on the paths only, since it never reads your code, and your worker checks each step against the code. Each plan is Markdown: codebase mapping, implementation steps with effort tiers (`simple`, `complex`, `architectural`), and a verification checklist.
@@ -303,7 +309,7 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
    xkg-capture: 2026-10-28-alert-ownership.md
    ```
 
-   With the git hook installed in that repo, xkg records it after each commit. Your agent offers to set it up the first time it connects, or run:
+   With the git hook installed in that repo, xkg records it after each commit, with the repo and the files the commit changed. If you later undo that commit with `git revert`, the hook reports the capture as reverted: its `APPLIED.md` row is marked "reverted" with the date, and it still counts as an apply that week. Your agent offers to set it up the first time it connects, or run:
 
    ```bash
    npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
@@ -374,7 +380,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `briefing` | Get captures that may fit the current project, for the agent to check against the code |
 | `generate_plan` | Turn selected captures into an implementation plan |
 | `list_plans` | List or read saved plans |
-| `apply_capture` | Mark a capture as applied, with the commit that applied it and why |
+| `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
 | `apply_stats` | Captures applied per week, and how many came with a commit |
 | `archive_capture` | Archive a capture |
 | `delete_capture` | Delete a capture |
@@ -403,6 +409,7 @@ npx -y @xmu-labs/xkg@latest <command>
 | `config set key YOUR_API_KEY` | Store the key that `session-start`, the git hooks, `map` and `agent` use |
 | `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
 | `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
+| `agent --spec PATH` | Apply a handoff spec your agent wrote (`.xkg/handoffs/<capture>.md`) in an isolated worktree. Reads it from disk; no key needed |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
 | `vault-check --key YOUR_API_KEY` | Debug the vault hook |
 | `help` | Show help |
@@ -432,7 +439,7 @@ Settings → Account shows the repo your captures are saved in, with a link to i
 | `plans/` | plans you generated |
 | `INDEX.md` | a table of every capture: date, title, keywords, tags |
 | `APPLIED.md` | which capture went into which commit |
-| `HANDOFFS.md` | captures waiting for your coding agent: one row per capture and repo, with the suggested files, the fit, a status (`pending`, `snoozed:<date>`, `applied`, `declined`, `done`, `expired`, `dead`), the date, and whether it was queued automatically or by you |
+| `HANDOFFS.md` | captures waiting for your coding agent: one row per capture and repo, with the suggested files, the fit, a status (`pending`, `snoozed:<date>`, `applied`, `declined`, `done`, `expired`, `dead`), the date of its last change, and whether it was queued automatically or by you. Done rows leave after 90 days |
 
 **Renaming it.** Rename the repo on GitHub as usual, then open xkg once. xkg reads the new name from GitHub in the background and saves it; Settings shows it from the next time you open the app. Until then, GitHub's redirect from the old name keeps captures working. Don't create a new repo with the old name before you've opened xkg, because GitHub drops the redirect when you do. You don't need to onboard again, and doing so would replace your PIN and keys.
 
@@ -456,8 +463,8 @@ The whole point of this repo being public is that you can check these claims rat
 | `token_version` | bumped to revoke everything |
 | apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
 | code maps (`code_maps`) | per repo you sync with the git hooks or add in Settings (at most 20): file paths, exported function and class names, and which mapped files import which; for a repo added from GitHub, file paths only (`source = 'github'`). Never file contents, comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it, `src/lib/code-repos.ts` reads GitHub's file list) |
-| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
-| handoff counts (`handoff_events`) | one row each time something happens to a handoff (queued, for now): a keyed hash of the capture's file name, the repo (`owner/name`), what happened, whether it was queued automatically or by you, and the time. Never the capture's name or content; `HANDOFFS.md` in your repo is the record |
+| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan, session-start handoff offer): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
+| handoff counts (`handoff_events`) | one row each time something happens to a handoff (queued, offered in a session at most once a day, expired, and your answer: applied, declined, done, later, reverted): a keyed hash of the capture's file name, the repo (`owner/name`), what happened, whether it was queued automatically or by you, the reason for a no, your agent's confidence, whether an apply came with a commit, and the time. Never the capture's name or content, and never the spec your agent writes; `HANDOFFS.md` and each capture's Handoff log in your repo are the record |
 | login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
 
 When you capture, the server talks to exactly four kinds of destination:

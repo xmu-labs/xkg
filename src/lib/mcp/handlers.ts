@@ -25,9 +25,12 @@ import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, curateSingle, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
-import { queueStrongFit } from "@/lib/handoffs";
+import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
+import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
+import { handoffOffer } from "@/lib/handoff-offer";
+import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
-import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, weeklyApplyStats } from "@/lib/ledger";
+import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted, weeklyApplyStats } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
@@ -236,13 +239,19 @@ const NOTE_MAX = 200;
  */
 export async function handleApplyCapture(
   user: User,
-  args: { filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string; commit_sha?: string },
+  args: {
+    filename: string; applied_note?: string; target_file?: string; outcome?: string; plan_file?: string; commit_sha?: string;
+    repo?: string; reason?: string; confidence?: string; files?: string[];
+  },
   ctx: ToolContext = {},
 ): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
   if (args.commit_sha !== undefined && !/^[0-9a-f]{7,40}$/i.test(args.commit_sha)) {
     return `commit_sha must be a git commit hash (7 to 40 hex characters), got: ${args.commit_sha}`;
   }
+  // declined, done, later and reverted are answers to a handoff, never an apply
+  const outcome = outcomeOf(args.outcome);
+  if (outcome && outcome !== "applied") return recordAnswer(user, { ...args, outcome });
   const filename = args.filename.replace(/^(?:inbox|applied)\//, "");
   const note = args.applied_note?.replace(/\s+/g, " ").trim().slice(0, NOTE_MAX) || undefined;
   const inboxPath = `inbox/${filename}`;
@@ -250,6 +259,10 @@ export async function handleApplyCapture(
   const inboxFile = await readFile(user.github_token, user.github_repo, inboxPath);
   const file = inboxFile ?? await readFile(user.github_token, user.github_repo, appliedPath);
   if (!file) return `File not found: ${inboxPath} or ${appliedPath}. Use list_inbox to see available captures.`;
+  const today = new Date().toISOString().split("T")[0]!;
+
+  // A handoff waiting for this capture is done once it's applied
+  const handoff = await appliedHandoff(user, filename, args, today);
 
   // The server's count, for the apply metric across users. The repo stays the record.
   // Safe to repeat: the same capture and commit is counted once.
@@ -268,7 +281,21 @@ export async function handleApplyCapture(
   if (args.commit_sha && !inboxFile) {
     const ledger = await readFile(user.github_token, user.github_repo, LEDGER_PATH);
     if (ledger && ledgerHasCommit(ledger.content, filename, args.commit_sha)) {
-      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}`;
+      // A repeat fills in what the first report's log line left out, and is about the repo that line names.
+      // If the first report came without the repo, there's no line yet: this one logs the apply.
+      const logged = await fillApply(user, appliedPath, file, args);
+      const open = logged && !args.repo ? await appliedHandoff(user, filename, { ...args, repo: logged.repo }, today) : handoff;
+      let closed: Closed | null = null;
+      if (open) {
+        try {
+          if (!logged) await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, open.line), `handoff: applied ${filename}`, file.sha);
+          closed = await closeHandoff(user, appliedPath, open, true, today);
+        } catch (err) {
+          console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
+          closed = { closed: false, status: open.row.status, failed: true };
+        }
+      }
+      return `Already recorded: ${filename} (${args.commit_sha.slice(0, 7)})${await recordEvent()}${closedNote(open, closed)}${logged?.note ?? ""}`;
     }
   }
 
@@ -281,7 +308,6 @@ export async function handleApplyCapture(
   }
 
   // Add application log
-  const today = new Date().toISOString().split("T")[0];
   const logLines = [`- **Applied:** ${today}`];
   if (args.commit_sha) logLines.push(`- **Commit:** ${args.commit_sha}`);
   if (args.target_file) logLines.push(`- **Target:** ${args.target_file}`);
@@ -301,13 +327,18 @@ export async function handleApplyCapture(
       content = content.trimEnd() + `\n${appLogSection}`;
     }
   }
+  if (handoff) content = appendHandoffLog(content, handoff.line);
 
   const commitRef = args.commit_sha ? ` (${args.commit_sha.slice(0, 7)})` : "";
   const recordInLedger = async (): Promise<string> => {
     try {
       const ledger = await readFile(user.github_token, user.github_repo!, LEDGER_PATH);
-      const row = { date: today!, capture: filename, commit: args.commit_sha, target: args.target_file };
-      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, appendLedgerRow(ledger?.content ?? null, row), `ledger: ${filename}${commitRef}`, ledger?.sha);
+      const row = { date: today, capture: filename, commit: args.commit_sha, target: args.target_file };
+      const appended = appendLedgerRow(ledger?.content ?? null, row);
+      // The hook's reports can arrive out of order: a revert logged before this apply marks its row now
+      const revertDate = args.commit_sha ? revertedOn(file.content, args.commit_sha) : null;
+      const updated = revertDate ? (markReverted(appended, filename, args.commit_sha!, revertDate) ?? appended) : appended;
+      await githubPut(user.github_token, user.github_repo!, LEDGER_PATH, updated, `ledger: ${filename}${commitRef}`, ledger?.sha);
       return "";
     } catch {
       return ` (not counted in ${LEDGER_PATH}: the ledger write failed)`;
@@ -316,13 +347,16 @@ export async function handleApplyCapture(
 
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
-    return `Applied again: ${appliedPath}${commitRef}${await recordInLedger()}${await recordEvent()}`;
+    const notes = (await recordInLedger()) + (await recordEvent());
+    const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : null;
+    return `Applied again: ${appliedPath}${commitRef}${notes}${closedNote(handoff, closed)}`;
   }
 
   await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply: ${filename}${commitRef}`);
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
   const ledgerNote = (await recordInLedger()) + (await recordEvent());
+  const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : null;
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -341,7 +375,7 @@ export async function handleApplyCapture(
     }
   }
 
-  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}`;
+  return `Applied: ${filename} → ${appliedPath}${commitRef}${ledgerNote}${closedNote(handoff, closed)}`;
 }
 
 /** The apply metric: captures applied per week, and how many came with a commit. */
@@ -454,12 +488,20 @@ export async function handleGetRules(user: User, args: { tag?: string }): Promis
   return `## ${args.tag}\n${match[1]}`;
 }
 
-export async function handleBriefing(user: User, args: { project_context: string; include_rules?: boolean }): Promise<string> {
+export async function handleBriefing(user: User, args: { project_context?: string; include_rules?: boolean; repo?: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
-  if (!user.llm_api_key) return "API key not configured.";
+
+  // Captures waiting for this repo come first. With only a repo (a session-start
+  // hook), that offer is all: no ranking, so no LLM call and no wait.
+  const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
+  const offer = repo ? await handoffOffer(user, repo) : null;
+  if (!args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
+  const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
+
+  if (!user.llm_api_key) return withOffer("API key not configured.");
 
   const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
-  if (!existing) return "No captures yet. Build your knowledge base with the capture tool first.";
+  if (!existing) return withOffer("No captures yet. Build your knowledge base with the capture tool first.");
 
   // 1. Rank captures against the project (the only LLM call: xkg can't see the code,
   //    so the agent decides where each candidate applies)
@@ -482,7 +524,7 @@ export async function handleBriefing(user: User, args: { project_context: string
 
   const shown = candidates.filter((c): c is BriefingCandidate => c !== null);
   await recordSurfaceEvents(user.id, shown.map((c) => c.filename), "briefing");
-  return formatBriefing(shown, rules);
+  return withOffer(formatBriefing(shown, rules));
 }
 
 export async function handleApplyToContext(user: User, args: { task: string; stack?: string; files?: string[]; code_snippet?: string }): Promise<string> {

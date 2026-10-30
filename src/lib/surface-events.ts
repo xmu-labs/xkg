@@ -2,11 +2,12 @@
  * surface_events: each time a channel shows the user a capture.
  *
  * Channels: the capture card's "Where it applies" match (`where`), a briefing,
- * recall, and the vault scan. Like apply_events, a row holds a keyed hash of
- * the capture, never its name. A `where` row also keeps the matching call's
- * tokens, the model's own confidence (logged for the scorer work, never
- * shown), the scorer and the tier. Writes are best-effort: a failed insert
- * never fails the tool that surfaced the capture.
+ * recall, the vault scan, and the session-start handoff offer (`handoff`).
+ * Like apply_events, a row holds a keyed hash of the capture, never its name.
+ * A `where` row also keeps the matching call's tokens, the model's own
+ * confidence (logged for the scorer work, never shown), the scorer and the
+ * tier. Writes are best-effort: a failed insert never fails the tool that
+ * surfaced the capture.
  *
  *   capture card / briefing / recall / vault ──> surface_events ──┐
  *   apply_capture ──> apply_events ───────────────────────────────┴──> applySourceStats ──> admin route
@@ -18,7 +19,7 @@ import { captureKey } from "./apply-events";
 import { weekStart } from "./ledger";
 import type { WhereResult } from "./where";
 
-export type SurfaceChannel = "briefing" | "recall" | "vault";
+export type SurfaceChannel = "briefing" | "recall" | "vault" | "handoff";
 
 /** Records that `channel` showed these captures (each counted once per call). */
 export async function recordSurfaceEvents(userId: number, filenames: string[], channel: SurfaceChannel): Promise<void> {
@@ -56,7 +57,8 @@ export async function recordWhereEvent(userId: number, filename: string, where: 
 export type SourceBuckets = { cardOnly: number; briefingOnly: number; both: number; other: number; none: number };
 export type SourceWeek = { userId: number; weekStart: string; sources: SourceBuckets };
 
-function windowStart(today: string, weeks: number): string {
+/** The Monday that starts the oldest of the last `weeks` weeks up to `today`. */
+export function windowStart(today: string, weeks: number): string {
   const from = new Date(`${weekStart(today)}T00:00:00Z`);
   from.setUTCDate(from.getUTCDate() - 7 * (weeks - 1));
   return from.toISOString().slice(0, 10);
@@ -67,7 +69,8 @@ type SourceRow = { user_id: number; capture_key: string; applied_at: string | Da
 /**
  * Captures applied per user and week, split by what showed them before the
  * apply: the card (a Strong or Possible fit), a briefing, both, another
- * channel only, or nothing. No credit beyond that.
+ * channel only (recall, the vault scan, the session-start handoff offer), or
+ * nothing. No credit beyond that.
  */
 export async function applySourceStats(today: string, weeks: number): Promise<SourceWeek[]> {
   await ensureSurfaceEventTable();
@@ -75,7 +78,7 @@ export async function applySourceStats(today: string, weeks: number): Promise<So
     SELECT a.user_id, a.capture_key, a.applied_at,
       bool_or(s.channel = 'where' AND s.shown AND s.tier IN ('strong', 'possible')) AS card,
       bool_or(s.channel = 'briefing') AS briefing,
-      bool_or(s.channel IN ('recall', 'vault')) AS other
+      bool_or(s.channel IN ('recall', 'vault', 'handoff')) AS other
     FROM apply_events a
     LEFT JOIN surface_events s
       ON s.user_id = a.user_id AND s.capture_key = a.capture_key AND s.surfaced_at <= a.applied_at
