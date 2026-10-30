@@ -1108,6 +1108,11 @@ export function matchIndexRows(rows: string[], query: string): string[] {
 
 // ── Markdown formatting ──
 
+/** Text made safe for one INDEX.md table cell: no newlines, pipes escaped. */
+function indexCell(text: string): string {
+  return text.replace(/\s*\n\s*/g, " ").replace(/\|/g, "\\|");
+}
+
 /** Build the INDEX.md row for a capture. */
 export function buildIndexRow(
   date: string,
@@ -1120,7 +1125,7 @@ export function buildIndexRow(
   // already in the repo — invisible to search with no error surfaced. Reading
   // defensively is cheaper than that failure mode.
   const slug = capture.slug || "untitled";
-  const summary = (capture.coreIdea || "No core idea extracted.").slice(0, 80);
-  const tags = (capture.tags ?? []).join(", ");
+  const summary = indexCell((capture.coreIdea || "No core idea extracted.").replace(/\s*\n\s*/g, " ").slice(0, 80));
+  const tags = (capture.tags ?? []).map(indexCell).join(", ");
   return `| ${date} | [${slug}](inbox/${filename}) | ${summary}... | ${tags} | ${sourceType ?? "—"} |\n`;
 }

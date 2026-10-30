@@ -63,3 +63,19 @@ describe("captureName, non-ASCII names", () => {
   });
 });
 
+
+describe("parseIndexRows, pipes in a summary", () => {
+  // protects: a summary like "A | B" keeps its tags and type; fails_when: the part after the pipe is read as tags; no_claim: rows without the trailing "..."
+  it("reads an older row whose summary holds a bare pipe", () => {
+    const row = "| 2026-10-28 | [pipes](inbox/2026-10-28-pipes.md) | Use A | B to pipe output... | shell, unix | url |";
+    expect(parseIndexRows(row)).toEqual([
+      { date: "2026-10-28", slug: "pipes", filename: "2026-10-28-pipes.md", status: "inbox", summary: "Use A | B to pipe output", tags: ["shell", "unix"], type: "url" },
+    ]);
+  });
+
+  // protects: rows written with escaped pipes read back as the original text; fails_when: "\|" splits a cell or stays escaped; no_claim: other escapes
+  it("reads escaped pipes as plain pipes", () => {
+    const row = "| 2026-10-28 | [pipes](inbox/2026-10-28-pipes.md) | Use A \\| B... | shell \\| unix | url |";
+    expect(parseIndexRows(row)[0]).toMatchObject({ summary: "Use A | B", tags: ["shell | unix"], type: "url" });
+  });
+});

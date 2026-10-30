@@ -26,23 +26,38 @@ export type CaptureRow = {
 
 const ROW_LINK = /\[([^\]]*)\]\((inbox|applied|archived)\/([^)]+)\)/;
 
+/** A table row's cells, split on unescaped pipes, with an escaped "\|" read back as "|". */
+function rowCells(line: string): string[] {
+  return line
+    .trim()
+    .replace(/^\||(?<!\\)\|$/g, "")
+    .split(/(?<!\\)\|/)
+    .map((c) => c.trim().replace(/\\\|/g, "|"));
+}
+
 /** The capture rows of INDEX.md, newest first. Rows that don't link a capture are skipped. */
 export function parseIndexRows(content: string): CaptureRow[] {
   const rows: CaptureRow[] = [];
   for (const line of content.split("\n")) {
-    const cells = line.trim().replace(/^\||\|$/g, "").split("|").map((c) => c.trim());
+    const cells = rowCells(line);
     const date = cells[0] ?? "";
     const link = cells[1]?.match(ROW_LINK);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !link) continue;
-    const type = cells[4] && cells[4] !== "—" ? cells[4] : null;
+    // Older rows were written with bare pipes in the summary. The writer always
+    // ends the summary with "...", so the summary runs to that cell.
+    let end = 2;
+    for (let i = cells.length - 2; i > 2; i--) {
+      if (cells[i]!.endsWith("...")) { end = i; break; }
+    }
+    const typeCell = cells[end + 2];
     rows.push({
       date,
       slug: link[1]!,
       filename: link[3]!,
       status: link[2] as CaptureStatus,
-      summary: (cells[2] ?? "").replace(/\.\.\.$/, ""),
-      tags: (cells[3] ?? "").split(",").map((t) => t.trim()).filter(Boolean),
-      type,
+      summary: cells.slice(2, end + 1).join(" | ").replace(/\.\.\.$/, ""),
+      tags: (cells[end + 1] ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+      type: typeCell && typeCell !== "—" ? typeCell : null,
     });
   }
   return rows.sort((a, b) => b.date.localeCompare(a.date));
