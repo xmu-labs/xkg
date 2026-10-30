@@ -43,6 +43,23 @@ export function currentRepo(cwd: string = process.cwd()): string | null {
   }
 }
 
+/** Hook `source` values for a session that goes on from one that already started, so already had the offer. */
+const CONTINUED = new Set(["compact", "fork"]);
+
+/**
+ * Whether an agent's SessionStart hook input (the JSON it sends on stdin) says the session goes
+ * on after the agent compacted or forked the chat. No input, unreadable input or no `source`
+ * (Cursor sends none) count as a new session.
+ */
+export function continuesSession(input: string): boolean {
+  try {
+    const source = (JSON.parse(input) as { source?: unknown } | null)?.source;
+    return typeof source === "string" && CONTINUED.has(source);
+  } catch {
+    return false;
+  }
+}
+
 /** What the server's briefing starts with when captures wait for the repo. */
 const OFFER_PREFIX = "xkg: ";
 
@@ -51,12 +68,14 @@ const OFFER_PREFIX = "xkg: ";
  * it (HANDOFFS.md), prints the server's offer as is, so the hook and a briefing
  * call give the same words. Otherwise counts new captures and, when there are
  * some, prints the question the agent should ask. Either way shaped for that
- * agent. Never fails or delays a session for long: on any error it prints nothing.
+ * agent. Prints nothing, without calling xkg, when `input` says the session goes on
+ * after a compact or fork. Never fails or delays a session for long: on any error it prints nothing.
  */
 export async function sessionStart(
   apiKey: string,
-  opts: { agent?: string; timeoutMs?: number; repo?: string | null } = {},
+  opts: { agent?: string; timeoutMs?: number; repo?: string | null; input?: string } = {},
 ): Promise<void> {
+  if (opts.input && continuesSession(opts.input)) return;
   // One limit for the whole command, so a hung server can't hold the session twice as long.
   const deadline = Date.now() + (opts.timeoutMs ?? 3000);
   const remaining = () => Math.max(1, deadline - Date.now());

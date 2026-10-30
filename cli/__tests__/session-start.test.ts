@@ -102,6 +102,30 @@ describe("sessionStart", () => {
     expect(out).toContain("You have 1 new xkg capture. Want to see it and apply it here?");
   });
 
+  // protects: the offer is made once per session; fails_when: a chat the agent compacted or forked (Claude Code, Codex) gets the offer again mid-session, or calls xkg for it; no_claim: how each agent fills `source` (QA runs each agent's input shape)
+  it.each(["compact", "fork"])("stays quiet, without calling xkg, when the agent says the session continues (%s)", async (source) => {
+    const { sessionStart } = await import("../session-start.js");
+    const input = JSON.stringify({ session_id: "s1", hook_event_name: "SessionStart", source });
+    expect(await captureStdout(() => sessionStart("key", { agent: "codex", repo: null, input }))).toBe("");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  // protects: a new, resumed or cleared session still gets the offer in every agent; fails_when: a start source, a hook with no source (Cursor), no input or unreadable input loses the offer; no_claim: none
+  it.each([
+    '{"source":"startup"}',
+    '{"source":"resume"}',
+    '{"source":"clear"}',
+    '{"source":"new"}',
+    '{"session_id":"s1","is_background_agent":false}',
+    "",
+    "not json",
+    "null",
+  ])("offers as usual for hook input %j", async (input) => {
+    const { sessionStart } = await import("../session-start.js");
+    const out = await captureStdout(() => sessionStart("key", { repo: null, input }));
+    expect(out).toContain("You have 3 new xkg captures.");
+  });
+
   it("prints nothing when the inbox is empty", async () => {
     fetchSpy.mockImplementation(() => Promise.resolve(reply("Inbox is empty.")));
     const { sessionStart } = await import("../session-start.js");
