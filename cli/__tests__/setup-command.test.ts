@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import { mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { isGitRepo, parseInitArgs, previewSessionStart } from "../setup-command.js";
+import { browserCommand, isGitRepo, parseInitArgs, previewSessionStart } from "../setup-command.js";
 
 const sessionStart = vi.fn(async (_key: string, _opts: Record<string, unknown>) => { process.stdout.write("xkg: 2 new captures\n"); });
 vi.mock("../session-start.js", () => ({ sessionStart: (k: string, o: Record<string, unknown>) => sessionStart(k, o) }));
@@ -13,6 +13,14 @@ describe("previewSessionStart", () => {
     const text = await previewSessionStart("k");
     expect(text).toBe("xkg: 2 new captures\n");
     expect(sessionStart).toHaveBeenCalledWith("k", { repo: null });
+  });
+});
+
+describe("browserCommand", () => {
+  it("opens a URL with the platform's own opener", () => {
+    expect(browserCommand("darwin", "https://x.test/a")).toEqual(["open", ["https://x.test/a"]]);
+    expect(browserCommand("linux", "https://x.test/a")).toEqual(["xdg-open", ["https://x.test/a"]]);
+    expect(browserCommand("win32", "https://x.test/a?b=1&c=2")).toEqual(["rundll32", ["url.dll,FileProtocolHandler", "https://x.test/a?b=1&c=2"]]);
   });
 });
 

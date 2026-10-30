@@ -3,6 +3,7 @@ import { createUser, getUserByGithubId } from "@/lib/db";
 import { createSession } from "@/lib/session";
 import { issueDeviceToken, DEVICE_COOKIE_NAME, deviceCookieOptions } from "@/lib/device";
 import { env } from "@/lib/env";
+import { signInReturn } from "@/lib/origin";
 
 interface GithubTokenResponse {
   access_token: string;
@@ -77,15 +78,17 @@ async function handleGet(req: NextRequest): Promise<NextResponse> {
     // Create session
     await createSession(user.id, user.token_version ?? 0);
 
-    // If this login was initiated to resume an OAuth authorization request
-    // (Claude connecting over MCP), send the browser back to that request.
-    const oauthReturn = req.cookies.get("xkg_oauth_return")?.value
-      ?? req.cookies.get("xmu_oauth_return")?.value
-      ?? req.cookies.get("mnemos_oauth_return")?.value;
+    // If this login was started to resume an OAuth authorization request (an
+    // MCP connector) or a CLI sign-in, send the browser back to that page.
+    const returnTo = signInReturn(
+      req.cookies.get("xkg_oauth_return")?.value
+        ?? req.cookies.get("xmu_oauth_return")?.value
+        ?? req.cookies.get("mnemos_oauth_return")?.value,
+    );
 
     let response: NextResponse;
-    if (oauthReturn && oauthReturn.startsWith(`${env.appUrl}/api/oauth/authorize`)) {
-      response = NextResponse.redirect(oauthReturn);
+    if (returnTo) {
+      response = NextResponse.redirect(returnTo);
     } else if (user.github_repo) {
       // Redirect: onboard if no repo, otherwise home
       response = NextResponse.redirect(`${env.appUrl}/`);

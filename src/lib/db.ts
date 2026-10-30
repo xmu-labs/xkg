@@ -520,12 +520,74 @@ export async function ensureProfileColumns(): Promise<void> {
   profileColumnsReady = true;
 }
 
+// ── Machine keys from browser sign-in (see lib/cli-login.ts) ──
+
+let cliKeyTable: Promise<void> | null = null;
+
+/** cli_keys (one key per signed-in machine) and cli_logins (sign-ins in progress). Created on first use. */
+export function ensureCliKeyTable(): Promise<void> {
+  cliKeyTable ??= createCliKeyTables().catch((err: unknown) => {
+    cliKeyTable = null;
+    throw err;
+  });
+  return cliKeyTable;
+}
+
+async function createCliKeyTables(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS cli_keys (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      key_hash TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      last_used_at TIMESTAMP
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS cli_keys_user ON cli_keys (user_id)`;
+  await sql`
+    CREATE TABLE IF NOT EXISTS cli_logins (
+      device_hash TEXT PRIMARY KEY,
+      user_code TEXT NOT NULL UNIQUE,
+      label TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      user_id INTEGER,
+      api_key TEXT,
+      expires_at TIMESTAMP NOT NULL,
+      last_poll_at TIMESTAMP,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+}
+
+/** Remove every machine key of a user: part of rotating the key, which is the revoke lever. */
+export async function deleteCliKeys(userId: number): Promise<void> {
+  await ensureCliKeyTable();
+  await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
+}
+
+async function getUserByCliKey(hashed: string): Promise<User | null> {
+  await ensureCliKeyTable();
+  const { rows } = await sql<User>`
+    SELECT users.* FROM cli_keys JOIN users ON users.id = cli_keys.user_id WHERE cli_keys.key_hash = ${hashed} LIMIT 1
+  `;
+  if (!rows[0]) return null;
+  try {
+    // At most one write an hour per key, so busy hooks don't write on every call.
+    await sql`UPDATE cli_keys SET last_used_at = NOW() WHERE key_hash = ${hashed} AND (last_used_at IS NULL OR last_used_at < NOW() - INTERVAL '1 hour')`;
+  } catch {
+    // Bookkeeping must not break a valid key.
+  }
+  return hydrate(rows[0]);
+}
+
 /**
  * Resolve a user from an MCP API key.
  *
  * Keys are stored hashed, so the incoming key is hashed and matched against
  * that. A legacy plaintext row still matches on the raw value and is upgraded
  * to a hash in place, so existing keys keep working without a forced rotation.
+ * A key from browser sign-in (cli_keys) is checked last.
  */
 export async function getUserByApiKey(apiKey: string): Promise<User | null> {
   const hashed = hashApiKey(apiKey);
@@ -538,7 +600,7 @@ export async function getUserByApiKey(apiKey: string): Promise<User | null> {
     SELECT * FROM users WHERE api_key = ${apiKey} LIMIT 1
   `;
   const found = legacy[0];
-  if (!found) return null;
+  if (!found) return getUserByCliKey(hashed);
 
   try {
     await sql`UPDATE users SET api_key = ${hashed} WHERE id = ${found.id}`;
@@ -669,6 +731,9 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM handoff_events WHERE user_id = ${userId}`;
   await ensureHandoffScoreTable();
   await sql`DELETE FROM handoff_scores WHERE user_id = ${userId}`;
+  await ensureCliKeyTable();
+  await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
+  await sql`DELETE FROM cli_logins WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 

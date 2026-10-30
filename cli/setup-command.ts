@@ -1,10 +1,24 @@
-import { homedir } from "os";
+import { homedir, hostname } from "os";
 import { join } from "path";
-import { execFileSync } from "child_process";
+import { execFileSync, spawn } from "child_process";
 import { createInterface } from "readline/promises";
 import { AGENTS, type AgentEnv, type AgentId } from "./setup-agents.js";
 
 /** `xkg init` and `xkg doctor` with the real machine behind their deps. */
+
+/** How to open a URL in the browser on this platform (rundll32 on Windows, so `&` in the URL isn't read by a shell). */
+export function browserCommand(platform: NodeJS.Platform, url: string): [string, string[]] {
+  if (platform === "darwin") return ["open", [url]];
+  if (platform === "win32") return ["rundll32", ["url.dll,FileProtocolHandler", url]];
+  return ["xdg-open", [url]];
+}
+
+function openBrowser(url: string): void {
+  const [cmd, args] = browserCommand(process.platform, url);
+  const child = spawn(cmd, args, { stdio: "ignore", detached: true });
+  child.on("error", () => {}); // No browser: the printed link still works.
+  child.unref();
+}
 
 /** Inside a git work tree, with or without an origin remote. */
 export function isGitRepo(cwd: string): boolean {
@@ -141,6 +155,16 @@ export async function initCommand(args: string[]): Promise<number> {
       syncMap: async (k) => {
         const r = await syncCodeMap(k, process.cwd(), { force: true });
         return r.status === "synced" || r.status === "unchanged" ? `Code map sent: ${r.repo}, ${r.files} file${r.files === 1 ? "" : "s"}` : `Code map not sent: ${r.reason}`;
+      },
+      signIn: async () => {
+        const { browserSignIn } = await import("./sign-in.js");
+        return browserSignIn({
+          fetch,
+          open: openBrowser,
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+          log: (line) => console.log(`  ${line}`),
+          label: hostname(),
+        });
       },
       backupDir: join(homedir(), ".xkg", "backups", new Date().toISOString().replace(/[:.]/g, "-")),
     });
