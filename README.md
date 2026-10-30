@@ -78,7 +78,7 @@ xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and th
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
-**Your captures** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
+**Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
 - **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.
@@ -414,7 +414,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `synthesize` | Combine related captures into reusable rules |
 | `apply_stats` | Captures applied per week, and how many came with a commit |
 
-The last five are your own decisions and reports, not agent work, and the app has them under **Your captures**. They stay listed for now and will be unlisted in a later release.
+The last five are your own decisions and reports, not agent work, and the app has them under **Your knowledge**. They stay listed for now and will be unlisted in a later release.
 
 Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 

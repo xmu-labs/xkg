@@ -1,7 +1,7 @@
 import { test, expect, signIn } from "./fixtures";
 import type { Page } from "@playwright/test";
 
-// The captures page: the human decisions that used to be MCP tools (archive,
+// Your knowledge page: the human decisions that used to be MCP tools (archive,
 // delete, check links, rules per tag, weekly applies), where the human is.
 
 const LONG = "2026-10-24-why-retrieval-augmented-generation-pipelines-fail-in-production-a-field-guide.md";
@@ -21,19 +21,19 @@ async function open(page: Page) {
   await signIn(page);
   await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
   await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
-  await page.goto("/captures");
+  await page.goto("/knowledge");
 }
 
-test("home links to the captures page", async ({ page }) => {
+test("home links to Your knowledge", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("link", { name: "Your captures" }).tap();
-  await expect(page).toHaveURL(/\/captures$/);
+  await page.getByRole("link", { name: "Your knowledge" }).tap();
+  await expect(page).toHaveURL(/\/knowledge$/);
 });
 
 test("the inbox lists its captures, and the weekly applies show", async ({ page }) => {
   await open(page);
-  await expect(page.getByRole("heading", { name: "Your captures" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
   await expect(page.getByText("3 applied this week, 2 with a commit")).toBeVisible();
   const list = page.getByTestId("capture-list");
   await expect(list.getByRole("listitem")).toHaveCount(2);
@@ -109,7 +109,7 @@ test("make rules turns a tag into rules", async ({ page }) => {
   expect(sent).toEqual([{ tag: "llm" }]);
 });
 
-test("the captures page has no sideways scroll at 320 px", async ({ page }) => {
+test("Your knowledge has no sideways scroll at 320 px", async ({ page }) => {
   await open(page);
   await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(2);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);

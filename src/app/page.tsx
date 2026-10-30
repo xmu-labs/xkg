@@ -177,7 +177,7 @@ export default function CapturePage() {
           <BrandMark size={56} />
           <h1 className="wordmark text-2xl" style={{ color: "var(--fg)" }}>xkg</h1>
           <div className="ml-auto flex items-center gap-4 shrink-0">
-            <Link href="/captures" className="text-sm font-medium" style={{ color: "var(--gold)" }}>Your captures</Link>
+            <Link href="/knowledge" className="text-sm font-medium" style={{ color: "var(--gold)" }}>Your knowledge</Link>
             <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
           </div>
         </div>

@@ -8,7 +8,7 @@ import type { CaptureRow, CaptureStatus, LinkCheck } from "@/lib/captures";
 import type { WeekStats } from "@/lib/ledger";
 
 /**
- * Your captures: the decisions about saved knowledge that are the user's to
+ * Your knowledge: the decisions about saved knowledge that are the user's to
  * make (archive, delete, check links, rules per tag) and how much of it got
  * applied. Everything reads and writes the user's knowledge repo.
  */
@@ -53,7 +53,7 @@ function shortDate(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-export default function CapturesPage() {
+export default function KnowledgePage() {
   const [captures, setCaptures] = useState<CaptureRow[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [weeks, setWeeks] = useState<WeekStats[] | null>(null);
@@ -114,7 +114,7 @@ export default function CapturesPage() {
       <div className="w-full">
         <div className="flex items-center gap-3">
           <BrandMark size={40} />
-          <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>Your captures</h1>
+          <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>Your knowledge</h1>
           <Link href="/" className="ml-auto shrink-0 text-sm font-medium" style={{ color: "var(--gold)" }}>Capture</Link>
         </div>
         {thisWeek && (
