@@ -26,6 +26,8 @@ export interface InitDeps {
   connect: (key: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
   /** `owner/name` of the repo in the working directory, or null outside one. */
   repo: string | null;
+  /** The working directory is inside a git repo (it may have no origin remote, so no `repo`). */
+  inGitRepo: boolean;
   installGitHooks: () => string[];
   syncMap: (key: string) => Promise<string>;
   backupDir: string;
@@ -67,7 +69,7 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
 
   // ── Plan ──
   const agents = detectAgents(deps.env).filter((a) => !deps.only || deps.only.includes(a.id));
-  if (agents.length === 0 && !deps.repo) {
+  if (agents.length === 0 && !deps.inGitRepo) {
     saveKey();
     log("No coding agent found (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor) and this isn't a git repo, so there's nothing else to set up.");
     return { ok: true, steps: [] };
@@ -78,7 +80,7 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
     log(`  • ${a.name}: MCP server, session-start hook${a.rules ? `, rules block in ~/${a.rules}` : ""}`);
   }
   if (agents.length === 0) log("  (no coding agent found: Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor)");
-  if (deps.repo) log(`  • This repo (${deps.repo}): git hooks that record applied captures and keep the code map fresh`);
+  if (deps.inGitRepo) log(`  • This repo${deps.repo ? ` (${deps.repo})` : ""}: git hooks that record applied captures and keep the code map fresh`);
   log("It keeps your other settings, and leaves anything xkg already set up as it is.");
   if (agents.some((a) => a.id === "claude")) log("In Claude Code, the session-start hook replaces the older xkg inbox-check hook if you have one.");
 
@@ -121,11 +123,11 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
     }
   }
 
-  if (deps.repo) {
+  if (deps.inGitRepo) {
     try {
       deps.installGitHooks();
-      log(`  ✓ Git hooks installed in ${deps.repo}`);
-      log(`  · ${await deps.syncMap(key)}`);
+      log(`  ✓ Git hooks installed in ${deps.repo ?? "this repo"}`);
+      log(`  · ${deps.repo ? await deps.syncMap(key) : "Code map not sent: this repo has no origin remote"}`);
     } catch (err) {
       log(`  ! Git hooks not installed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -138,11 +140,11 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
     for (const n of notes) log(`Next: ${n}.`);
   }
   const undo = steps.filter((s) => s.result === "added" && s.undo).map((s) => s.undo!);
-  if (undo.length || deps.repo) {
+  if (undo.length || deps.inGitRepo) {
     log("");
     log("To undo:");
     for (const u of undo) log(`  - ${u}`);
-    if (deps.repo) log("  - delete the lines ending in `# xkg` in .git/hooks/post-commit, post-merge and post-checkout");
+    if (deps.inGitRepo) log("  - delete the lines ending in `# xkg` in .git/hooks/post-commit, post-merge and post-checkout");
     if (backedUp) log(`Backups of the files as they were: ${tilde(home, deps.backupDir)}`);
   }
   return { ok: true, steps };

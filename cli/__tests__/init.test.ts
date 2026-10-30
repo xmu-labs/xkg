@@ -33,6 +33,7 @@ function deps(over: Partial<InitDeps> = {}): InitDeps {
     saveKey: (k) => saved.push(k),
     connect: async () => ({ ok: true }),
     repo: null,
+    inGitRepo: false,
     installGitHooks: () => {
       gitInstalls++;
       return ["/r/.git/hooks/post-commit"];
@@ -157,9 +158,17 @@ describe("what it writes and reports", () => {
   });
 
   it("installs the git hooks and sends the code map in a repo", async () => {
-    await runInit(deps({ yes: true, repo: "acme/app" }));
+    await runInit(deps({ yes: true, repo: "acme/app", inGitRepo: true }));
     expect(gitInstalls).toBe(1);
     expect(text()).toContain("Synced acme/app");
+  });
+
+  it("installs the git hooks in a repo with no origin remote, without sending a code map", async () => {
+    let synced = 0;
+    await runInit(deps({ yes: true, inGitRepo: true, syncMap: async () => { synced++; return "x"; } }));
+    expect(gitInstalls).toBe(1);
+    expect(synced).toBe(0);
+    expect(text()).toMatch(/no origin remote/i);
   });
 
   it("skips the git hooks outside a repo", async () => {

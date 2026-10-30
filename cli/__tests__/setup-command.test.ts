@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { parseInitArgs, previewSessionStart } from "../setup-command.js";
+import { execFileSync } from "child_process";
+import { mkdtempSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { isGitRepo, parseInitArgs, previewSessionStart } from "../setup-command.js";
 
 const sessionStart = vi.fn(async (_key: string, _opts: Record<string, unknown>) => { process.stdout.write("xkg: 2 new captures\n"); });
 vi.mock("../session-start.js", () => ({ sessionStart: (k: string, o: Record<string, unknown>) => sessionStart(k, o) }));
@@ -9,6 +13,19 @@ describe("previewSessionStart", () => {
     const text = await previewSessionStart("k");
     expect(text).toBe("xkg: 2 new captures\n");
     expect(sessionStart).toHaveBeenCalledWith("k", { repo: null });
+  });
+});
+
+describe("isGitRepo", () => {
+  it("is true in a git repo with no origin remote, and false outside one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "xkg-git-"));
+    try {
+      expect(isGitRepo(dir)).toBe(false);
+      execFileSync("git", ["init", "-q"], { cwd: dir });
+      expect(isGitRepo(dir)).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

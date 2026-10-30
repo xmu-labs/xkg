@@ -6,6 +6,15 @@ import { AGENTS, type AgentEnv, type AgentId } from "./setup-agents.js";
 
 /** `xkg init` and `xkg doctor` with the real machine behind their deps. */
 
+/** Inside a git work tree, with or without an origin remote. */
+export function isGitRepo(cwd: string): boolean {
+  try {
+    return execFileSync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf-8", timeout: 5000, stdio: ["ignore", "pipe", "ignore"] }).trim() === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function parseInitArgs(args: string[]): { key?: string; yes: boolean; only?: AgentId[] } {
   const keyIdx = args.indexOf("--key");
   const agentsIdx = args.indexOf("--agents");
@@ -126,6 +135,7 @@ export async function initCommand(args: string[]): Promise<number> {
       saveKey: (k) => setConfigField("key", k),
       connect,
       repo: currentRepo(),
+      inGitRepo: isGitRepo(process.cwd()),
       installGitHooks: () => installGitHooks(),
       syncMap: async (k) => {
         const r = await syncCodeMap(k, process.cwd(), { force: true });
