@@ -45,8 +45,28 @@ export function requestOrigin(req: Request): string {
   return origin && (origin === canonical || KNOWN_ORIGINS.includes(origin)) ? origin : canonical;
 }
 
-/** Browser-facing API routes: sign-in and the MCP consent screen. */
-const BROWSER_API_PATHS = ["/api/auth", "/api/oauth/authorize"];
+/** Browser-facing API routes: sign-in, the MCP consent screen and the CLI sign-in page. */
+const BROWSER_API_PATHS = ["/api/auth", "/api/oauth/authorize", "/api/cli-login/approve"];
+
+/** Pages that send the browser through GitHub sign-in and expect to come back. */
+const SIGN_IN_RETURN_PATHS = ["/api/oauth/authorize", "/api/cli-login/approve"];
+
+/**
+ * Where to send the browser after GitHub sign-in, from the return cookie a
+ * page set before sending it there: one of SIGN_IN_RETURN_PATHS on the
+ * canonical address, or null.
+ */
+export function signInReturn(cookie: string | undefined): string | null {
+  if (!cookie) return null;
+  let url: URL;
+  try {
+    url = new URL(cookie);
+  } catch {
+    return null;
+  }
+  if (url.origin !== canonicalOrigin()) return null;
+  return SIGN_IN_RETURN_PATHS.includes(url.pathname) ? url.toString() : null;
+}
 
 function underPath(pathname: string, base: string): boolean {
   return pathname === base || pathname.startsWith(`${base}/`);

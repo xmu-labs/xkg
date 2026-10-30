@@ -51,7 +51,7 @@ export async function runChecks(deps: DoctorDeps): Promise<DoctorCheck[]> {
   const latest = await deps.latestVersion().catch(() => null);
   let reachable = false;
   if (!deps.key) {
-    add("Account", "API key", "fail", "No key in ~/.xkg/config.json", `${NPX} init --key YOUR_API_KEY (your key is in Settings at https://xkg.xmu.sh)`);
+    add("Account", "API key", "fail", "No key in ~/.xkg/config.json", `${NPX} init (signs you in through the browser)`);
   } else {
     add("Account", "API key", "ok", "Key in ~/.xkg/config.json");
     const conn = await deps.connect(deps.key);
@@ -59,7 +59,7 @@ export async function runChecks(deps: DoctorDeps): Promise<DoctorCheck[]> {
       reachable = true;
       add("Account", "Server", "ok", "Reached xkg with your key");
     } else {
-      add("Account", "Server", "fail", conn.reason, `Copy a current key from Settings at https://xkg.xmu.sh, then run: ${NPX} init --key YOUR_API_KEY`);
+      add("Account", "Server", "fail", conn.reason, `${NPX} init (signs you in again through the browser)`);
     }
   }
   if (latest && isNewer(latest, deps.currentVersion)) {

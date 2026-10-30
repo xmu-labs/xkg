@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { getSession, createSession } from "@/lib/session";
-import { updateUserApiKey, revokeUserTokens } from "@/lib/db";
+import { updateUserApiKey, revokeUserTokens, deleteCliKeys } from "@/lib/db";
 
 // Regenerate the MCP/CLI API key for the signed-in user.
 // This is the only path (besides full onboarding) that mints a new api_key.
@@ -23,6 +23,8 @@ export async function POST(): Promise<NextResponse> {
 
     const apiKey = `xkg_${crypto.randomBytes(24).toString("hex")}`;
     await updateUserApiKey(user.id, apiKey);
+    // Keys from browser sign-in (one per machine) are revoked with it.
+    await deleteCliKeys(user.id);
 
     // Rotating the key is the user's "revoke my access" lever, so it must also
     // retire OAuth access/refresh tokens — otherwise a leaked connector token

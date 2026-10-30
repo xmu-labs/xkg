@@ -58,7 +58,7 @@ describe("account checks", () => {
     const checks = await runChecks(deps({ key: undefined }));
     const key = find(checks, "API key");
     expect(key.status).toBe("fail");
-    expect(key.fix).toContain("init --key");
+    expect(key.fix).toMatch(/init \(signs you in through the browser\)/);
     expect(checks.some((c) => c.name === "Server")).toBe(false);
   });
 

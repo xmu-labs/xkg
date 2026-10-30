@@ -124,8 +124,10 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHu
 One command sets up every coding agent on your machine:
 
 ```bash
-npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY
+npx -y @xmu-labs/xkg@latest init
 ```
+
+With no key on the machine yet, it signs you in through the browser: it opens a page on xkg.xmu.sh that shows this computer's name and a code, you check the code matches the one in your terminal and approve, and the CLI receives a key for this computer. Each computer gets its own key, so signing in on a new one never cuts off another; rotating your key in Settings removes them all. On a machine without a browser (a server, CI), pass a key from Settings instead: `init --key YOUR_API_KEY`.
 
 It checks the key and saves it in `~/.xkg/config.json`, finds Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor, lists what it will change, and asks once (`--yes` skips the question, `--agents codex,cursor` limits it). For each agent it adds three things, all without a key:
 
@@ -420,7 +422,7 @@ npx -y @xmu-labs/xkg@latest <command>
 | Command | What it does |
 | --- | --- |
 | `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
-| `init [--key YOUR_API_KEY] [--yes] [--agents NAMES]` | Set up xkg in every coding agent found (MCP server, session-start hook, rules block) and the git hooks in this repo. See [In the terminal](#in-the-terminal) |
+| `init [--key YOUR_API_KEY] [--yes] [--agents NAMES]` | Sign in through the browser (or use `--key`), then set up xkg in every coding agent found (MCP server, session-start hook, rules block) and the git hooks in this repo. See [In the terminal](#in-the-terminal) |
 | `doctor [--json]` | Check the key, server, knowledge repo, each agent and this repo, with the fix for each problem. Changes nothing |
 | `serve-mcp [--key YOUR_API_KEY]` | Run the local MCP proxy. Without `--key` it uses the key in `~/.xkg/config.json` |
 | `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |

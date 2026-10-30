@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { canonicalOrigin, canonicalRedirect, requestOrigin } from "../origin";
+import { canonicalOrigin, canonicalRedirect, requestOrigin, signInReturn } from "../origin";
 
 const NEW = "https://xkg.xmu.sh";
 const OLD = "https://mnemos-capture.vercel.app";
@@ -60,6 +60,12 @@ describe("after the switch (canonical = xkg.xmu.sh)", () => {
     expect(redirect(`${OLD}${authorize}`)).toBe(`${NEW}${authorize}`);
   });
 
+  it("moves the CLI sign-in page, but not the CLI's own calls", () => {
+    expect(redirect(`${OLD}/api/cli-login/approve?code=BCDF-GHJK`)).toBe(`${NEW}/api/cli-login/approve?code=BCDF-GHJK`);
+    expect(redirect(`${OLD}/api/cli-login/start`)).toBeNull();
+    expect(redirect(`${OLD}/api/cli-login/poll`)).toBeNull();
+  });
+
   it("keeps machine endpoints on the address they were called on", () => {
     for (const path of [
       "/api/mcp",
@@ -110,5 +116,23 @@ describe("before the switch (canonical = mnemos-capture.vercel.app)", () => {
 
   it("sends browsers on the new address to the current one until the switch", () => {
     expect(redirect(`${NEW}/login`)).toBe(`${OLD}/login`);
+  });
+});
+
+describe("signInReturn", () => {
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_APP_URL = NEW;
+  });
+
+  it("goes back to the consent screen or the CLI sign-in page after GitHub sign-in", () => {
+    expect(signInReturn(`${NEW}/api/oauth/authorize?client_id=c1`)).toBe(`${NEW}/api/oauth/authorize?client_id=c1`);
+    expect(signInReturn(`${NEW}/api/cli-login/approve?code=BCDF-GHJK`)).toBe(`${NEW}/api/cli-login/approve?code=BCDF-GHJK`);
+  });
+
+  it("ignores anything else, including other hosts", () => {
+    expect(signInReturn(undefined)).toBeNull();
+    expect(signInReturn(`${NEW}/settings`)).toBeNull();
+    expect(signInReturn(`https://evil.example/api/cli-login/approve`)).toBeNull();
+    expect(signInReturn(`${NEW}/api/cli-login/approver`)).toBeNull();
   });
 });

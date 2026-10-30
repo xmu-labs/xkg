@@ -203,7 +203,8 @@ function printHelp(): void {
 
   Usage:
     xkg                                                        Open xkg in your browser
-    xkg init [--key KEY] [--yes] [--agents a,b]                Set up xkg in every coding agent it finds (Claude Code, Codex,
+    xkg init [--key KEY] [--yes] [--agents a,b]                Sign in through the browser (or use --key), then set up xkg in
+                                                               every coding agent it finds (Claude Code, Codex,
                                                                Gemini CLI, GitHub Copilot, Cursor): MCP server, session-start hook,
                                                                rules block; plus the git hooks in this repo. Asks once, backs up
                                                                each file to ~/.xkg/backups/, and prints how to undo
@@ -245,7 +246,7 @@ function printHelp(): void {
     1. Run: npx @xmu-labs/xkg
     2. Sign in with GitHub (creates your knowledge repo automatically)
     3. Set a PIN for quick mobile access
-    4. Connect your coding agents: npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY
+    4. Connect your coding agents: npx -y @xmu-labs/xkg@latest init
     5. Start capturing!
 
   Connect to Claude Code:

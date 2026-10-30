@@ -26,6 +26,8 @@ export interface InitDeps {
   connect: (key: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
   /** `owner/name` of the repo in the working directory, or null outside one. */
   repo: string | null;
+  /** Browser sign-in (sign-in.ts); without it, init asks for a pasted key. */
+  signIn?: () => Promise<{ ok: true; key: string } | { ok: false; reason: string }>;
   /** The working directory is inside a git repo (it may have no origin remote, so no `repo`). */
   inGitRepo: boolean;
   installGitHooks: () => string[];
@@ -44,8 +46,25 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
   const home = deps.env.home;
 
   // ── Key ──
+  const viaBrowser = async (why: string): Promise<string | undefined> => {
+    log(`${why} Sign in with your browser:`);
+    const signedIn = await deps.signIn!();
+    if (signedIn.ok) {
+      log("✓ Signed in.");
+      return signedIn.key;
+    }
+    log(signedIn.reason);
+    log("You can also copy a key from Settings at https://xkg.xmu.sh, then run:");
+    log("  npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY");
+    return undefined;
+  };
+  const canSignIn = deps.interactive && Boolean(deps.signIn);
+
   let key = deps.key ?? deps.storedKey;
-  if (!key && deps.interactive) {
+  if (!key && canSignIn) {
+    key = await viaBrowser("No xkg key on this machine yet.");
+    if (!key) return { ok: false, steps: [] };
+  } else if (!key && deps.interactive) {
     key = (await deps.ask("Paste your xkg API key (Settings at https://xkg.xmu.sh): ")).trim() || undefined;
   }
   if (!key) {
@@ -53,7 +72,14 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
     log("  npx -y @xmu-labs/xkg@latest init --key YOUR_API_KEY");
     return { ok: false, steps: [] };
   }
-  const conn = await deps.connect(key);
+  let conn = await deps.connect(key);
+  // A saved key stops working when the key is rotated in Settings; a typed one is the user's to fix.
+  if (!conn.ok && !deps.key && canSignIn) {
+    log(`Can't use the saved key: ${conn.reason}`);
+    key = await viaBrowser("The saved key no longer works.");
+    if (!key) return { ok: false, steps: [] };
+    conn = await deps.connect(key);
+  }
   if (!conn.ok) {
     log(`Can't use this key: ${conn.reason}`);
     log("Nothing changed.");

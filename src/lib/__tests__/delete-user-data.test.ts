@@ -38,6 +38,8 @@ describe("deleteUserData", () => {
       "DELETE FROM surface_events WHERE user_id = ?",
       "DELETE FROM handoff_events WHERE user_id = ?",
       "DELETE FROM handoff_scores WHERE user_id = ?",
+      "DELETE FROM cli_keys WHERE user_id = ?",
+      "DELETE FROM cli_logins WHERE user_id = ?",
       "DELETE FROM users WHERE id = ?",
     ]);
     expect(deletes.map((q) => q.values)).toEqual([
@@ -45,6 +47,8 @@ describe("deleteUserData", () => {
       [7],
       ["capture:user:7", "code-map:user:7", "handoff:user:7"],
       ["user:7", "octo-cat"],
+      [7],
+      [7],
       [7],
       [7],
       [7],

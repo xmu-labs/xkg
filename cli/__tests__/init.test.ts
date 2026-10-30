@@ -96,6 +96,52 @@ describe("key", () => {
     expect(saved).toEqual(["pasted"]);
   });
 
+  it("signs in through the browser when there is no key, and saves the machine's key after the go-ahead", async () => {
+    let signIns = 0;
+    answers = ["y"];
+    mkdirSync(join(home, ".cursor"));
+    const res = await runInit(deps({ key: undefined, signIn: async () => { signIns++; return { ok: true, key: "xkg_machine" }; } }));
+    expect(signIns).toBe(1);
+    expect(res.ok).toBe(true);
+    expect(saved).toEqual(["xkg_machine"]);
+    expect(asked).toEqual(["Go ahead? [Y/n] "]);
+  });
+
+  it("stops and says how to pass a key when browser sign-in fails", async () => {
+    const res = await runInit(deps({ key: undefined, signIn: async () => ({ ok: false, reason: "Sign-in was denied in the browser." }) }));
+    expect(res.ok).toBe(false);
+    expect(saved).toEqual([]);
+    expect(text()).toContain("denied");
+    expect(text()).toContain("--key");
+  });
+
+  it("signs in again when the saved key was rotated away", async () => {
+    answers = ["y"];
+    mkdirSync(join(home, ".cursor"));
+    const res = await runInit(deps({
+      key: undefined,
+      storedKey: "old",
+      connect: async (k) => (k === "old" ? { ok: false, reason: "xkg rejected the API key (HTTP 401)." } : { ok: true }),
+      signIn: async () => ({ ok: true, key: "xkg_new" }),
+    }));
+    expect(res.ok).toBe(true);
+    expect(saved).toEqual(["xkg_new"]);
+    expect(text()).toMatch(/saved key no longer works/i);
+  });
+
+  it("doesn't replace a key given with --key that xkg rejects", async () => {
+    let signIns = 0;
+    const res = await runInit(deps({ key: "typo", connect: async () => ({ ok: false, reason: "401" }), signIn: async () => { signIns++; return { ok: true, key: "k" }; } }));
+    expect(res.ok).toBe(false);
+    expect(signIns).toBe(0);
+  });
+
+  it("doesn't open a browser when it can't ask", async () => {
+    let signIns = 0;
+    await runInit(deps({ key: undefined, interactive: false, signIn: async () => { signIns++; return { ok: true, key: "k" }; } }));
+    expect(signIns).toBe(0);
+  });
+
   it("stops without a key when it can't ask", async () => {
     const res = await runInit(deps({ key: undefined, interactive: false }));
     expect(res.ok).toBe(false);
