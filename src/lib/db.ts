@@ -169,6 +169,8 @@ export async function initDb(): Promise<void> {
   await ensureSurfaceEventTable();
   handoffEventTable = null;
   await ensureHandoffEventTable();
+  handoffScoreTable = null;
+  await ensureHandoffScoreTable();
 
   await upgradeLegacyData();
 }
@@ -358,6 +360,40 @@ async function createHandoffEventTable(): Promise<void> {
   `;
   await sql`ALTER TABLE handoff_events ADD COLUMN IF NOT EXISTS with_commit BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS handoff_events_user_capture ON handoff_events (user_id, capture_key, repo)`;
+}
+
+let handoffScoreTable: Promise<void> | null = null;
+
+/**
+ * What xkg learned from handoff answers (see handoff-learning.ts): one row per
+ * capture × file, and per capture × repo with path ''. A cache of the
+ * captures' Handoff logs, rebuilt from git when lost. Created on first use.
+ */
+export function ensureHandoffScoreTable(): Promise<void> {
+  handoffScoreTable ??= createHandoffScoreTable().catch((err: unknown) => {
+    handoffScoreTable = null;
+    throw err;
+  });
+  return handoffScoreTable;
+}
+
+async function createHandoffScoreTable(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS handoff_scores (
+      user_id INTEGER NOT NULL,
+      capture_key TEXT NOT NULL,
+      repo TEXT NOT NULL,
+      path TEXT NOT NULL,
+      weight DOUBLE PRECISION NOT NULL,
+      negatives INTEGER NOT NULL,
+      tag_keys TEXT[] NOT NULL,
+      updated_at DATE NOT NULL,
+      log_entries INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (user_id, capture_key, repo, path)
+    )
+  `;
+  await sql`ALTER TABLE handoff_scores ADD COLUMN IF NOT EXISTS log_entries INTEGER NOT NULL DEFAULT 0`;
+  await sql`CREATE INDEX IF NOT EXISTS handoff_scores_tags ON handoff_scores USING GIN (tag_keys)`;
 }
 
 /**
@@ -631,6 +667,8 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM surface_events WHERE user_id = ${userId}`;
   await ensureHandoffEventTable();
   await sql`DELETE FROM handoff_events WHERE user_id = ${userId}`;
+  await ensureHandoffScoreTable();
+  await sql`DELETE FROM handoff_scores WHERE user_id = ${userId}`;
   await sql`DELETE FROM users WHERE id = ${userId}`;
 }
 

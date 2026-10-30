@@ -28,6 +28,7 @@ import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
+import { forgetCapture } from "@/lib/handoff-learning";
 import { repoName } from "@/lib/code-repos";
 import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted, weeklyApplyStats } from "@/lib/ledger";
@@ -288,8 +289,9 @@ export async function handleApplyCapture(
       let closed: Closed | null = null;
       if (open) {
         try {
-          if (!logged) await githubPut(user.github_token, user.github_repo, appliedPath, appendHandoffLog(file.content, open.line), `handoff: applied ${filename}`, file.sha);
-          closed = await closeHandoff(user, appliedPath, open, true, today);
+          const content = logged?.content ?? appendHandoffLog(file.content, open.line);
+          if (!logged) await githubPut(user.github_token, user.github_repo, appliedPath, content, `handoff: applied ${filename}`, file.sha);
+          closed = await closeHandoff(user, appliedPath, content, open, true, today);
         } catch (err) {
           console.error("[handoff] close failed:", err instanceof Error ? err.message : err);
           closed = { closed: false, status: open.row.status, failed: true };
@@ -348,7 +350,7 @@ export async function handleApplyCapture(
   if (!inboxFile) {
     await githubPut(user.github_token, user.github_repo, appliedPath, content, `apply again: ${filename}${commitRef}`, file.sha);
     const notes = (await recordInLedger()) + (await recordEvent());
-    const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : null;
+    const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : null;
     return `Applied again: ${appliedPath}${commitRef}${notes}${closedNote(handoff, closed)}`;
   }
 
@@ -356,7 +358,7 @@ export async function handleApplyCapture(
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `apply: remove ${filename} from inbox`);
   await updateIndexEntry(user.github_token, user.github_repo, filename, "apply");
   const ledgerNote = (await recordInLedger()) + (await recordEvent());
-  const closed = handoff ? await closeHandoff(user, appliedPath, handoff, Boolean(args.commit_sha), today) : null;
+  const closed = handoff ? await closeHandoff(user, appliedPath, content, handoff, Boolean(args.commit_sha), today) : null;
 
   // Trigger re-synthesis for the capture's tags (best-effort)
   if (user.llm_api_key) {
@@ -416,6 +418,7 @@ export async function handleDeleteCapture(user: User, args: { filename: string }
 
   await githubDelete(user.github_token, user.github_repo, inboxPath, file.sha, `delete: ${args.filename}`);
   await updateIndexEntry(user.github_token, user.github_repo, args.filename, "delete");
+  await forgetCapture(user.id, args.filename);
 
   return `Deleted: ${args.filename}`;
 }

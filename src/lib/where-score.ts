@@ -29,6 +29,8 @@ export interface Candidate {
   fresh: boolean;
   /** The file's map entry (paths and names only), for scorers that read it. */
   file?: MapFile;
+  /** What earlier applies taught about the file, e.g. "applied twice before for llm", for scorers that read it. */
+  note?: string;
 }
 
 /** p at or above `strong` is a Strong fit, at or above `possible` a Possible fit. */

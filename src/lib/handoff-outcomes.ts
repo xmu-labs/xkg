@@ -7,7 +7,8 @@
  *   declined / done / later ──> row status + log line   (no move, no APPLIED.md row, no apply_events)
  *   reverted ──> APPLIED.md row marked + log line       (the row stays applied)
  *
- * Every answer goes to the capture's `## Handoff log` and to handoff_events.
+ * Every answer goes to the capture's `## Handoff log` and to handoff_events,
+ * and xkg learns from the log (handoff-learning.ts).
  * Any other outcome text is an older client describing an apply, and records
  * one as before.
  */
@@ -19,6 +20,7 @@ import { formatDate } from "./llm";
 import { repoName } from "./code-repos";
 import { LEDGER_PATH, markReverted } from "./ledger";
 import { recordHandoffEvent } from "./handoff-events";
+import { learnFrom } from "./handoff-learning";
 import { addDays, appendHandoffLog, captureName, handoffFor, handoffLogLine, isWaiting, parseHandoffLogLine, readHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
 
 export const OUTCOMES = ["applied", "declined", "done", "later", "reverted"] as const;
@@ -97,9 +99,18 @@ export type Closed = { closed: true } | { closed: false; status: string; failed:
  * Marks the handoff applied, and counts it only when this call set the row,
  * so a retry after a failed write counts it once. When the row changed since
  * it was read (a snooze or an answer landed meanwhile), it's read again and
- * closed from there: an apply wins over anything but dead. Best-effort.
+ * closed from there: an apply wins over anything but dead. Then learns from
+ * `content`, the capture as just written with the apply's log line. Best-effort.
  */
-export async function closeHandoff(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<Closed> {
+export async function closeHandoff(
+  user: ApplyUser, path: string, content: string, handoff: AppliedHandoff, withCommit: boolean, today: string,
+): Promise<Closed> {
+  const closed = await setApplied(user, path, handoff, withCommit, today);
+  await learnFrom(user, path, content, today);
+  return closed;
+}
+
+async function setApplied(user: ApplyUser, path: string, handoff: AppliedHandoff, withCommit: boolean, today: string): Promise<Closed> {
   let row = handoff.row;
   for (let attempt = 0; attempt < 2; attempt++) {
     const set = await setHandoffStatus(user.github_token, user.github_repo!, [row], "applied", today);
@@ -152,6 +163,7 @@ export async function fillApply(user: ApplyUser, path: string, file: { content: 
       console.error("[handoff] filling in an apply failed:", err instanceof Error ? err.message : err);
       return kept;
     }
+    await learnFrom(user, path, content, formatDate());
     const added = [files.length ? "the changed files" : "", confidence ? "your confidence" : ""].filter(Boolean).join(" and ");
     return { content, repo: e.repo, note: `. Its Handoff log line now has ${added}.` };
   }
@@ -222,18 +234,21 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
 
   const reason = outcome === "declined" ? reasonOf(args.reason) : undefined;
   const confidence = confidenceOf(args.confidence);
-  const files = repo ? await mappedFiles(user.id, repo, args.files) : [];
+  const changed = repo ? await mappedFiles(user.id, repo, args.files) : [];
+  // A wrong-files decline names the files it turned down: what xkg suggested
+  const files = reason === "wrong-files" && !changed.length && row ? row.files : changed;
   const commit = outcome === "reverted" ? args.commit_sha : undefined;
   const line = handoffLogLine({ date: today, repo, outcome, reason, confidence, commit, files });
-  const added = await logAnswer(token, knowledge, path, file, line, `handoff: ${outcome} ${filename}`);
-  if (added === null) {
+  const logged = await logAnswer(token, knowledge, path, file, line, `handoff: ${outcome} ${filename}`);
+  if (!logged) {
     if (!set.length) return "Nothing was recorded: the capture's Handoff log couldn't be written. Try again in a moment.";
     const now = { declined: "was declined", done: "was already done", later: `is snoozed until ${until}` }[outcome as Exclude<Outcome, "applied" | "reverted">];
     return `HANDOFFS.md says ${filename} ${now} in ${repo}, but its Handoff log couldn't be written. Report the same answer again to finish recording it.`;
   }
   const marked = outcome === "reverted" ? await markLedgerReverted(token, knowledge, filename, args.commit_sha!, today) : true;
   // Counted once: a repeated answer finds its line already in the log
-  if (repo && added) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
+  if (repo && logged.added) await recordHandoffEvent(user.id, path, repo, outcome, { ...(reason ? { reason } : {}), ...(confidence ? { confidence } : {}) });
+  await learnFrom(user, path, logged.content, today);
 
   if (outcome === "reverted") return `Recorded: the apply of ${filename} in commit ${short} was reverted${ledgerNote(marked)}.`;
   if (outcome === "later" && (set.length || row?.status === status)) return `Snoozed: ${filename} in ${repo} until ${until}. It doesn't count as an apply.`;
@@ -253,20 +268,21 @@ function answeredToday(rows: HandoffRow[], filename: string, status: string, tod
 
 /**
  * Adds `line` to the capture's Handoff log, retrying once from a fresh read.
- * True when added, false when the log already has it (a repeated answer),
- * null when the capture couldn't be written.
+ * Returns the capture as it now is, and whether the line was added (false: the
+ * log already had it, a repeated answer); null when it couldn't be written.
  */
 async function logAnswer(
   token: string, knowledge: string, path: string, first: { content: string; sha: string }, line: string, message: string,
-): Promise<boolean | null> {
+): Promise<{ content: string; added: boolean } | null> {
   let file: { content: string; sha: string } | null = first;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       if (attempt) file = await readFile(token, knowledge, path);
       if (!file) return null;
-      if (file.content.split("\n").includes(line)) return false;
-      await githubPut(token, knowledge, path, appendHandoffLog(file.content, line), message, file.sha);
-      return true;
+      if (file.content.split("\n").includes(line)) return { content: file.content, added: false };
+      const content = appendHandoffLog(file.content, line);
+      await githubPut(token, knowledge, path, content, message, file.sha);
+      return { content, added: true };
     } catch (err) {
       if (attempt === 1) console.error("[handoff] log write failed:", err instanceof Error ? err.message : err);
     }

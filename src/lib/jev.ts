@@ -3,7 +3,8 @@
  * per repo asks, for each candidate file from the name ranker, whether applying
  * the capture would change that file, and whether anything in the repo fits at
  * all. Only names leave xkg: the repo name, file paths, exported names, mapped
- * import paths and the capture's extracted text. Never code.
+ * import paths and the capture's extracted text, plus a note on a file that
+ * earlier applies proved for one of the capture's tags. Never code.
  *
  * The questions and cutoffs live here so they can be read and tuned together.
  * A failed call is an error, never a "no": the caller falls back to the model.
@@ -27,10 +28,17 @@ export const JEV_CUTOFFS: Cutoffs = { strong: 0.5, possible: 0.4 };
 const MAX_EXPORTS = 50;
 const MAX_IMPORTS = 20;
 
-type FileState = { exports: string[]; imports: string[] };
+type FileState = { exports: string[]; imports: string[]; history?: string };
+/** A candidate file: its map entry, and what xkg learned about it from earlier applies, if anything. */
+export type JevFile = MapFile & { note?: string };
 
-export function jevPayload(repo: string, capture: CaptureText, files: MapFile[]) {
-  const listed = files.map((f) => ({ path: f.p, exports: (f.e ?? []).slice(0, MAX_EXPORTS), imports: (f.i ?? []).slice(0, MAX_IMPORTS) }));
+export function jevPayload(repo: string, capture: CaptureText, files: JevFile[]) {
+  const listed = files.map((f) => ({
+    path: f.p,
+    exports: (f.e ?? []).slice(0, MAX_EXPORTS),
+    imports: (f.i ?? []).slice(0, MAX_IMPORTS),
+    ...(f.note ? { history: f.note } : {}),
+  }));
   const questions: Record<string, { type: "noul"; instructions: unknown; criteria: { true: string; false: string } }> = {};
   listed.forEach((file, i) => {
     questions[`fit_${i}`] = {
@@ -79,7 +87,7 @@ function yes(answers: Record<string, unknown>, name: string): number {
 }
 
 /** One request for one repo's candidate files. Throws on any failure. */
-export async function askJev(apiKey: string, repo: string, capture: CaptureText, files: MapFile[], fetchImpl: Fetch = fetch): Promise<JevAnswer> {
+export async function askJev(apiKey: string, repo: string, capture: CaptureText, files: JevFile[], fetchImpl: Fetch = fetch): Promise<JevAnswer> {
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), JEV_TIMEOUT_MS);
   let body: unknown;
@@ -120,10 +128,10 @@ export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
     name: "jev",
     cutoffs: JEV_CUTOFFS,
     async score(capture, candidates, onUsage?: (usage: LlmUsage) => void) {
-      const byRepo = new Map<string, MapFile[]>();
+      const byRepo = new Map<string, JevFile[]>();
       for (const c of candidates) {
         if (!c.file) throw new Error(`jev: no map entry for ${c.path}`);
-        byRepo.set(c.repo, [...(byRepo.get(c.repo) ?? []), c.file]);
+        byRepo.set(c.repo, [...(byRepo.get(c.repo) ?? []), c.note ? { ...c.file, note: c.note } : c.file]);
       }
       const repos = [...byRepo.keys()];
       const answers = await Promise.all(repos.map((repo) => askJev(apiKey, repo, capture, byRepo.get(repo)!, fetchImpl)));

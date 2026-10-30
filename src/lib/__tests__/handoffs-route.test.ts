@@ -13,6 +13,7 @@ let session: typeof user | null = user;
 const consumeQuota = vi.fn();
 const listCodeRepos = vi.fn();
 const recordHandoffEvent = vi.fn();
+const deadEnds = vi.fn();
 const files = new Map<string, { content: string; sha: string }>();
 const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string) => {
   files.set(path, { content, sha: "s" });
@@ -22,6 +23,7 @@ vi.mock("@/lib/session", () => ({ getSession: async () => session }));
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: (...a: unknown[]) => consumeQuota(...a) }));
 vi.mock("@/lib/db", () => ({ listCodeRepos: (...a: unknown[]) => listCodeRepos(...a) }));
 vi.mock("@/lib/handoff-events", () => ({ recordHandoffEvent: (...a: unknown[]) => recordHandoffEvent(...a) }));
+vi.mock("@/lib/handoff-learning", () => ({ deadEnds: (...a: unknown[]) => deadEnds(...a) }));
 vi.mock("@/lib/github", () => ({
   githubPut: (...a: Parameters<typeof githubPut>) => githubPut(...a),
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
@@ -58,6 +60,7 @@ beforeEach(() => {
   files.set(CAPTURE, { content: insertWhereSection(buildMarkdown("2026-10-29", capture as never, "raw"), whereSection(where)!), sha: "c" });
   githubPut.mockClear();
   recordHandoffEvent.mockReset();
+  deadEnds.mockReset().mockResolvedValue(new Set());
   consumeQuota.mockReset().mockResolvedValue({ allowed: true, limit: 60, resetIn: 3600 });
   listCodeRepos.mockReset().mockResolvedValue([{ repo: "acme/app" }, { repo: "acme/web" }]);
 });
@@ -70,6 +73,14 @@ describe("POST /api/handoffs", () => {
     expect(await res.json()).toEqual({ ok: true, status: "pending", repo: "acme/app" });
     expect(queue()).toEqual([{ capture: CAPTURE, repo: "acme/app", kind: "code", files: ["src/llm.ts", "src/briefing.ts"], fit: "possible", status: "pending", since: formatDate(), source: "button" }]);
     expect(recordHandoffEvent).toHaveBeenCalledWith(7, CAPTURE, "acme/app", "queued", { source: "button" });
+  });
+
+  // protects: spec AC13, a file turned down twice for this capture isn't handed off again; fails_when: a dead-end file is queued; no_claim: when a file becomes a dead end (handoff-learning tests)
+  it("leaves out files that are dead ends for the capture", async () => {
+    deadEnds.mockResolvedValue(new Set(["src/llm.ts"]));
+    await post({ filename: CAPTURE, repo: "acme/app" });
+    expect(deadEnds).toHaveBeenCalledWith(7, CAPTURE, "acme/app");
+    expect(queue()[0]!.files).toEqual(["src/briefing.ts"]);
   });
 
   // protects: AC3, an "also fits" repo is queued with no files, so the agent finds them; fails_when: the best repo's files are copied to it; no_claim: none

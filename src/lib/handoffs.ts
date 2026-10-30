@@ -200,6 +200,25 @@ export function setHandoffStatus(token: string, repo: string, read: HandoffRow[]
 }
 
 /**
+ * Marks the capture's rows in these repos dead: it's never offered there
+ * again (see handoff-learning.ts). Returns the rows it set, or null when
+ * HANDOFFS.md couldn't be written.
+ */
+export function markDead(token: string, repo: string, capture: string, repos: string[], today: string): Promise<HandoffRow[] | null> {
+  const dead = new Set(repos.map((r) => r.toLowerCase()));
+  return updateHandoffs(token, repo, `handoff: ${captureName(capture)} is a dead end in ${repos.join(", ")}`, today, (rows) => {
+    const set: HandoffRow[] = [];
+    const next = rows.map((r) => {
+      if (r.status === "dead" || !dead.has(r.repo.toLowerCase()) || captureName(r.capture) !== captureName(capture)) return r;
+      const updated = { ...r, status: "dead", since: today };
+      set.push(updated);
+      return updated;
+    });
+    return { rows: next, changed: set.length > 0, result: set };
+  });
+}
+
+/**
  * At capture: queues a Strong fit for the next coding session (written after
  * the capture's own section, never alongside it, so the two commits don't
  * race). Returns the repo it is waiting in, or null.
