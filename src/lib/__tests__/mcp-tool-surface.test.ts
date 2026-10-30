@@ -47,7 +47,7 @@ beforeAll(() => {
 });
 
 const { POST } = await import("@/app/api/mcp/route");
-const { TOOLS, CORE_TOOLS, LEGACY_TOOL_NAMES } = await import("@/lib/mcp/tools");
+const { TOOLS, CORE_TOOLS, LEGACY_TOOL_NAMES, WEB_APP_TOOL_NAMES } = await import("@/lib/mcp/tools");
 const { handleBriefing, handleSearch, handleReadCapture } = await import("@/lib/mcp/handlers");
 
 const user = { id: 7, github_token: "t", github_repo: "o/r", llm_api_key: "k" } as never;
@@ -106,14 +106,37 @@ describe("tools/list", () => {
     expect(JSON.stringify(CORE_TOOLS).length).toBeLessThanOrEqual(4096);
   });
 
-  // protects: the merged tools are gone from every agent's context; fails_when: tools/list still returns one of them; no_claim: none
-  it("lists none of the merged or retired names", async () => {
+  // protects: XKG-84, agents load only the 5 agent tools now the web app has the human actions; fails_when: tools/list returns anything else; no_claim: the web app's pages
+  it("lists exactly the 5 core tools, none of the merged, retired or web app names", async () => {
     const res = await POST(rpc({ jsonrpc: "2.0", id: 1, method: "tools/list" }));
     const listed = ((await res.json()) as { result: { tools: Array<{ name: string }> } }).result.tools.map((t) => t.name);
-    expect(listed).toEqual(TOOLS.map((t) => t.name));
-    for (const name of ["search_captures", "list_inbox", "recall", "vault_scan", "apply_to_context", "get_rules", "generate_plan", "list_plans"]) {
+    expect(listed).toEqual(["capture", "briefing", "search", "read_capture", "apply_capture"]);
+    expect(TOOLS.map((t) => t.name)).toEqual(listed);
+    for (const name of [...LEGACY_TOOL_NAMES, ...WEB_APP_TOOL_NAMES]) {
       expect(listed).not.toContain(name);
     }
+  });
+});
+
+describe("the human actions, unlisted now the web app has them", () => {
+  const ARGS: Record<string, Record<string, unknown>> = {
+    archive_capture: { filename: "2026-01-01-missing.md" },
+    delete_capture: { filename: "2026-01-01-missing.md" },
+    curate: {},
+    synthesize: { tag: "mcp" },
+    apply_stats: {},
+  };
+
+  // protects: XKG-84; fails_when: a web app name is dropped or added without a test here; no_claim: none
+  it("covers every web app name", () => {
+    expect([...WEB_APP_TOOL_NAMES].sort()).toEqual(Object.keys(ARGS).sort());
+  });
+
+  // protects: an agent or user who still names one gets an answer, not Unknown tool; fails_when: the name errors; no_claim: the answer's wording
+  it.each(Object.keys(ARGS))("%s still answers", async (name) => {
+    const body = await call(name, ARGS[name]!);
+    expect(body.error).toBeUndefined();
+    expect(body.result!.content[0]!.text.trim()).not.toBe("");
   });
 });
 

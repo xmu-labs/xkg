@@ -221,7 +221,7 @@ function printHelp(): void {
     xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else new ones
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
-    xkg agent --key KEY [--plan FILE]                          Implement a plan in an isolated worktree
+    xkg agent --key KEY --plan FILE                            Implement a saved plan in an isolated worktree
     xkg agent --spec PATH                                      Apply a handoff spec your agent wrote (.xkg/handoffs/) in an isolated worktree
     xkg help                                                   Show this help
 
@@ -238,7 +238,7 @@ function printHelp(): void {
     1. Tell xkg which assistant to drive (once):
          xkg config set agent "claude -p"      # or "codex exec", "aider --yes --message"
     2. Have a plan in plans/ of your knowledge repo, or use --spec with a handoff spec.
-    3. Run: xkg agent --key YOUR_KEY
+    3. Run: xkg agent --key YOUR_KEY --plan FILE   (or: xkg agent --spec PATH)
        It creates an isolated git worktree, hands the plan to your assistant,
        and reports the branch + the plan's Verification Checklist when done.
 

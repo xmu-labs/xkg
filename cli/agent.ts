@@ -19,19 +19,6 @@ import { readConfig } from "./config.js";
 
 // ── Pure helpers (exported for testing) ──
 
-/** Extract `**filename.md**` plan names from a list_plans response. */
-export function parsePlanFilenames(listText: string): string[] {
-  const matches = listText.match(/\*\*([^*]+\.md)\*\*/g) ?? [];
-  return matches.map((m) => m.replace(/\*\*/g, ""));
-}
-
-/** Pick the newest plan. Filenames are date-prefixed (YYYY-MM-DD-...), so lexical desc = newest. */
-export function latestPlanFilename(listText: string): string | null {
-  const names = parsePlanFilenames(listText);
-  if (names.length === 0) return null;
-  return [...names].sort((a, b) => b.localeCompare(a))[0] ?? null;
-}
-
 /** Pull the Verification Checklist items out of a plan's Markdown. */
 export function parseChecklist(planText: string): string[] {
   const section = planText.match(/##\s*Verification Checklist\s*\n([\s\S]*?)(?=\n##\s|$)/i);
@@ -132,14 +119,20 @@ function localSpec(path: string): { file: string; text: string } {
   }
 }
 
-async function savedPlan(apiKey: string, plan: string | undefined): Promise<{ file: string; text: string }> {
-  const file = plan ?? latestPlanFilename((await callMcp(apiKey, "list_plans", {}, 15000)) ?? "");
-  if (!file) {
-    console.error("No plans found. Generate one first with the generate_plan MCP tool.");
+/**
+ * A plan saved in plans/ of the knowledge repo (by versions before handoffs),
+ * read with read_capture. The listed tools can't list a folder, so the plan
+ * is named.
+ */
+export async function savedPlan(apiKey: string, plan: string | undefined): Promise<{ file: string; text: string }> {
+  if (!plan) {
+    console.error("Name the plan: xkg agent --plan FILE (a file in plans/ of your knowledge repo).");
+    console.error("For a handoff spec your agent wrote, use: xkg agent --spec PATH");
     process.exit(1);
   }
-  const text = await callMcp(apiKey, "list_plans", { filename: file }, 15000);
-  if (!text || !text.trim()) {
+  const file = plan.replace(/^plans\//, "");
+  const text = await callMcp(apiKey, "read_capture", { filename: `plans/${file}` }, 15000);
+  if (!text || !text.trim() || text.startsWith("File not found:")) {
     console.error(`Could not read plan: ${file}`);
     process.exit(1);
   }
@@ -160,7 +153,7 @@ export async function runAgent(apiKey: string, opts: { plan?: string; spec?: str
     process.exit(1);
   }
 
-  // 1. Resolve the plan — a local spec, an explicit filename, or the newest saved plan
+  // 1. Resolve the plan — a local spec or a saved plan by name
   const { file: planFile, text: planText } = opts.spec ? localSpec(opts.spec) : await savedPlan(apiKey, opts.plan);
 
   // 2. Must be inside a git repo

@@ -317,13 +317,13 @@ No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect lat
 
 2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
 
-3. **Plan** — The handoff spec from step 1 is the plan: your agent writes it after reading the files. Plans that older versions saved to `plans/` in your knowledge repo still run with `xkg agent --plan`.
+3. **Plan** — The handoff spec from step 1 is the plan: your agent writes it after reading the files. Plans that older versions saved to `plans/` in your knowledge repo still run with `xkg agent --plan FILE`.
 
 4. **Execute** — Hand the plan to your worker in the current session, or run it in an isolated git worktree:
 
    ```bash
    npx -y @xmu-labs/xkg@latest config set agent "claude -p"
-   npx -y @xmu-labs/xkg@latest agent --key YOUR_API_KEY
+   npx -y @xmu-labs/xkg@latest agent --spec .xkg/handoffs/<capture>.md
    ```
 
    `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
@@ -408,13 +408,8 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `search` | Find captures by words, tag, status (`inbox`, `applied`, `archived`) or date, or list them all |
 | `read_capture` | Read a capture in full (or `RULES.md`) |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
-| `archive_capture` | Archive a capture |
-| `delete_capture` | Delete a capture |
-| `curate` | Review and clean up captures |
-| `synthesize` | Combine related captures into reusable rules |
-| `apply_stats` | Captures applied per week, and how many came with a commit |
 
-The last five are your own decisions and reports, not agent work, and the app has them under **Your knowledge**. They stay listed for now and will be unlisted in a later release.
+Archiving, deleting, checking links, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
 
 Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 
@@ -438,7 +433,7 @@ npx -y @xmu-labs/xkg@latest <command>
 | `session-start [--agent NAME]` | For an agent's session-start hook: ask whether to see and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot` or `cursor`; without it the output is plain text. See [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts) |
 | `config set key YOUR_API_KEY` | Store the key that `serve-mcp`, `session-start`, the git hooks, `map` and `agent` use |
 | `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
-| `agent --key YOUR_API_KEY [--plan FILE]` | Implement the latest plan (or the one named) in an isolated worktree with your own coding agent |
+| `agent --key YOUR_API_KEY --plan FILE` | Implement a plan saved in `plans/` (by versions before handoffs) in an isolated worktree with your own coding agent |
 | `agent --spec PATH` | Apply a handoff spec your agent wrote (`.xkg/handoffs/<capture>.md`) in an isolated worktree. Reads it from disk; no key needed |
 | `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
 | `vault-check --key YOUR_API_KEY` | Debug the vault hook |
@@ -466,7 +461,7 @@ Settings → Account shows the repo your captures are saved in, with a link to i
 | `inbox/YYYY-MM-DD-<slug>.md` | one Markdown file per capture |
 | `applied/` | captures that have been applied in a commit |
 | `archived/` | captures you archived |
-| `plans/` | plans saved by versions before handoffs (`xkg agent --plan` still runs them) |
+| `plans/` | plans saved by versions before handoffs (`xkg agent --plan FILE` still runs them) |
 | `INDEX.md` | a table of every capture: date, title, keywords, tags |
 | `APPLIED.md` | which capture went into which commit |
 | `HANDOFFS.md` | captures waiting for your coding agent: one row per capture and repo, with the suggested files, the fit, a status (`pending`, `snoozed:<date>`, `applied`, `declined`, `done`, `expired`, `dead`), the date of its last change, and whether it was queued automatically or by you. Done rows leave after 90 days |

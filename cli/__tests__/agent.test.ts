@@ -4,8 +4,6 @@ import { tmpdir } from "os";
 import { basename, dirname, join } from "path";
 import { execSync } from "child_process";
 import {
-  parsePlanFilenames,
-  latestPlanFilename,
   parseChecklist,
   buildAgentBranch,
   newWorktreePath,
@@ -16,36 +14,6 @@ import {
   SPEC_PROMPT,
   readSpec,
 } from "../agent.js";
-
-const LIST_PLANS = `3 plan(s):
-
-- **2026-06-03-plan-error-handling.md**: Implementation Plan: Error Handling
-- **2026-06-05-plan-provider-abstraction.md**: Implementation Plan: Provider Abstraction
-- **2026-06-04-plan-vault.md**: Implementation Plan: Vault`;
-
-describe("parsePlanFilenames", () => {
-  it("extracts all bolded plan filenames", () => {
-    expect(parsePlanFilenames(LIST_PLANS)).toEqual([
-      "2026-06-03-plan-error-handling.md",
-      "2026-06-05-plan-provider-abstraction.md",
-      "2026-06-04-plan-vault.md",
-    ]);
-  });
-
-  it("returns empty array when there are no plans", () => {
-    expect(parsePlanFilenames("No plans saved yet.")).toEqual([]);
-  });
-});
-
-describe("latestPlanFilename", () => {
-  it("returns the newest plan by date prefix", () => {
-    expect(latestPlanFilename(LIST_PLANS)).toBe("2026-06-05-plan-provider-abstraction.md");
-  });
-
-  it("returns null when there are no plans", () => {
-    expect(latestPlanFilename("No plans saved yet.")).toBeNull();
-  });
-});
 
 describe("parseChecklist", () => {
   const PLAN = `# Implementation Plan: Foo
