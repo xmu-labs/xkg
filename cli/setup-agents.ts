@@ -107,6 +107,46 @@ function readJson(path: string): Json | null {
   }
 }
 
+/** Drops line and block comments and trailing commas outside strings, as JSONC readers allow. */
+function stripJsonc(text: string): string {
+  let out = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      out += text.slice(i, j + 1);
+      i = j;
+    } else if (c === "/" && text[i + 1] === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      out += "\n";
+    } else if (c === "/" && text[i + 1] === "*") {
+      const end = text.indexOf("*/", i + 2);
+      i = end === -1 ? text.length : end + 1;
+    } else {
+      out += c;
+    }
+  }
+  return out.replace(/,(\s*[}\]])/g, "$1");
+}
+
+/** Like readJson, but also reads JSON with comments. For checks only: init never rewrites such a file. */
+function readJsonLoose(path: string): Json | null {
+  const strict = readJson(path);
+  if (strict) return strict;
+  try {
+    const parsed: unknown = JSON.parse(stripJsonc(readFileSync(path, "utf-8")));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Json) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The fix for a missing entry: init, or by hand when init can't rewrite the file. */
+function fixFor(file: string, snippet: string, env: AgentEnv): string {
+  return readJson(file) ? INIT : `Add to ${tilde(env, file)} by hand (init leaves files with comments as they are): ${snippet}`;
+}
+
 function writeJson(path: string, data: Json): void {
   writeText(path, JSON.stringify(data, null, 2) + "\n");
 }
@@ -132,9 +172,9 @@ function jsonServer(rel: string, entry: Json): Writer {
     },
     check(env, id) {
       const file = join(env.home, rel);
-      return hasServer(readJson(file)?.mcpServers)
+      return hasServer(readJsonLoose(file)?.mcpServers)
         ? { agent: id, part: "mcp", status: "ok", detail: `Registered in ${tilde(env, file)}` }
-        : { agent: id, part: "mcp", status: "fail", detail: `No xkg MCP server in ${tilde(env, file)}`, fix: INIT };
+        : { agent: id, part: "mcp", status: "fail", detail: `No xkg MCP server in ${tilde(env, file)}`, fix: fixFor(file, snippet, env) };
     },
   };
 }
@@ -173,7 +213,7 @@ const claudeServer: Writer = {
   },
   check(env, id) {
     const file = join(env.home, ".claude.json");
-    return hasServer(readJson(file)?.mcpServers)
+    return hasServer(readJsonLoose(file)?.mcpServers)
       ? { agent: id, part: "mcp", status: "ok", detail: "Registered for all projects (user scope)" }
       : { agent: id, part: "mcp", status: "fail", detail: "xkg isn't registered at user scope (it may be in one project only)", fix: INIT };
   },
@@ -223,14 +263,15 @@ function jsonHook(shape: HookShape): Writer {
     },
     check(env, id) {
       const file = join(env.home, shape.rel);
-      const found = commands(readJson(file)?.hooks?.[shape.event]);
+      const found = commands(readJsonLoose(file)?.hooks?.[shape.event]);
       if (found.some((c) => isOurHook(c, id))) {
         return { agent: id, part: "hook", status: "ok", detail: `In ${tilde(env, file)}${shape.trustNote ? `. ${shape.trustNote}` : ""}` };
       }
       if (found.some(anyXkgSessionStart)) {
         return { agent: id, part: "hook", status: "fail", detail: `The session-start hook in ${tilde(env, file)} isn't for --agent ${id}, so ${id} can't read its output`, fix: `Change it to: ${hookCommand(id)}` };
       }
-      return { agent: id, part: "hook", status: "fail", detail: `No session-start hook in ${tilde(env, file)}`, fix: INIT };
+      const snippet = JSON.stringify({ hooks: { [shape.event]: [shape.entry(hookCommand(id))] } });
+      return { agent: id, part: "hook", status: "fail", detail: `No session-start hook in ${tilde(env, file)}`, fix: fixFor(file, snippet, env) };
     },
   };
 }

@@ -265,6 +265,27 @@ describe("inspectAgent", () => {
     expect(hook.detail).toContain("/hooks");
   });
 
+  // Regression: ISSUE-003 — a settings.json with comments (Gemini allows them) always failed,
+  // even after the user added xkg by hand as init told them to
+  // Found by /qa on 2026-10-30
+  it("reads a settings.json with comments and trailing commas", () => {
+    put(".gemini/settings.json", `{
+  // my servers
+  "mcpServers": { "xkg": { "command": "npx", "args": ["//not a comment"] }, },
+  /* hooks */
+  "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "${hookCommand("gemini")}" }] }] },
+}`);
+    const checks = inspectAgent(agent("gemini"), env());
+    expect(checks.filter((c) => c.part !== "rules").map((c) => c.status)).toEqual(["ok", "ok"]);
+  });
+
+  it("tells the user to add xkg by hand when the file can't be rewritten", () => {
+    put(".gemini/settings.json", "{ // comment\n}");
+    const mcp = inspectAgent(agent("gemini"), env()).find((c) => c.part === "mcp")!;
+    expect(mcp.status).toBe("fail");
+    expect(mcp.fix).toContain('"mcpServers"');
+  });
+
   it("fails a hook that runs session-start for a different agent", () => {
     put(".cursor/hooks.json", JSON.stringify({ version: 1, hooks: { sessionStart: [{ command: hookCommand("claude") }] } }));
     const hook = inspectAgent(agent("cursor"), env()).find((c) => c.part === "hook")!;

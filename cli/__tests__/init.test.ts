@@ -105,6 +105,9 @@ describe("asking once", () => {
     answers = ["n"];
     const res = await runInit(deps());
     expect(res.ok).toBe(false);
+    // Regression: ISSUE-001 — the key was saved before the user said go ahead
+    // Found by /qa on 2026-10-30
+    expect(saved).toEqual([]);
     expect(existsSync(join(home, ".cursor", "mcp.json"))).toBe(false);
     expect(text()).toMatch(/nothing changed/i);
   });
@@ -118,6 +121,7 @@ describe("asking once", () => {
   it("without a terminal, shows the plan and asks for --yes instead of writing", async () => {
     const res = await runInit(deps({ interactive: false }));
     expect(res.ok).toBe(false);
+    expect(saved).toEqual([]);
     expect(existsSync(join(home, ".cursor", "mcp.json"))).toBe(false);
     expect(text()).toContain("--yes");
   });

@@ -126,7 +126,7 @@ export async function initCommand(args: string[]): Promise<number> {
       installGitHooks: () => installGitHooks(),
       syncMap: async (k) => {
         const r = await syncCodeMap(k, process.cwd(), { force: true });
-        return r.status === "synced" || r.status === "unchanged" ? `Code map sent: ${r.repo}, ${r.files} files` : `Code map not sent: ${r.reason}`;
+        return r.status === "synced" || r.status === "unchanged" ? `Code map sent: ${r.repo}, ${r.files} file${r.files === 1 ? "" : "s"}` : `Code map not sent: ${r.reason}`;
       },
       backupDir: join(homedir(), ".xkg", "backups", new Date().toISOString().replace(/[:.]/g, "-")),
     });

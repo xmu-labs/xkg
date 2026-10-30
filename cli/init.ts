@@ -57,17 +57,19 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
     log("Nothing changed.");
     return { ok: false, steps: [] };
   }
-  if (key !== deps.storedKey) {
+  const isNewKey = key !== deps.storedKey;
+  log(isNewKey ? "✓ Key works." : "✓ The key in ~/.xkg/config.json works.");
+  const saveKey = () => {
+    if (!isNewKey) return;
     deps.saveKey(key);
-    log("✓ Key works. Saved in ~/.xkg/config.json; agent configs get no key.");
-  } else {
-    log("✓ The key in ~/.xkg/config.json works.");
-  }
+    log("✓ Key saved in ~/.xkg/config.json; agent configs get no key.");
+  };
 
   // ── Plan ──
   const agents = detectAgents(deps.env).filter((a) => !deps.only || deps.only.includes(a.id));
   if (agents.length === 0 && !deps.repo) {
-    log("No coding agent found (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor) and this isn't a git repo, so there's nothing to set up.");
+    saveKey();
+    log("No coding agent found (Claude Code, Codex, Gemini CLI, GitHub Copilot, Cursor) and this isn't a git repo, so there's nothing else to set up.");
     return { ok: true, steps: [] };
   }
   log("");
@@ -93,6 +95,7 @@ export async function runInit(deps: InitDeps): Promise<{ ok: boolean; steps: Ste
   }
 
   // ── Write ──
+  saveKey();
   let backedUp = 0;
   for (const a of agents) {
     for (const rel of a.files) {
