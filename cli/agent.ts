@@ -57,9 +57,6 @@ export function newWorktreePath(branch: string): string {
   return mkdtempSync(join(tmpdir(), `${branch.replace(/\//g, "-")}-`));
 }
 
-/** Printed when the command is run under its old name, `kos`. */
-export const RENAMED_NOTE = "`xkg kos` is now `xkg agent`. The old name will stop working in a later release.";
-
 /** Where the agent run drops the plan inside the worktree. Never committed — see excludePlanFiles. */
 export const PLAN_FILE = "XKG_PLAN.md";
 
