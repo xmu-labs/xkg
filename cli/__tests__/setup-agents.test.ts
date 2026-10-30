@@ -255,14 +255,22 @@ describe("Gemini CLI", () => {
 });
 
 describe("GitHub Copilot", () => {
-  it("writes a local server, its own hook file, and the instructions block", () => {
+  it("writes a local server, its own hook file (for Unix and Windows shells), and the instructions block", () => {
     setupAgent(agent("copilot"), env());
     expect(json(".copilot/mcp-config.json").mcpServers.xkg).toEqual({ type: "local", command: "npx", args: MCP_ARGS, tools: ["*"] });
     expect(json(".copilot/hooks/xkg.json")).toEqual({
       version: 1,
-      hooks: { sessionStart: [{ type: "command", bash: hookCommand("copilot") }] },
+      hooks: { sessionStart: [{ type: "command", bash: hookCommand("copilot"), powershell: hookCommand("copilot") }] },
     });
     expect(file(".copilot/copilot-instructions.md")).toBe(RULES_BLOCK + "\n");
+  });
+});
+
+describe("GitHub Copilot on Windows", () => {
+  it("finds a hook that only has the Windows command", () => {
+    mkdirSync(join(home, ".copilot", "hooks"), { recursive: true });
+    writeFileSync(join(home, ".copilot", "hooks", "xkg.json"), JSON.stringify({ version: 1, hooks: { sessionStart: [{ type: "command", powershell: hookCommand("copilot") }] } }));
+    expect(inspectAgent(agent("copilot"), env()).find((c) => c.part === "hook")?.status).toBe("ok");
   });
 });
 

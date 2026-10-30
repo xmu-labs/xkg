@@ -262,10 +262,10 @@ function anyXkgSessionStart(cmd: unknown): boolean {
   return typeof cmd === "string" && /(?:@xmu-labs\/xkg|mnemos-capture|\bxkg)(?:@\S+)?\s+session-start\b/.test(cmd);
 }
 
-/** Every command string in a hooks object, nested ({hooks:[{command}]}) or flat ({command} / {bash}). */
+/** Every command string in a hooks object, nested ({hooks:[{command}]}) or flat ({command} / {bash} / {powershell}). */
 function commands(groups: unknown): unknown[] {
   if (!Array.isArray(groups)) return [];
-  return groups.flatMap((g: Json) => [g?.command, g?.bash, ...(Array.isArray(g?.hooks) ? g.hooks.flatMap((h: Json) => [h?.command, h?.bash]) : [])]);
+  return groups.flatMap((g: Json) => [g?.command, g?.bash, g?.powershell, ...(Array.isArray(g?.hooks) ? g.hooks.flatMap((h: Json) => [h?.command, h?.bash, h?.powershell]) : [])]);
 }
 
 interface HookShape {
@@ -424,7 +424,7 @@ export const AGENTS: AgentSpec[] = [
     bin: "copilot",
     files: [".copilot/mcp-config.json", ".copilot/hooks/xkg.json", ".copilot/copilot-instructions.md"],
     mcp: jsonServer(".copilot/mcp-config.json", { type: "local", command: "npx", args: MCP_ARGS, tools: ["*"] }),
-    hook: jsonHook({ rel: ".copilot/hooks/xkg.json", event: "sessionStart", base: { version: 1 }, entry: (cmd) => ({ type: "command", bash: cmd }) }),
+    hook: jsonHook({ rel: ".copilot/hooks/xkg.json", event: "sessionStart", base: { version: 1 }, entry: (cmd) => ({ type: "command", bash: cmd, powershell: cmd }) }),
     rules: ".copilot/copilot-instructions.md",
   },
   {
