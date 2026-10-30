@@ -409,6 +409,7 @@ describe("vaultCheck", () => {
     expect(request.params.arguments.files).toEqual(["src/api/capture/route.ts"]);
     expect(request.params.arguments.exclude).toEqual([]);
     expect(request.params.arguments.limit).toBe(1);
+    expect((request.params.arguments as { min_score?: number }).min_score).toBe(0.7);
   });
 
   // protects: the vault stays quiet unless the fit is strong, as vault_scan's 70% cutoff did; fails_when: a weak match is shown; no_claim: none

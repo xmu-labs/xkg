@@ -37,7 +37,8 @@ vi.mock("@/lib/fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("@/lib/linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: async () => ({ topic: "mcp", rules: ["Keep tools few"] }) }));
 vi.mock("@/lib/apply-events", () => ({ recordApplyEvent: vi.fn() }));
-vi.mock("@/lib/surface-events", () => ({ recordSurfaceEvents: vi.fn(), recordWhereEvent: vi.fn() }));
+const recordSurfaceEvents = vi.fn();
+vi.mock("@/lib/surface-events", () => ({ recordSurfaceEvents: (...a: unknown[]) => recordSurfaceEvents(...a), recordWhereEvent: vi.fn() }));
 vi.mock("@/lib/handoff-offer", () => ({ handoffOffer: async () => null }));
 vi.mock("@/lib/handoff-learning", () => ({ forgetCapture: vi.fn() }));
 
@@ -156,6 +157,22 @@ describe("briefing with a task (replaces recall, vault_scan and apply_to_context
   it("leaves out captures the caller already saw", async () => {
     const text = await handleBriefing(user, { task: "trim tools", exclude: ["inbox/2026-10-21-fewer-tools.md"] });
     expect(text).not.toContain("fewer-tools");
+  });
+
+  // protects: a seen capture doesn't use up the hook's one slot; fails_when: excluded rows still reach the ranker; no_claim: ranking quality
+  it("leaves excluded captures out of the index before ranking", async () => {
+    await handleBriefing(user, { task: "x", exclude: ["inbox/2026-10-21-fewer-tools.md"], limit: 1 });
+    const index = rankByRelevance.mock.calls[0]![2] as string;
+    expect(index).not.toContain("fewer-tools");
+    expect(index).toContain("retries");
+  });
+
+  // protects: surface counts only include captures shown; fails_when: a fit under min_score is returned or counted; no_claim: none
+  it("drops and doesn't count fits under min_score", async () => {
+    recordSurfaceEvents.mockReset();
+    const text = await handleBriefing(user, { task: "x", min_score: 0.9 });
+    expect(text).not.toContain("fewer-tools");
+    expect(recordSurfaceEvents).not.toHaveBeenCalled();
   });
 
   // protects: the hook's one-result call; fails_when: limit isn't passed to the ranker; no_claim: none

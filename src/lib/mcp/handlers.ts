@@ -438,20 +438,25 @@ export async function handleDeleteCapture(user: User, args: { filename: string }
 
 /**
  * Captures that fit a task, each with its score, why, idea and takeaways. One
- * LLM call ranks the index; captures named in `exclude` are left out.
+ * LLM call ranks the index. Captures named in `exclude` are taken out of the
+ * index first, so they don't use up `max`; fits under `minScore` are dropped
+ * before anything is counted as shown.
  */
 async function taskMatches(
   user: User,
   context: string,
   max: number,
   exclude: string[] = [],
+  minScore = 0,
 ): Promise<{ found: number; text: string } | string> {
   const existing = await readFile(user.github_token, user.github_repo!, "INDEX.md");
   if (!existing) return "No captures yet. Use the capture tool to build your knowledge base.";
 
-  const skip = new Set(exclude);
-  const ranked = (await rankByRelevance(user.llm_api_key!, context, existing.content, max, llmSettings(user)))
-    .filter((r) => !skip.has(r.filename));
+  // Index rows link their capture as ](inbox/name.md)
+  const skip = exclude.map((f) => (f.includes("/") ? `](${f})` : `/${f})`));
+  const index = skip.length ? existing.content.split("\n").filter((l) => !skip.some((k) => l.includes(k))).join("\n") : existing.content;
+  const ranked = (await rankByRelevance(user.llm_api_key!, context, index, max, llmSettings(user)))
+    .filter((r) => r.score >= minScore && !exclude.includes(r.filename));
   if (ranked.length === 0) return "";
 
   // Read top captures in parallel
@@ -521,7 +526,7 @@ export async function handleGetRules(user: User, args: { tag?: string }): Promis
 
 export async function handleBriefing(
   user: User,
-  args: { project_context?: string; include_rules?: boolean; repo?: string; task?: string; files?: unknown[]; exclude?: unknown[]; limit?: number },
+  args: { project_context?: string; include_rules?: boolean; repo?: string; task?: string; files?: unknown[]; exclude?: unknown[]; limit?: number; min_score?: number },
 ): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
 
@@ -574,7 +579,7 @@ function names(list: unknown[] | undefined, max: number): string[] {
 async function taskBriefing(
   user: User,
   task: string,
-  args: { project_context?: string; include_rules?: boolean; files?: unknown[]; exclude?: unknown[]; limit?: number },
+  args: { project_context?: string; include_rules?: boolean; files?: unknown[]; exclude?: unknown[]; limit?: number; min_score?: number },
 ): Promise<string> {
   const context = [`Task: ${task}`];
   const files = names(args.files, 20);
@@ -582,7 +587,7 @@ async function taskBriefing(
   if (args.project_context?.trim()) context.push(`Project: ${args.project_context.trim()}`);
   const limit = Math.min(Math.max(Math.trunc(Number(args.limit) || 5), 1), 10);
 
-  const matches = await taskMatches(user, context.join("\n"), limit, names(args.exclude, 200));
+  const matches = await taskMatches(user, context.join("\n"), limit, names(args.exclude, 200), Number(args.min_score) || 0);
   if (typeof matches === "string") return matches || `No captures fit: "${task}"`;
 
   let rules = "";

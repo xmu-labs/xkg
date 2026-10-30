@@ -343,6 +343,7 @@ export async function vaultCheck(apiKey: string): Promise<void> {
       files: [filePath],
       exclude: sessionSurfaced,
       limit: 1,
+      min_score: VAULT_MIN_SCORE / 100,
     }, 8000);
 
     // The vault is ambient: only a strong fit interrupts an edit.
