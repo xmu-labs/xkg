@@ -113,24 +113,26 @@ the file being edited. Enable these hooks only for project context you intend to
 
 ## Releasing the CLI
 
-Each version is published under two npm names: `@xmu-labs/xkg`, and `mnemos-capture` so existing
-installs keep updating. `scripts/publish.sh` publishes both. Do not run `npm publish` directly.
+Each version is published to npm as `@xmu-labs/xkg` by `scripts/publish.sh`. Do not run `npm publish`
+directly. Up to 1.8.0 every version was also published as `mnemos-capture`, the old name; it gets no
+new versions.
 
 1. Open a PR that runs `npm version <patch|minor|major> --no-git-tag-version`, so `package.json` and
    `package-lock.json` move together. Merge it.
-2. GitHub → Releases → Draft a new release → create tag `vX.Y.Z` on `main` → Publish. Mark it as a
+2. GitHub → Releases → Draft a new release → create tag `vX.Y.Z`, with the bump commit as the target
+   (Target → Recent commits), so a PR merged in between can't ride along → Publish. Mark it as a
    pre-release to publish under the `next` dist-tag instead of `latest`.
 
 `.github/workflows/release.yml` refuses to publish unless the tag matches `package.json`, the tagged
 commit is on `main`, and the version is not already on npm from another commit. It then runs the
-checks, publishes both names with provenance, and confirms npm recorded the tagged commit for each.
+checks, publishes with provenance through npm trusted publishing (no token), and confirms npm
+recorded the tagged commit.
 
-Until npm/cli#9969 is fixed, trusted publishing fails for this repository, so a maintainer runs
-`scripts/publish.sh` (or `scripts/publish.sh next` for a pre-release) by hand from a clean checkout of
-the bump commit before step 2. The workflow then skips the publish and only verifies.
-The workflow also passes an `NPM_TOKEN` repository secret to npm when one is set (a granular token
-with write access to these two packages only). That would remove the manual step, but it has not
-been tried while trusted publishing is configured and rejected.
+Trusted publishing is set up once on npmjs.com (the package → Settings → Trusted Publisher → GitHub
+Actions: organization `xmu-labs`, repository `xkg`, workflow `release.yml`, Allowed actions with
+`npm publish` ticked). If the workflow can't publish, a maintainer runs `scripts/publish.sh` (or
+`scripts/publish.sh next`) by hand from a clean checkout of the tagged commit and re-runs the
+workflow, which then skips the publish and only verifies.
 
 ## Security issues
 

@@ -11,7 +11,7 @@ type Settings = Record<string, any>;
 type HookGroup = { matcher?: string; hooks?: HookEntry[] };
 type HookEntry = { type: string; command: string };
 
-/** The npm package new hooks run. Releases also publish it as `mnemos-capture`. */
+/** The npm package new hooks run. Releases up to 1.8.0 also published it as `mnemos-capture`. */
 const PACKAGE = "@xmu-labs/xkg";
 
 /**
