@@ -270,7 +270,8 @@ None applicable.`));
     expect(output).toContain("## Relevant Rules");
   });
 
-  it("appends generate_plan prompt when there are applyNow suggestions", async () => {
+  // protects: the prompt sends the agent to a listed tool; fails_when: it still names generate_plan; no_claim: none
+  it("appends a read_capture prompt when there are applyNow suggestions", async () => {
     fetchSpy.mockReturnValue(makeMcpResponse(`\`\`\`json
 [{"filename":"inbox/a.md","why":"x","benefit":"y","where":"z.ts","applyNow":true}]
 \`\`\`
@@ -280,7 +281,8 @@ One insight.`));
 
     const { inboxCheck } = await import("../hooks.js");
     const output = await captureStdout(() => inboxCheck("key", { briefing: true }));
-    expect(output).toContain("generate_plan");
+    expect(output).toContain("read_capture");
+    expect(output).not.toContain("generate_plan");
     expect(output).toContain("inbox/a.md");
     expect(output).toContain("apply_capture");
     expect(output).toContain("xkg-capture: inbox/a.md");
@@ -296,7 +298,7 @@ One vault item.`));
 
     const { inboxCheck } = await import("../hooks.js");
     const output = await captureStdout(() => inboxCheck("key", { briefing: true }));
-    expect(output).not.toContain("generate_plan");
+    expect(output).not.toContain("read_capture");
   });
 
   it("does NOT append generate_plan prompt when JSON block is missing", async () => {
@@ -308,17 +310,21 @@ None applicable.`));
     expect(output).not.toContain("generate_plan");
   });
 
+  // protects: the count comes from a listed tool; fails_when: it still calls list_inbox; no_claim: none
   it("shows inbox count in non-briefing mode when count > 0", async () => {
-    fetchSpy.mockReturnValue(makeMcpResponse("3 capture(s) in inbox:\n\n1. file.md"));
+    fetchSpy.mockReturnValue(makeMcpResponse("3 capture(s):\n| row |"));
 
     const { inboxCheck } = await import("../hooks.js");
     const output = await captureStdout(() => inboxCheck("key"));
     expect(output).toContain("3");
     expect(output).toContain("inbox");
+    expect(output).not.toContain("list_inbox");
+    const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as { params: { name: string; arguments: unknown } };
+    expect(request.params).toEqual({ name: "search", arguments: { status: "inbox", limit: 1 } });
   });
 
   it("shows nothing in non-briefing mode when inbox is empty", async () => {
-    fetchSpy.mockReturnValue(makeMcpResponse("Inbox is empty."));
+    fetchSpy.mockReturnValue(makeMcpResponse("No captures."));
 
     const { inboxCheck } = await import("../hooks.js");
     const output = await captureStdout(() => inboxCheck("key"));
@@ -361,9 +367,10 @@ describe("vaultCheck", () => {
     );
   }
 
+  // protects: the vault hook works through briefing once vault_scan is gone; fails_when: it calls another tool or drops the match; no_claim: none
   it("returns a vault match to the agent as PreToolUse additionalContext", async () => {
     fetchSpy.mockReturnValue(makeMcpResponse(
-      "xkg vault match (score: 87%):\n\n**2026-05-01-error-ctx**\nCore idea here.\n- Key takeaway\n\nApply it? Run: `apply_capture` with filename: `inbox/2026-05-01-error-ctx.md`",
+      "1 capture(s) may fit: \"Editing\".\n\n### inbox/2026-05-01-error-ctx.md (relevance: 87%)\n**Core idea:** Core idea here.\n\n---\nCall `apply_capture`.",
     ));
 
     const { vaultCheck } = await import("../hooks.js");
@@ -393,10 +400,43 @@ describe("vaultCheck", () => {
 
     const parsed = JSON.parse(output) as { hookSpecificOutput: { hookEventName: string; additionalContext: string } };
     expect(parsed.hookSpecificOutput.hookEventName).toBe("PreToolUse");
-    expect(parsed.hookSpecificOutput.additionalContext).toContain("vault match");
+    expect(parsed.hookSpecificOutput.additionalContext).toContain("inbox/2026-05-01-error-ctx.md (relevance: 87%)");
+    const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as {
+      params: { name: string; arguments: { task: string; files: string[]; exclude: string[]; limit: number } };
+    };
+    expect(request.params.name).toBe("briefing");
+    expect(request.params.arguments.task).toContain("src/api/capture/route.ts");
+    expect(request.params.arguments.files).toEqual(["src/api/capture/route.ts"]);
+    expect(request.params.arguments.exclude).toEqual([]);
+    expect(request.params.arguments.limit).toBe(1);
+    expect((request.params.arguments as { min_score?: number }).min_score).toBe(0.7);
   });
 
-  it("outputs nothing when vault_scan returns empty", async () => {
+  // protects: the vault stays quiet unless the fit is strong, as vault_scan's 70% cutoff did; fails_when: a weak match is shown; no_claim: none
+  it("outputs nothing when the best match is under 70%", async () => {
+    fetchSpy.mockReturnValue(makeMcpResponse("1 capture(s) may fit.\n\n### inbox/a.md (relevance: 69%)\n**Core idea:** x"));
+
+    const { vaultCheck } = await import("../hooks.js");
+
+    const mockStdin = {
+      isTTY: false,
+      setEncoding: vi.fn(),
+      on: vi.fn((event: string, cb: (data?: string) => void) => {
+        if (event === "data") cb(JSON.stringify({ tool_name: "Edit", tool_input: { file_path: "src/foo.ts" } }));
+        if (event === "end") cb();
+      }),
+    };
+    const origStdin = process.stdin;
+    Object.defineProperty(process, "stdin", { value: mockStdin, writable: true, configurable: true });
+
+    const output = await captureStdout(() => vaultCheck("key"));
+
+    Object.defineProperty(process, "stdin", { value: origStdin, writable: true, configurable: true });
+
+    expect(output).toBe("");
+  });
+
+  it("outputs nothing when briefing returns no match", async () => {
     fetchSpy.mockReturnValue(makeMcpResponse(""));
 
     const { vaultCheck } = await import("../hooks.js");

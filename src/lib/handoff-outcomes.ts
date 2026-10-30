@@ -208,7 +208,7 @@ export async function recordAnswer(user: ApplyUser, args: AnswerArgs & { outcome
     path = `applied/${filename}`;
     file = await readFile(token, knowledge, path);
   }
-  if (!file) return `File not found: inbox/${filename} or applied/${filename}. Use list_inbox to see available captures.`;
+  if (!file) return `File not found: inbox/${filename} or applied/${filename}. Use search to find it.`;
 
   const today = formatDate();
   const until = addDays(today, SNOOZE_DAYS);
