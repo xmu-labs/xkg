@@ -18,6 +18,22 @@ function formatLinks(related: RelatedCapture[]): string {
     .join("\n");
 }
 
+const basename = (path: string) => path.replace(/^.*\//, "");
+
+/** True when `path` names the capture `filename`: by repo path, or by bare filename as a fallback. */
+function isSelf(path: string, selfPath: string, filename: string): boolean {
+  const p = path.trim().replace(/^\.?\//, "");
+  return p === selfPath || basename(p) === filename;
+}
+
+/** The index without the capture's own row, so it is never offered as its own candidate. */
+function indexWithout(indexContent: string, selfPath: string, filename: string): string {
+  return indexContent
+    .split("\n")
+    .filter((line) => ![...line.matchAll(/\]\(([^)]+)\)/g)].some((m) => isSelf(m[1]!, selfPath, filename)))
+    .join("\n");
+}
+
 /** Build a back-link line from a new capture to insert into an existing capture. */
 function buildBackLink(newFilename: string, newSlug: string, reason: string): string {
   return `- [${newSlug}](../${newFilename}) — ${reason}`;
@@ -38,12 +54,19 @@ export async function linkCapture(
   indexContent: string,
   llm: LlmConfig = "anthropic",
 ): Promise<RelatedCapture[]> {
+  // The web route appends this capture's row before linking, so take it out
+  // of the candidates, and drop it again if the model names it anyway.
+  const newFilePath = `${folder}/${filename}`;
+  const candidates = indexWithout(indexContent, newFilePath, filename);
+  if (!/\]\([^)]+\.md\)/.test(candidates)) return [];
+
   // Find related captures via LLM
-  const related = await findRelatedCaptures(apiKey, capture, indexContent, llm);
+  const related = (await findRelatedCaptures(apiKey, capture, candidates, llm)).filter(
+    (r) => typeof r?.filename === "string" && !isSelf(r.filename, newFilePath, filename),
+  );
   if (related.length === 0) return [];
 
   // Update the new capture's "Links to memory" section
-  const newFilePath = `${folder}/${filename}`;
   const newFile = await readFile(githubToken, repo, newFilePath);
   if (newFile) {
     const updatedContent = newFile.content.replace(
