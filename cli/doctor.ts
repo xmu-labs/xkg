@@ -28,7 +28,7 @@ export interface DoctorDeps {
   currentVersion: string;
   connect: (key: string) => Promise<{ ok: true } | { ok: false; reason: string }>;
   latestVersion: () => Promise<string | null>;
-  /** list_inbox's text, or null when the call failed. */
+  /** The inbox count from `search` (status inbox), or null when the call failed. */
   inbox: (key: string) => Promise<string | null>;
   /** What `xkg session-start` prints in cwd (plain text), or "" when nothing waits. */
   preview: (key: string, cwd: string) => Promise<string>;

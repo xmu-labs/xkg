@@ -90,7 +90,7 @@ async function doctor(key: string | undefined, json: boolean, only?: AgentId[]):
     currentVersion: getCurrentVersion(),
     connect,
     latestVersion: () => getLatestVersion(getPackageName()),
-    inbox: (k) => callMcp(k, "list_inbox", { limit: 1 }, 8000),
+    inbox: (k) => callMcp(k, "search", { status: "inbox", limit: 1 }, 8000),
     preview: previewSessionStart,
     mapCachePath: join(homedir(), ".xkg", "maps.json"),
     only,
