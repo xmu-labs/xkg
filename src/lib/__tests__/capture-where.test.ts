@@ -51,10 +51,13 @@ vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true,
 let fetchedPage: string | null = null;
 vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => fetchedPage, safeFetch: vi.fn() }));
 let extractFails = false;
+/** When set, extraction waits for it, so a test can act mid-capture. */
+let extractGate: Promise<void> | null = null;
 let indexFails = false;
 vi.mock("@/lib/llm", async (orig) => ({
   ...(await orig<typeof import("../llm")>()),
   extractCapture: async (_k: string, _c: string, _t: unknown, _l: unknown, meta?: { onUsage?: (u: { tokensIn: number; tokensOut: number }) => void }) => {
+    if (extractGate) await extractGate;
     if (extractFails) throw new Error("[llm:openai] HTTP 503");
     meta?.onUsage?.({ tokensIn: 2400, tokensOut: 780 });
     return capture;
@@ -133,6 +136,7 @@ beforeEach(() => {
   recordHandoffEvent.mockClear();
   failWhereWrite = false;
   extractFails = false;
+  extractGate = null;
   refundQuota.mockClear();
   linked = [];
   fetchedPage = null;
@@ -264,6 +268,24 @@ describe("web capture progress stream", () => {
     await runAfterResponse();
     expect(order).toContain("link");
     expect(files.get(capturePath())!.content).toContain("## Where it applies");
+  });
+
+  // protects: a page closed mid-capture still gets its capture saved; fails_when: a progress write to the cancelled stream throws and the pipeline stops before saving; no_claim: none
+  it("still saves the capture when the page goes away during extraction", async () => {
+    let finish!: () => void;
+    extractGate = new Promise((r) => { finish = r; });
+    const res = await POST(new NextRequest("https://xkg.test/api/capture", {
+      method: "POST",
+      headers: { accept: "application/x-ndjson" },
+      body: JSON.stringify({ content: "some notes about memory" }),
+    }));
+    const reader = res.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    finish();
+    await runAfterResponse();
+    expect(files.has(capturePath())).toBe(true);
+    expect(order).toContain("link");
   });
 
   // protects: an extraction failure reaches the page as an error line and costs no quota; fails_when: the stream ends silently or the quota is kept; no_claim: none

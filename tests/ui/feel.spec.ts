@@ -1,11 +1,11 @@
-import { test, expect, signIn, WORST_CAPTURE, WORST_ME } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME, openSettings } from "./fixtures";
 
 // M2 (XKG-10): motion and the Android back gesture.
 
 test("the Android back gesture closes Settings and stays on the page", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog")).toBeVisible();
 
   await page.goBack();
@@ -17,12 +17,12 @@ test("closing Settings with × takes its history entry with it, once", async ({ 
   await signIn(page);
   await page.goto("/");
   const before = await page.evaluate(() => history.length);
-  await page.getByRole("button", { name: "Open settings" }).tap();
-  await page.getByRole("button", { name: "Close settings" }).tap();
+  await openSettings(page);
+  await page.getByRole("button", { name: "Close menu" }).tap();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 
   // Reopening still works, so the first close didn't leave a stale entry.
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.goBack();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -33,7 +33,7 @@ test("closing Settings with × takes its history entry with it, once", async ({ 
 test("Settings opens on the sheet curve and closes faster than it opens", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const panel = page.getByRole("dialog");
   await expect(panel).toBeVisible();
   const open = await panel.evaluate((el) => {
@@ -42,7 +42,7 @@ test("Settings opens on the sheet curve and closes faster than it opens", async 
   });
   expect(open).toEqual({ duration: "0.28s", easing: "cubic-bezier(0.32, 0.72, 0, 1)" });
 
-  await page.getByRole("button", { name: "Close settings" }).tap();
+  await page.getByRole("button", { name: "Close menu" }).tap();
   // The panel stays mounted for the whole slide-out, then goes.
   await page.waitForTimeout(120);
   await expect(panel).toHaveCount(1);
@@ -56,7 +56,7 @@ test("result cards rise in one after another", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByText("Added to your knowledge")).toBeVisible();
 
   const cards = await page.locator("[data-reveal]").evaluateAll((els) =>
     els.map((el) => ({ name: getComputedStyle(el).animationName, delay: parseFloat(getComputedStyle(el).animationDelay) })),
@@ -73,7 +73,7 @@ test("with reduced motion the cards fade without moving", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByText("Added to your knowledge")).toBeVisible();
   const names = await page.locator("[data-reveal]").evaluateAll((els) => els.map((el) => getComputedStyle(el).animationName));
   expect(new Set(names)).toEqual(new Set(["xkg-fade"]));
 });
@@ -108,7 +108,7 @@ test("Saved pops in from slightly smaller", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toHaveCSS("animation-name", "xkg-pop");
+  await expect(page.getByTestId("saved").locator(".saved-pop")).toHaveCSS("animation-name", "xkg-pop");
 });
 
 // Regression (XKG-55): Settings opened before /api/me answered showed Anthropic.
@@ -119,7 +119,7 @@ test("Settings opened before the profile loads still shows the saved AI provider
     await r.fulfill({ json: WORST_ME });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const provider = page.getByRole("dialog").getByLabel("Provider");
   await expect(provider).toHaveValue("openai");
   await expect(page.getByRole("dialog").getByText(/Paste your .* key to switch/)).toHaveCount(0);

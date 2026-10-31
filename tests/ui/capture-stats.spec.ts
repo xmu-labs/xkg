@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, openSettings } from "./fixtures";
 
 // XKG-111: the result shows how long the capture took, the tokens it used and the model.
 
@@ -8,7 +8,7 @@ async function capture(page: import("@playwright/test").Page, json: unknown) {
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByTestId("saved")).toBeVisible();
 }
 
 test("the result shows the tokens and the model", async ({ page }) => {
@@ -27,7 +27,7 @@ test("a result from a server that sends no usage shows no stats line", async ({ 
 test("Settings tells the user which models make captures fast", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog").getByText("Captures are fastest on a small model. Reasoning models can take 30 seconds or more.")).toBeVisible();
 });
 

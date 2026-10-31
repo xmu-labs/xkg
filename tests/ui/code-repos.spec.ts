@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_REPO } from "./fixtures";
+import { test, expect, signIn, WORST_REPO, openSettings as openSettingsPanel } from "./fixtures";
 
 // M1b (XKG-46): Settings → Code repos lists the repos xkg matches captures to,
 // adds one from GitHub (file names only) and removes one.
@@ -8,7 +8,7 @@ const GITHUB = { repo: WORST_REPO, source: "github", files: 3000, truncated: tru
 
 async function openSettings(page: import("@playwright/test").Page) {
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettingsPanel(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible();
   return dialog.getByRole("region", { name: "Code repos" });
