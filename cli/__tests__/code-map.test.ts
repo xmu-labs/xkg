@@ -741,6 +741,15 @@ describe("signatures", () => {
     ]);
   });
 
+  it("ends at Python f-strings and triple quotes, and sends nothing when a string token runs into more text", async () => {
+    const { signatures } = await import("../code-map.js");
+    const fs = signatures("app/a.py", 'def f(x: Annotated[str, f"{config["private-token"]}"]) -> int:\n    pass\n').join(" ");
+    expect(fs).not.toMatch(/private|token/);
+    expect(signatures("app/b.py", 'def g(x: Annotated[str, """doc "secret" here"""]) -> int:\n    pass\n').join(" ")).not.toMatch(/secret/);
+    expect(signatures("app/c.py", 'def h(x: Literal["a", "b"]) -> int:\n    pass\n')).toEqual(['def h(x: Literal["…", "…"]) -> int']);
+    expect(signatures("a.ts", 'export function k(x: `a${"b"}c`): void {}\n').join(" ")).not.toMatch(/\bb\b|c`/);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

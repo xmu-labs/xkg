@@ -317,9 +317,19 @@ function signatureAt(lang: Lang, src: string, start: number): string {
       continue;
     }
     if (quotes.includes(c)) {
+      // A Python f-string or triple-quoted string can hold quotes of its own, and
+      // a template literal can hold code: the signature ends before them.
+      const prefixed = lang === "py" && /[A-Za-z]$/.test(out) && /\b[rRbBuUfF]{1,2}$/.test(out);
+      if (prefixed || (lang === "py" && src.startsWith(c.repeat(3), i)) || (c === "`" && /^`[^`]*\$\{/.test(src.slice(i, i + 400)))) {
+        out = `${out.replace(/\b[rRbBuUfF]{1,2}$/, "").trimEnd()} …`;
+        break;
+      }
       // A string's contents never leave the machine, even in a type.
       let j = i + 1;
       while (j < src.length && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
+      // A string token that runs straight into a name or another quote means the
+      // scan misread where it ended: send nothing.
+      if (/[\w$"'`]/.test(src[j + 1] ?? "")) return "";
       out += `${c}…${c}`;
       i = j;
       continue;
