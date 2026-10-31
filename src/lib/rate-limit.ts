@@ -162,3 +162,17 @@ export async function consumeQuota(
 
   return { allowed: used <= limit, used, limit, resetIn };
 }
+
+/**
+ * Give one unit back, so a capture that failed before it cost anything (the
+ * provider was down, the key was rejected) doesn't count against the hour.
+ * Never below zero, and never touching a window that has already reset.
+ */
+export async function refundQuota(identifier: string, windowSeconds = QUOTA_WINDOW_SECONDS): Promise<void> {
+  const key = identifier.toLowerCase();
+  await sql`
+    UPDATE usage_quota SET used = GREATEST(used - 1, 0)
+    WHERE identifier = ${key}
+      AND window_started_at >= NOW() - (${windowSeconds} * INTERVAL '1 second')
+  `;
+}
