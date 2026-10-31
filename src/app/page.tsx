@@ -6,7 +6,7 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
-import HandOff from "@/components/HandOff";
+import ApplyIt, { applyWhere } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 
 interface CaptureResult {
@@ -26,11 +26,6 @@ interface CaptureResult {
   where?: WhereCard;
   /** Set when a Strong fit was queued for the next coding session in this repo. */
   handoff?: { repo: string };
-}
-
-/** Text with `backticked` names shown as code. */
-function withCode(text: string) {
-  return text.split("`").map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[12px]">{part}</code> : part));
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -176,8 +171,7 @@ export default function CapturePage() {
         <div className="flex items-center gap-3 mb-1 overflow-visible">
           <BrandMark size={56} />
           <h1 className="wordmark text-2xl" style={{ color: "var(--fg)" }}>xkg</h1>
-          <div className="ml-auto flex items-center gap-4 shrink-0">
-            <Link href="/knowledge" className="text-sm font-medium" style={{ color: "var(--gold)" }}>Your knowledge</Link>
+          <div className="ml-auto shrink-0">
             <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={newVersionAvailable} />
           </div>
         </div>
@@ -243,26 +237,41 @@ export default function CapturePage() {
       {status === "done" && result && (
         <div className="w-full min-w-0 stack-3 wrap-anywhere">
 
-          {/* Title row */}
-          <div data-reveal style={reveal(0)} className="flex items-start justify-between gap-4 pb-1">
-            <div className="stack-1.5 min-w-0">
-              {result.capture.inferredType && (
-                <span className="eyebrow" style={{ color: "var(--gold)" }}>
-                  {typeLabel(result.capture.inferredType)}
-                </span>
-              )}
-              <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
-                {result.capture.inferredTitle}
-              </h2>
-            </div>
-            <span className="saved-pop text-[11px] font-medium whitespace-nowrap pt-0.5 shrink-0" style={{ color: "var(--gold)" }}>
-              Saved to GitHub ✓
+          {/* Saved */}
+          <div data-testid="saved" data-reveal style={{ background: "var(--gold-faint)", border: "1px solid var(--gold-low)", ...reveal(0) }}
+            className="flex items-center gap-3 rounded-2xl px-4 py-3"
+            role="status">
+            <span className="saved-pop items-center justify-center w-6 h-6 rounded-full shrink-0"
+              style={{ display: "inline-flex", background: "var(--btn)", color: "var(--btn-fg)" }} aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6 9 17l-5-5" />
+              </svg>
             </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold" style={{ color: "var(--fg)" }}>Added to your knowledge</p>
+              <p className="text-xs" style={{ color: "var(--fg-muted)" }}>Your AI can use it now</p>
+            </div>
+            <Link href="/knowledge" className="ml-auto shrink-0 text-sm font-medium py-2" style={{ color: "var(--fg)" }}>
+              See all <span aria-hidden="true">→</span>
+            </Link>
+          </div>
+
+          {/* Title */}
+          <div data-reveal style={reveal(1)} className="stack-1.5 min-w-0 pb-1">
+            {result.capture.inferredType && (
+              <span className="eyebrow" style={{ color: "var(--gold)" }}>
+                {typeLabel(result.capture.inferredType)}
+              </span>
+            )}
+            <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
+              {result.capture.inferredTitle}
+            </h2>
           </div>
 
           {/* Tags */}
           {result.capture.tags.length > 0 && (
-            <div data-reveal style={reveal(1)} className="flex flex-wrap gap-1.5">
+            <div data-reveal style={reveal(2)} className="flex flex-wrap gap-1.5">
               {result.capture.tags.map((tag) => (
                 <span
                   key={tag}
@@ -276,13 +285,25 @@ export default function CapturePage() {
           )}
 
           {/* Core idea */}
-          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(2) }}>
+          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(3) }}>
             <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Core idea</p>
             <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{result.capture.coreIdea}</p>
           </div>
 
+          {/* Where and how it applies */}
+          <ApplyIt
+            where={applyWhere(result.where)}
+            advice={result.capture.appliedTo}
+            handoff={result.where?.repo ? {
+              filename: `inbox/${result.filename}`,
+              repos: [result.where.repo, ...result.where.also.map((a) => a.repo)],
+              waitingIn: result.handoff?.repo,
+            } : undefined}
+            style={reveal(4)}
+          />
+
           {/* Takeaways */}
-          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(3) }}>
+          <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(5) }}>
             <p className="eyebrow mb-3" style={{ color: "var(--gold)" }}>Takeaways</p>
             <ul className="stack-2.5">
               {result.capture.takeaways.map((t, i) => (
@@ -296,7 +317,7 @@ export default function CapturePage() {
 
           {/* Quotes */}
           {result.capture.quotes.length > 0 && (
-            <div data-reveal className="rounded-2xl p-4 stack-3" style={{ ...CARD_STYLE, ...reveal(4) }}>
+            <div data-reveal className="rounded-2xl p-4 stack-3" style={{ ...CARD_STYLE, ...reveal(6) }}>
               <p className="eyebrow" style={{ color: "var(--gold)" }}>Quote</p>
               {result.capture.quotes.map((q, i) => (
                 <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
@@ -304,50 +325,6 @@ export default function CapturePage() {
                   &ldquo;{q}&rdquo;
                 </blockquote>
               ))}
-            </div>
-          )}
-
-          {/* Where it applies in the user's code */}
-          {result.where && (
-            <div data-testid="where" data-reveal className="rounded-2xl p-4 stack-2" style={{ ...CARD_STYLE, ...reveal(5) }}>
-              <p className="eyebrow" style={{ color: "var(--gold)" }}>In your code</p>
-              {result.where.repo && (
-                <>
-                  <p className="text-sm leading-relaxed">
-                    <span className="font-medium" style={{ color: "var(--fg)" }}>{result.where.fit}</span>
-                    <span style={{ color: "var(--fg-muted)" }}> · {result.where.repo}</span>
-                  </p>
-                  <ul className="stack-2">
-                    {result.where.files.map((f) => (
-                      <li key={f.path} className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-                        <code className="font-mono text-[12px]" style={{ color: "var(--fg)" }}>{f.path}</code>
-                        {f.why && <>: {withCode(f.why)}</>}
-                      </li>
-                    ))}
-                  </ul>
-                  {result.where.also.length > 0 && (
-                    <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-                      Also fits: {result.where.also.map((a) => `${a.repo} (${a.fit})`).join(", ")}
-                    </p>
-                  )}
-                </>
-              )}
-              <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.where.note}</p>
-              {result.where.repo && (
-                <HandOff
-                  filename={`inbox/${result.filename}`}
-                  repos={[result.where.repo, ...result.where.also.map((a) => a.repo)]}
-                  waitingIn={result.handoff?.repo}
-                />
-              )}
-            </div>
-          )}
-
-          {/* Applied to */}
-          {result.capture.appliedTo && (
-            <div data-reveal className="rounded-2xl p-4" style={{ ...CARD_STYLE, ...reveal(6) }}>
-              <p className="eyebrow mb-2" style={{ color: "var(--gold)" }}>Where to use it</p>
-              <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{result.capture.appliedTo}</p>
             </div>
           )}
 
