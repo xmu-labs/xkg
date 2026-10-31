@@ -152,6 +152,12 @@ describe("parseCaptureFile on older and odd files", () => {
     expect(d.lowConfidence).toBe(false);
   });
 
+  it("reads the oldest captures' modes as their tags", () => {
+    // Regression: ISSUE-001 — tags missing on captures saved with `modes:`
+    // Found by /qa on 2026-10-31
+    expect(parseCaptureFile(`---\ndate: 2026-03-14\nmodes: founder, work\nstatus: inbox\n---\n\n# Skills\n`).tags).toEqual(["founder", "work"]);
+  });
+
   it("keeps a no-fit line as the note, with no repo", () => {
     const d = parseCaptureFile(`---\ndate: 2026-10-30\n---\n\n# T\n\n## Core idea\nX\n\n## Where it applies\nNo clear fit in your repos yet: the closest files are only a weak match.\n\n## Key takeaways\n- Y\n`);
     expect(d.where).toEqual({ fit: "No clear fit", repo: null, files: [], also: [], note: "No clear fit in your repos yet: the closest files are only a weak match." });

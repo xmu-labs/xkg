@@ -196,7 +196,8 @@ export function parseCaptureFile(content: string): CaptureFileFields {
     title: /^# (.+)$/m.exec(own)?.[1]?.trim() || value(fields.get("source")) || "Untitled capture",
     date: fields.get("date") ?? "",
     type: value(fields.get("type")),
-    tags: (fields.get("tags") ?? "").split(",").map((t) => t.trim()).filter(Boolean),
+    // The oldest captures carry their tags as `modes:`.
+    tags: (fields.get("tags") ?? fields.get("modes") ?? "").split(",").map((t) => t.trim()).filter(Boolean),
     url: url && /^https?:\/\//i.test(url) ? url : null,
     lowConfidence: fields.get("lowConfidence") === "true",
     coreIdea: value(s.get("Core idea")),
