@@ -80,7 +80,7 @@ The result shows as soon as the file is saved. Links to related captures and the
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
-After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead.
+After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead. Each file gets two short lines, **Why** (what in the capture touches it) and **After** (what changes once it is applied), written by your own model from the capture and the file's path and exported names, never its code. A Strong fit gets them right away; a Possible fit has a **Why and how** button. The lines are saved in the capture's "Where it applies" section as `` - `path`: why · After: after ``, so each capture is explained once. The call is capped at 150 output tokens and runs at low effort on your model.
 
 The **☰ menu** (top right on every page) holds your account, **Capture**, **Your knowledge** and **Settings**, and shows the GitHub repo your captures are stored in.
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import HandOff from "./HandOff";
 
 export type Fit = "Strong fit" | "Possible fit";
@@ -20,6 +21,12 @@ export interface ApplyItProps {
   advice: string | null;
   /** The hand-off button; left out on read-only pages. */
   handoff?: { filename: string; repos: string[]; waitingIn?: string };
+  /**
+   * Fills in Why and After for files that lack them: asked for by itself when
+   * `auto` (Strong fit), else behind a "Why and how" button. `onRequest`
+   * updates `where` and throws on failure.
+   */
+  explain?: { auto: boolean; onRequest: () => Promise<void> };
   style?: React.CSSProperties;
 }
 
@@ -31,6 +38,24 @@ export interface ApplyItProps {
 export function applyWhere(w: { fit: string; repo: string | null; files: ApplyItWhere["files"]; also?: ApplyItWhere["also"]; note?: string } | null | undefined): ApplyItWhere | null {
   if (!w?.repo || (w.fit !== "Strong fit" && w.fit !== "Possible fit")) return null;
   return { fit: w.fit, repo: w.repo, files: w.files, also: w.also, note: w.note };
+}
+
+/**
+ * Asks the server for Why and After on a capture's files and returns them
+ * merged into `files`; throws when it fails.
+ */
+export async function explainFiles<F extends { path: string; why?: string; after?: string }>(name: string, files: F[]): Promise<F[]> {
+  const res = await fetch("/api/captures/explain", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error(`explain ${res.status}`);
+  const data = (await res.json()) as { files?: { path: string; why: string; after: string }[] };
+  return files.map((f) => {
+    const line = data.files?.find((x) => x.path === f.path);
+    return line ? { ...f, why: line.why, after: line.after } : f;
+  });
 }
 
 const FIT_TONE: Record<Fit, string> = { "Strong fit": "strong", "Possible fit": "possible" };
@@ -48,7 +73,30 @@ const NOTE = "Matched by file names. Your coding agent checks the code.";
  * or the capture's general advice when nothing fits. Renders nothing when
  * there is neither.
  */
-export default function ApplyIt({ where, advice, handoff, style }: ApplyItProps) {
+export default function ApplyIt({ where, advice, handoff, explain, style }: ApplyItProps) {
+  const needs = Boolean(explain && where?.files.some((f) => !f.after));
+  const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
+  const asked = useRef(false);
+  const run = () => {
+    if (!explain) return;
+    setState("loading");
+    explain.onRequest().then(
+      () => setState("idle"),
+      () => setState("failed"),
+    );
+  };
+  const latest = useRef(run);
+  useEffect(() => {
+    latest.current = run;
+  });
+  const auto = needs && explain?.auto;
+  useEffect(() => {
+    if (auto && !asked.current) {
+      asked.current = true;
+      latest.current();
+    }
+  }, [auto]);
+
   if (!where && !advice) return null;
   const tone = where ? FIT_TONE[where.fit] : null;
   return (
@@ -75,6 +123,23 @@ export default function ApplyIt({ where, advice, handoff, style }: ApplyItProps)
               </li>
             ))}
           </ul>
+          {needs && state === "loading" && (
+            <p role="status" className="text-sm" style={{ color: "var(--fg-muted)" }}>Writing why and after…</p>
+          )}
+          {needs && state === "failed" && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p role="alert" className="text-sm" style={{ color: "var(--danger)" }}>Couldn&apos;t explain these files.</p>
+              <button type="button" onClick={run} className="min-h-11 text-sm font-medium" style={{ color: "var(--gold)" }}>
+                Try again
+              </button>
+            </div>
+          )}
+          {needs && state === "idle" && !explain?.auto && (
+            <button type="button" onClick={run} className="inline-flex items-center min-h-11 px-4 rounded-full text-sm font-medium"
+              style={{ color: "var(--gold)", border: "1px solid var(--gold-low)" }}>
+              Why and how
+            </button>
+          )}
           {where.also && where.also.length > 0 && (
             <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
               Also fits: {where.also.map((a) => `${a.repo} (${a.fit})`).join(", ")}

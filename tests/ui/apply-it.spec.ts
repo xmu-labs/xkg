@@ -102,3 +102,70 @@ function contrast(a: string, b: string): number {
   const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
   return (hi! + 0.05) / (lo! + 0.05);
 }
+
+// XKG-95: Why and After for each file, on the user's own model.
+const EXPLAINED = {
+  files: WORST_CAPTURE.where.files.map((f, i) => ({ path: f.path, why: `Why line ${i}`, after: `After line ${i}` })),
+};
+
+test("a Strong fit asks for Why and After by itself and shows them per file", async ({ page }) => {
+  const bodies: unknown[] = [];
+  await page.route("**/api/captures/explain", (r) => {
+    bodies.push(r.request().postDataJSON());
+    return r.fulfill({ json: EXPLAINED });
+  });
+  await capture(page, WORST_CAPTURE);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByText("After line 1")).toBeVisible();
+  await expect(card.getByText("Why line 0")).toBeVisible();
+  await expect(card.getByText("Why:", { exact: true }).first()).toBeVisible();
+  await expect(card.getByRole("button", { name: "Why and how" })).toHaveCount(0);
+  expect(bodies).toEqual([{ name: WORST_CAPTURE.filename }]);
+});
+
+test("a Possible fit asks only when you tap Why and how", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) => {
+    calls++;
+    return r.fulfill({ json: EXPLAINED });
+  });
+  await capture(page, possible);
+  const card = page.getByTestId("apply-it");
+  const button = card.getByRole("button", { name: "Why and how" });
+  await expect(button).toBeVisible();
+  expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  expect(calls).toBe(0);
+  await button.tap();
+  await expect(card.getByText("After line 0")).toBeVisible();
+  await expect(button).toHaveCount(0);
+  expect(calls).toBe(1);
+});
+
+test("a failed Why and how says so and can be tried again", async ({ page }) => {
+  let fail = true;
+  await page.route("**/api/captures/explain", (r) =>
+    fail ? r.fulfill({ status: 502, json: { error: "Couldn't explain these files. Try again." } }) : r.fulfill({ json: EXPLAINED }),
+  );
+  await capture(page, WORST_CAPTURE);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByRole("alert")).toContainText("Couldn't explain these files");
+  // The files and the hand-off stay usable.
+  for (const f of WORST_CAPTURE.where.files) await expect(card.getByText(f.path)).toBeVisible();
+  fail = false;
+  await card.getByRole("button", { name: "Try again" }).tap();
+  await expect(card.getByText("After line 0")).toBeVisible();
+  await expect(card.getByRole("alert")).toHaveCount(0);
+});
+
+test("files that already have After are not asked about again", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) => {
+    calls++;
+    return r.fulfill({ json: EXPLAINED });
+  });
+  const done = { ...WORST_CAPTURE, where: { ...WORST_CAPTURE.where, files: EXPLAINED.files } };
+  await capture(page, done);
+  await expect(page.getByTestId("apply-it").getByText("After line 1")).toBeVisible();
+  await expect(page.getByTestId("apply-it").getByRole("button", { name: "Why and how" })).toHaveCount(0);
+  expect(calls).toBe(0);
+});

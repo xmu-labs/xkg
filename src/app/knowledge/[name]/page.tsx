@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import ApplyIt, { applyWhere } from "@/components/ApplyIt";
+import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import Backdrop from "@/components/Backdrop";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import type { CaptureDetail } from "@/lib/capture-detail";
@@ -85,13 +85,13 @@ function CaptureLoader({ filename }: { filename: string }) {
 
       {error && <p role="alert" className="text-sm" style={{ color: "var(--danger)" }}>{error}</p>}
       {!capture && !error && <p className="text-sm" style={{ color: "var(--fg-muted)" }}>Loading…</p>}
-      {capture && <CaptureView capture={capture} />}
+      {capture && <CaptureView capture={capture} onCapture={setCapture} />}
     </main>
     </>
   );
 }
 
-function CaptureView({ capture: c }: { capture: CaptureDetail }) {
+function CaptureView({ capture: c, onCapture }: { capture: CaptureDetail; onCapture: (c: CaptureDetail) => void }) {
   const meta = [c.date && shortDate(c.date), c.type && (TYPE_LABELS[c.type] ?? c.type), STATUS_LABELS[c.status]].filter(Boolean).join(" · ");
   return (
     <div className="w-full min-w-0 stack-3">
@@ -128,7 +128,18 @@ function CaptureView({ capture: c }: { capture: CaptureDetail }) {
         </Card>
       )}
 
-      <ApplyIt where={applyWhere(c.where)} advice={c.advice} />
+      <ApplyIt
+        where={applyWhere(c.where)}
+        advice={c.advice}
+        explain={c.where?.repo ? {
+          auto: c.where.fit === "Strong fit",
+          onRequest: async () => {
+            if (!c.where) return;
+            const files = await explainFiles(c.filename, c.where.files);
+            onCapture({ ...c, where: { ...c.where, files } });
+          },
+        } : undefined}
+      />
 
       {c.takeaways.length > 0 && (
         <Card label="Takeaways">
