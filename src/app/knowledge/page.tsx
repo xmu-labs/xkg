@@ -6,6 +6,7 @@ import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import type { CaptureRow, CaptureStatus, LinkCheck } from "@/lib/captures";
 import type { WeekStats } from "@/lib/ledger";
+import { CARD_STYLE, TRY_AGAIN, captureHref, post, shortDate } from "./ui";
 
 /**
  * Your knowledge: the decisions about saved knowledge that are the user's to
@@ -18,25 +19,6 @@ const TABS: Array<{ status: CaptureStatus; label: string }> = [
   { status: "applied", label: "Applied" },
   { status: "archived", label: "Archived" },
 ];
-
-const CARD_STYLE: React.CSSProperties = {
-  background: "var(--card-bg)",
-  border: "1px solid var(--gold-faint)",
-};
-
-const TRY_AGAIN = "Something went wrong. Try again in a moment.";
-
-/** POSTs JSON; resolves to the parsed body, or throws with the server's error. */
-async function post<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-  if (res.status === 401) {
-    window.location.assign("/login");
-    throw new Error(TRY_AGAIN);
-  }
-  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
-  if (!res.ok) throw new Error(data.error ?? TRY_AGAIN);
-  return data;
-}
 
 const OFFLINE = "The original page is offline. What you learned from it is saved in your knowledge repo.";
 const UNSURE = "The AI wasn't sure about this one. Worth a quick read.";
@@ -60,17 +42,23 @@ function writeCursor(after: string | null): void {
   try { after ? localStorage.setItem(CURSOR_KEY, after) : localStorage.removeItem(CURSOR_KEY); } catch { /* private mode: start over next time */ }
 }
 
-/** "Oct 26" from 2026-10-26. */
-function shortDate(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-}
-
 export default function KnowledgePage() {
   const [captures, setCaptures] = useState<CaptureRow[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [weeks, setWeeks] = useState<WeekStats[] | null>(null);
   const [tab, setTab] = useState<CaptureStatus>("inbox");
   const [checks, setChecks] = useState<Record<string, LinkCheck>>({});
+
+  // The tab lives in the address, so Back from a capture lands on the same one.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (TABS.some((x) => x.status === t)) setTab(t as CaptureStatus);
+  }, []);
+
+  function pickTab(t: CaptureStatus) {
+    setTab(t);
+    window.history.replaceState(window.history.state, "", t === "inbox" ? "/knowledge" : `/knowledge?tab=${t}`);
+  }
 
   useEffect(() => {
     void fetch("/api/captures")
@@ -157,7 +145,7 @@ export default function KnowledgePage() {
             key={t.status}
             role="tab"
             aria-selected={tab === t.status}
-            onClick={() => setTab(t.status)}
+            onClick={() => pickTab(t.status)}
             className="text-sm px-3 py-1.5 rounded-full font-medium"
             style={tab === t.status
               ? { background: "var(--gold-faint)", color: "var(--gold)", border: "1px solid var(--gold-low)" }
@@ -213,10 +201,12 @@ function CaptureItem({ capture, notes, onMoved }: {
 
   return (
     <li className="rounded-2xl p-4 stack-2 min-w-0" style={CARD_STYLE}>
-      <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{capture.summary || capture.slug}</p>
-      <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-        {shortDate(capture.date)}{capture.tags.length > 0 && ` · ${capture.tags.join(", ")}`}
-      </p>
+      <Link href={captureHref(capture.filename)} className="block stack-2 -m-1 p-1 rounded-xl">
+        <span className="block text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{capture.summary || capture.slug}</span>
+        <span className="block text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+          {shortDate(capture.date)}{capture.tags.length > 0 && ` · ${capture.tags.join(", ")}`}
+        </span>
+      </Link>
       {notes.map((n) => <p key={n} className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{n}</p>)}
       {capture.status === "inbox" && (
         confirming ? (

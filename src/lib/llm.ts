@@ -10,9 +10,10 @@ import type { ExtractedCapture, SourceSnapshot, ContentType, RelatedCapture, Rel
 
 // ── Config ──
 
-/** Answer budget for extraction. Claims with evidence roughly triple the
- *  answer; at 800 tokens longer sources were cut off mid-JSON. */
-const MAX_TOKENS = 4000;
+/** Answer budget for extraction: a ceiling, not a spend. A typical answer
+ *  with claims is about 1,000 tokens; at 800 longer sources were cut off
+ *  mid-JSON. The ceiling bounds what one runaway answer can cost. */
+const MAX_TOKENS = 2000;
 
 /** The model xkg uses for a provider when the user has not picked one: the
  *  first in its list, chosen for low cost. BYOK: the user's key, the user's bill.
@@ -63,6 +64,33 @@ export const REASONING_TOKENS: Record<LlmEffort, number> = {
   medium: 4096,
   high: 12000,
 };
+
+/**
+ * How long one LLM call may take before it fails with a clear error instead
+ * of hanging until the serverless limit, and how long to wait before the one
+ * retry a transient answer (429, 5xx, dropped connection) gets.
+ */
+export const LLM_TIMEOUT_MS = 60_000;
+const LLM_RETRY_WAIT_MS = 1_500;
+
+const isTransientStatus = (status: number) => status === 429 || status >= 500;
+
+/**
+ * Send a provider request with the timeout, retrying once when the provider
+ * answers 429/5xx or the connection drops. Anything else is returned as is.
+ */
+async function llmFetch(url: string, init: RequestInit): Promise<Response> {
+  const attempt = () => fetch(url, { ...init, signal: AbortSignal.timeout(LLM_TIMEOUT_MS) });
+  let res: Response | null = null;
+  try {
+    res = await attempt();
+    if (!isTransientStatus(res.status)) return res;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") throw new Error(`[llm] No answer from the provider after ${LLM_TIMEOUT_MS / 1000}s.`);
+  }
+  await new Promise((r) => setTimeout(r, LLM_RETRY_WAIT_MS));
+  return attempt();
+}
 
 /** Max input characters sent to the LLM (~1500 tokens, covers 95% of captures). */
 export const MAX_INPUT_CHARS = 6000;
@@ -160,7 +188,7 @@ function usesThinkingBudget(model: string): boolean {
 }
 
 async function callAnthropic(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
-  const client = new Anthropic({ apiKey: opts.apiKey });
+  const client = new Anthropic({ apiKey: opts.apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 1 });
   const budgeted = usesThinkingBudget(llm.model);
   const reasoning = llm.effort
     ? budgeted
@@ -199,7 +227,7 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   const limit = reasoning
     ? { max_completion_tokens: opts.maxTokens + REASONING_TOKENS[llm.effort ?? "medium"] }
     : { max_tokens: opts.maxTokens };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await llmFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -230,7 +258,7 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
  * an effort they don't support, so they get headroom but no effort parameter.
  */
 async function callOpenAICompatible(opts: LlmCallOptions, llm: ResolvedLlm, baseUrl: string): Promise<string> {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await llmFetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -267,7 +295,7 @@ async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   const thinkingModel = isGeminiThinkingModel(llm.model);
   const budget = llm.effort && thinkingModel ? REASONING_TOKENS[llm.effort] : 0;
   const headroom = budget || (thinkingModel ? REASONING_TOKENS.medium : 0);
-  const res = await fetch(
+  const res = await llmFetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(llm.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`,
     {
       method: "POST",
@@ -315,7 +343,7 @@ INPUT
 You receive:
 - Source metadata, when available.
 - Source text divided into segments.
-- Application-provided sourceId, sourceVersionId, and segmentId values.
+- Application-provided segmentId values.
 - Optional readerContext.
 
 Use only these inputs. Do not use outside knowledge.
@@ -470,13 +498,9 @@ corresponding record in claims with this structure:
 
 {
   "outputPath": "/takeaways/0",
-  "text": "The exact text of the corresponding extracted field.",
-  "kind": "source_assertion",
   "evidence": [
     {
-      "sourceId": "An identifier supplied in the input.",
-      "sourceVersionId": "The supplied source version identifier.",
-      "segmentId": "An identifier supplied in that source version.",
+      "segmentId": "An identifier supplied in the input.",
       "exactQuote": "An exact, contiguous excerpt from that segment."
     }
   ]
@@ -484,12 +508,13 @@ corresponding record in claims with this structure:
 
 - Use "/coreIdea" for coreIdea.
 - Use zero-based paths such as "/takeaways/0" for takeaways.
-- Copy the corresponding output field exactly into text.
-- Use only source, version, and segment identifiers supplied in the input.
-- Include at least one evidence reference per claim.
-- Select the smallest passage or set of passages sufficient to support
-  the complete claim, including material qualifications.
-- Multiple evidence references may support one claim.
+- Do not copy the field's text into the record; outputPath links them.
+- Use only segment identifiers supplied in the input.
+- Include one evidence reference per claim: the shortest exact excerpt
+  that supports the complete claim, including material qualifications.
+  Keep it short: one sentence or part of one, about 25 words or fewer.
+- Add a second reference only when no single excerpt supports the
+  complete claim.
 - Evidence must support every assertion in the corresponding field.
 - If support is incomplete, narrow the wording or omit the claim and
   its corresponding output value.
@@ -526,7 +551,7 @@ Before returning:
 2. Material qualifications have survived extraction.
 3. Every core idea and takeaway has its corresponding claim record.
 4. Every evidence quote occurs exactly in its referenced segment.
-5. Every reference uses an identifier supplied in the input.
+5. Every reference uses a segment identifier supplied in the input.
 6. Suggestions are separate from source assertions and user decisions.
 7. The output follows the JSON contract.
 
@@ -547,7 +572,7 @@ export async function extractCapture(
   content: string,
   title?: string,
   llm: LlmConfig = "anthropic",
-  meta: { url?: string } = {},
+  meta: { url?: string; onUsage?: (usage: LlmUsage) => void } = {},
 ): Promise<ExtractedCapture> {
   const source = buildSource(content, { title, url: meta.url, maxChars: MAX_INPUT_CHARS });
   const input = buildExtractionInput(source);
@@ -558,6 +583,7 @@ export async function extractCapture(
     system: SYSTEM_PROMPT,
     user: input,
     maxTokens: MAX_TOKENS,
+    onUsage: meta.onUsage,
   });
 
   const rawJson = rawText

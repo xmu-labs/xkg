@@ -230,3 +230,104 @@ test("make rules uses a tag that still exists after its last capture is deleted"
   await expect(page.getByText("Keep memory small.")).toBeVisible();
   expect(sent).toEqual([{ tag: "llm" }]);
 });
+
+// The capture page: tap a card to read the whole capture again.
+
+const LONG_URL = "https://northwind-industries-holdings.example.com/blog/2026/10/retrieval-augmented-generation-evaluation-harness";
+const DETAIL = {
+  filename: LONG, status: "inbox", title: `Why RAG pipelines fail in production ${LONG_URL}`, date: "2026-10-24", type: "blog",
+  tags: ["retrieval-augmented-generation-evaluation-harness-open-source", "llm"], url: LONG_URL, lowConfidence: false,
+  coreIdea: `Most failures come from retrieval, not generation. ${LONG_URL}`,
+  takeaways: ["Measure recall@k before tuning prompts.", "<script>window.pwned = true</script>"],
+  quotes: ["Retrieval is the bottleneck."],
+  advice: "Add a recall check to the eval suite.",
+  where: {
+    fit: "Possible fit", repo: "northwind/retrieval-augmented-generation-evaluation-harness",
+    files: [{ path: "packages/retrieval-augmented-generation-evaluation-harness/src/pipelines/production/retrievalRecallAtKEvaluator.ts", why: "measures `recallAtK`", after: "recall is checked before prompts" }],
+    also: [], note: "From file names, not yet checked in your code",
+  },
+  evidence: [{ label: "Core idea", quotes: ["Retrieval failed first. (s3)"] }],
+  applications: [],
+  links: [{ name: "2026-10-28-llm-memory.md", slug: "llm-memory", note: "Both are about context.", summary: "Memory goes into the prompt, so keep it small." }],
+  fileUrl: `https://github.com/o/k/blob/main/inbox/${LONG}`,
+};
+const MEMORY = { ...DETAIL, filename: "2026-10-28-llm-memory.md", status: "applied", title: "LLM memory", links: [], url: null,
+  applications: [{ date: "2026-10-29", commit: "3f9a2c1d4e5f", target: "src/lib/memory.ts", note: null, outcome: "worked" }] };
+
+async function openDetail(page: Page) {
+  await open(page);
+  await page.route("**/api/captures/read?*", (r) => {
+    const name = new URL(r.request().url()).searchParams.get("name");
+    if (name === LONG) return r.fulfill({ json: { capture: DETAIL } });
+    if (name === MEMORY.filename) return r.fulfill({ json: { capture: MEMORY } });
+    return r.fulfill({ status: 404, json: { error: "This capture isn't in your knowledge repo anymore." } });
+  });
+}
+
+test("tapping a card opens the whole capture", async ({ page }) => {
+  await openDetail(page);
+  await page.getByTestId("capture-list").getByRole("link").filter({ hasText: "Most failures" }).tap();
+  await expect(page).toHaveURL(new RegExp(`/knowledge/${LONG.replace(/\.md$/, "")}$`));
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Why RAG pipelines fail");
+  await expect(page.getByText("Measure recall@k before tuning prompts.")).toBeVisible();
+  await expect(page.getByText("Retrieval is the bottleneck.")).toBeVisible();
+  await expect(page.getByTestId("where")).toContainText("recall is checked before prompts");
+  await expect(page.getByText("Add a recall check to the eval suite.")).toBeVisible();
+  await expect(page.getByRole("link", { name: /Read the source on northwind-industries-holdings/ })).toHaveAttribute("href", LONG_URL);
+  // Markup in a capture is text, never HTML.
+  await expect(page.getByText("<script>window.pwned = true</script>")).toBeVisible();
+  expect(await page.evaluate(() => (window as unknown as { pwned?: boolean }).pwned)).toBeUndefined();
+  // Evidence stays folded until asked for.
+  await expect(page.getByText("Retrieval failed first. (s3)")).toBeHidden();
+  await page.getByText("Show evidence").tap();
+  await expect(page.getByText("Retrieval failed first. (s3)")).toBeVisible();
+});
+
+test("a capture page has no sideways scroll at 320 px", async ({ page }) => {
+  await openDetail(page);
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  await expect(page.getByTestId("links")).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBe(0);
+});
+
+test("a link to memory opens that capture, and Back returns to its tab", async ({ page }) => {
+  await openDetail(page);
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  await page.getByTestId("links").getByRole("link", { name: /Memory goes into the prompt/ }).tap();
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("LLM memory");
+  await expect(page.getByTestId("applied")).toContainText("3f9a2c1");
+  await expect(page.getByRole("button", { name: "Archive" })).toHaveCount(0);
+  await page.getByRole("link", { name: "← Your knowledge" }).tap();
+  await expect(page).toHaveURL(/\/knowledge\?tab=applied$/);
+  await expect(page.getByRole("tab", { name: /Applied/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("browser Back from a capture keeps the tab you were on", async ({ page }) => {
+  await openDetail(page);
+  await page.getByRole("tab", { name: /Applied/ }).tap();
+  await page.getByTestId("capture-list").getByRole("link").filter({ hasText: "Route by cost." }).tap();
+  await expect(page).toHaveURL(/\/knowledge\/2026-10-20-routing$/);
+  await page.goBack();
+  await expect(page.getByRole("tab", { name: /Applied/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("archive on the capture page goes back to the inbox", async ({ page }) => {
+  await openDetail(page);
+  const sent: unknown[] = [];
+  await page.route("**/api/captures/archive", async (r) => {
+    sent.push(r.request().postDataJSON());
+    await r.fulfill({ json: { ok: true } });
+  });
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  await page.getByRole("button", { name: "Archive" }).tap();
+  await expect(page).toHaveURL(/\/knowledge$/);
+  expect(sent).toEqual([{ filename: LONG }]);
+});
+
+test("a capture that is gone says so", async ({ page }) => {
+  await openDetail(page);
+  await page.goto("/knowledge/2026-01-01-gone");
+  await expect(page.getByRole("main").getByRole("alert")).toHaveText("This capture isn't in your knowledge repo anymore.");
+  await expect(page.getByRole("link", { name: "← Your knowledge" })).toBeVisible();
+});

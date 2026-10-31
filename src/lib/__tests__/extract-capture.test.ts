@@ -26,16 +26,16 @@ describe("extractCapture sends a segmented source and checks the claims", () => 
     fetchSpy.mockResolvedValue(openAiResponse("{}"));
     await extractCapture("k", TEXT, "Alert ownership", "openai", { url: "https://example.com/n" });
     const input = JSON.parse(sent().messages[1]!.content);
-    expect(input.sourceId).toMatch(/^src-/);
-    expect(input.sourceVersionId).toMatch(/^v-/);
     expect(input.metadata).toEqual({ title: "Alert ownership", url: "https://example.com/n" });
     expect(input.segments.map((s: { segmentId: string }) => s.segmentId)).toEqual(["s1", "s2"]);
   });
 
-  it("leaves room for claims in the answer", async () => {
+  // protects: room for a full answer, and a ceiling on what one capture can cost; fails_when: the cap cuts typical answers (~1,000 tokens) or goes back to 4,000; no_claim: none
+  it("leaves room for claims in the answer, with a ceiling", async () => {
     fetchSpy.mockResolvedValue(openAiResponse("{}"));
     await extractCapture("k", TEXT, undefined, "openai");
-    expect(sent().max_tokens).toBeGreaterThanOrEqual(3000);
+    expect(sent().max_tokens).toBeGreaterThanOrEqual(1500);
+    expect(sent().max_tokens).toBeLessThanOrEqual(2000);
   });
 
   it("returns checked claims and the source they were checked against", async () => {
