@@ -120,6 +120,11 @@ export const CAPTURE_QUOTA = 60;
 export const QUOTA_WINDOW_SECONDS = 60 * 60;
 
 export interface QuotaState {
+  /**
+   * The window this unit was charged to, as the text Postgres printed it
+   * (microseconds included); refundQuota needs it back unchanged.
+   */
+  windowKey: string;
   allowed: boolean;
   used: number;
   limit: number;
@@ -139,7 +144,7 @@ export async function consumeQuota(
 ): Promise<QuotaState> {
   const key = identifier.toLowerCase();
 
-  const { rows } = await sql<{ used: number; window_started_at: Date }>`
+  const { rows } = await sql<{ used: number; window_started_at: Date; window_key: string }>`
     INSERT INTO usage_quota (identifier, used, window_started_at)
     VALUES (${key}, 1, NOW())
     ON CONFLICT (identifier) DO UPDATE SET
@@ -149,7 +154,7 @@ export async function consumeQuota(
       window_started_at = CASE
         WHEN usage_quota.window_started_at < NOW() - (${windowSeconds} * INTERVAL '1 second')
         THEN NOW() ELSE usage_quota.window_started_at END
-    RETURNING used, window_started_at
+    RETURNING used, window_started_at, window_started_at::text AS window_key
   `;
 
   const row = rows[0];
@@ -160,5 +165,21 @@ export async function consumeQuota(
     Math.ceil((startedAt + windowSeconds * 1000 - Date.now()) / 1000),
   );
 
-  return { allowed: used <= limit, used, limit, resetIn };
+  return { allowed: used <= limit, used, limit, resetIn, windowKey: row?.window_key ?? "" };
+}
+
+/**
+ * Give one unit back, so a capture that failed before it cost anything (the
+ * provider was down, the key was rejected) doesn't count against the hour.
+ * Only the window the unit was charged to is touched: if the window rolled
+ * over in between, the new window's count belongs to other requests. The
+ * window is compared as the text Postgres returned, because a JavaScript Date
+ * would drop the microseconds and the row would never match. Never below zero.
+ */
+export async function refundQuota(identifier: string, windowKey: string): Promise<void> {
+  const key = identifier.toLowerCase();
+  await sql`
+    UPDATE usage_quota SET used = GREATEST(used - 1, 0)
+    WHERE identifier = ${key} AND window_started_at = ${windowKey}::timestamp
+  `;
 }

@@ -65,6 +65,33 @@ export const REASONING_TOKENS: Record<LlmEffort, number> = {
   high: 12000,
 };
 
+/**
+ * How long one LLM call may take before it fails with a clear error instead
+ * of hanging until the serverless limit, and how long to wait before the one
+ * retry a transient answer (429, 5xx, dropped connection) gets.
+ */
+export const LLM_TIMEOUT_MS = 60_000;
+const LLM_RETRY_WAIT_MS = 1_500;
+
+const isTransientStatus = (status: number) => status === 429 || status >= 500;
+
+/**
+ * Send a provider request with the timeout, retrying once when the provider
+ * answers 429/5xx or the connection drops. Anything else is returned as is.
+ */
+async function llmFetch(url: string, init: RequestInit): Promise<Response> {
+  const attempt = () => fetch(url, { ...init, signal: AbortSignal.timeout(LLM_TIMEOUT_MS) });
+  let res: Response | null = null;
+  try {
+    res = await attempt();
+    if (!isTransientStatus(res.status)) return res;
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") throw new Error(`[llm] No answer from the provider after ${LLM_TIMEOUT_MS / 1000}s.`);
+  }
+  await new Promise((r) => setTimeout(r, LLM_RETRY_WAIT_MS));
+  return attempt();
+}
+
 /** Max input characters sent to the LLM (~1500 tokens, covers 95% of captures). */
 export const MAX_INPUT_CHARS = 6000;
 
@@ -161,7 +188,7 @@ function usesThinkingBudget(model: string): boolean {
 }
 
 async function callAnthropic(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
-  const client = new Anthropic({ apiKey: opts.apiKey });
+  const client = new Anthropic({ apiKey: opts.apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 1 });
   const budgeted = usesThinkingBudget(llm.model);
   const reasoning = llm.effort
     ? budgeted
@@ -200,7 +227,7 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   const limit = reasoning
     ? { max_completion_tokens: opts.maxTokens + REASONING_TOKENS[llm.effort ?? "medium"] }
     : { max_tokens: opts.maxTokens };
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const res = await llmFetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -231,7 +258,7 @@ async function callOpenAI(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
  * an effort they don't support, so they get headroom but no effort parameter.
  */
 async function callOpenAICompatible(opts: LlmCallOptions, llm: ResolvedLlm, baseUrl: string): Promise<string> {
-  const res = await fetch(`${baseUrl}/chat/completions`, {
+  const res = await llmFetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -268,7 +295,7 @@ async function callGoogle(opts: LlmCallOptions, llm: ResolvedLlm): Promise<strin
   const thinkingModel = isGeminiThinkingModel(llm.model);
   const budget = llm.effort && thinkingModel ? REASONING_TOKENS[llm.effort] : 0;
   const headroom = budget || (thinkingModel ? REASONING_TOKENS.medium : 0);
-  const res = await fetch(
+  const res = await llmFetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(llm.model)}:generateContent?key=${encodeURIComponent(opts.apiKey)}`,
     {
       method: "POST",

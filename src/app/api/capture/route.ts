@@ -4,7 +4,7 @@ import { githubPut, appendToIndex, readFile } from "@/lib/github";
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, type LlmUsage } from "@/lib/llm";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
-import { consumeQuota } from "@/lib/rate-limit";
+import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
 import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
 import { recordWhereEvent } from "@/lib/surface-events";
@@ -109,6 +109,12 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
+    // Nothing was extracted or saved, so the try doesn't count against the hour.
+    try {
+      await refundQuota(`capture:user:${user.id}`, quota.windowKey);
+    } catch {
+      // The refund is a courtesy; the error above is what the user needs.
+    }
     return NextResponse.json({ error: message }, { status: 502 });
   }
   timer.mark("extract");

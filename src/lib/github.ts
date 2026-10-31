@@ -215,14 +215,30 @@ export async function readFileStrict(
   return { content: decoded, sha: res.data.sha };
 }
 
-/** Append a row to INDEX.md, creating it if it doesn't exist. */
+/**
+ * Append a row to INDEX.md, creating it if it doesn't exist. The row is
+ * written after the capture file, and a file with no row is invisible to
+ * search, so a failed write (a conflicting sha, a 5xx) gets one more try
+ * from a fresh read.
+ */
 export async function appendToIndex(
   token: string,
   repo: string,
   row: string,
   commitMessage: string,
 ): Promise<void> {
+  try {
+    await appendRow(token, repo, row, commitMessage);
+  } catch {
+    // The first write may have landed with its answer lost on the way back;
+    // appendRow re-reads and skips a row that is already there.
+    await appendRow(token, repo, row, commitMessage);
+  }
+}
+
+async function appendRow(token: string, repo: string, row: string, commitMessage: string): Promise<void> {
   const existing = await readFile(token, repo, "INDEX.md");
+  if (existing?.content.includes(row)) return;
 
   if (existing) {
     await githubPut(token, repo, "INDEX.md", existing.content + row, commitMessage, existing.sha);
