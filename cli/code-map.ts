@@ -217,6 +217,10 @@ export function docLine(path: string, source: string): string | null {
   return null;
 }
 
+// "= (a: T): R =>", "= async x =>": the value is an arrow function, so its
+// parameters are part of the signature. Anything else after "=" is a value.
+const ARROW_VALUE = /^=\s*(?:async\s+)?(?:<[^<>]*>\s*)?(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[A-Za-z_$][\w$]*)\s*(?::[^=;{]+?)?\s*=>/;
+
 /**
  * One declaration's head, from its start to where its body or value begins:
  * name, parameters and types. Default values are left out, so no literal from
@@ -224,51 +228,57 @@ export function docLine(path: string, source: string): string | null {
  */
 function signatureAt(lang: Lang, src: string, start: number): string {
   const quotes = lang === "rs" || lang === "go" ? ['"'] : ['"', "'", "`"];
+  const OPEN = "([{<";
+  const CLOSE: Record<string, string> = { ")": "(", "]": "[", "}": "{", ">": "<" };
+  const stack: string[] = [];
   let out = "";
-  let depth = 0;
-  let skipFrom = -1; // depth of the default value being skipped
-  let arrowValue = false; // a const holding a function: its "=>" ends the signature
+  let skipFrom = -1; // stack depth of the default value being skipped
+  let arrowValue = false; // a const holding an arrow function: its "=>" ends the signature
   for (let i = start; i < src.length && out.length < 600; i++) {
     const c = src[i]!;
     const two = src.slice(i, i + 2);
+    const skipping = skipFrom >= 0;
     if (quotes.includes(c)) {
+      // A string's contents never leave the machine, even in a type.
       let j = i + 1;
       while (j < src.length && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
-      if (skipFrom < 0) out += src.slice(i, j + 1);
+      if (!skipping) out += `${c}…${c}`;
       i = j;
       continue;
     }
     if (two === "=>" || two === "->") {
-      if (skipFrom < 0) out += two;
       i++;
-      if (depth === 0 && two === "=>" && arrowValue) break;
+      if (skipping) continue;
+      out += two;
+      if (stack.length === 0 && two === "=>" && arrowValue) break;
       continue;
     }
-    if ("([<".includes(c)) depth++;
-    else if (")]>".includes(c) && depth > 0) {
-      depth--;
-      if (skipFrom >= 0 && depth < skipFrom) skipFrom = -1;
-    } else if (c === "{" ) {
-      if (depth === 0) break;
-      depth++;
-    } else if (c === "}" && depth > 0) depth--;
+    // Inside a default value, < and > are comparisons, not generics (but a ">"
+    // still closes the type parameter list a default sits in, as in <T = unknown>).
+    if (OPEN.includes(c) && !(c === "<" && skipping)) {
+      if (c === "{" && stack.length === 0) break;
+      stack.push(c);
+    } else if (CLOSE[c] && !(c === ">" && (stack.at(-1) !== "<" || (skipping && stack.length !== skipFrom)))) {
+      if (stack.at(-1) === CLOSE[c]) stack.pop();
+      if (skipping && stack.length < skipFrom) skipFrom = -1;
+    }
     if (skipFrom >= 0) {
-      if (c === "," && depth === skipFrom) skipFrom = -1;
+      if (c === "," && stack.length === skipFrom) skipFrom = -1;
       else continue;
     }
-    if (depth === 0) {
+    if (stack.length === 0) {
       if (c === ";" || (c === ":" && lang === "py") || (c === "\n" && lang !== "js")) break;
       if (c === "=" && src[i + 1] !== "=") {
-        // A function stored in a const keeps its parameters; any other value ends the signature.
-        if (lang === "js" && /^=\s*(?:async\s*)?(?:\(|function\b|[A-Za-z_$][\w$]*\s*=>)/.test(src.slice(i, i + 200))) {
+        // A const holding an arrow function keeps its parameters; any other value ends the signature.
+        if (lang === "js" && ARROW_VALUE.test(src.slice(i, i + 400))) {
           out += c;
           arrowValue = true;
           continue;
         }
         break;
       }
-    } else if (c === "=" && src[i + 1] !== "=") {
-      skipFrom = depth;
+    } else if (c === "=" && src[i + 1] !== "=" && !skipping) {
+      skipFrom = stack.length;
       continue;
     }
     out += c;

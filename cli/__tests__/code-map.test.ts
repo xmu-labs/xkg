@@ -637,6 +637,27 @@ describe("signatures", () => {
     ]);
   });
 
+  // protects: no value from the code rides along in a signature; fails_when: a parenthesized value, an IIFE body, a default with a comparison, or a string literal reaches the map; no_claim: every expression form
+  it("sends no values: parenthesized initializers, comparison defaults and string literals stay home", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = [
+      'export const token = ("private-token");',
+      'export const run = (function () { return "secret-body"; })();',
+      'export function f(x = limit > 0 ? "private-default" : "other", y: number) {}',
+      'export function g(mode: "fast" | "slow"): void {}',
+      "export const h = async (a: Map<string, number>, b = 2): Promise<void> => {};",
+    ].join("\n");
+    const out = signatures("a.ts", src);
+    expect(out).toEqual([
+      "const token",
+      "const run",
+      "function f(x, y: number)",
+      'function g(mode: "…" | "…"): void',
+      "const h = async (a: Map<string, number>, b): Promise<void> =>",
+    ]);
+    expect(out.join(" ")).not.toMatch(/private|secret|other|fast/);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);
