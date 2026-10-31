@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
-import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, type LlmUsage } from "@/lib/llm";
+import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, type LlmUsage } from "@/lib/llm";
+import { stepTimer, timingLine } from "@/lib/capture-timing";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
@@ -147,6 +148,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     if (card) waitingIn = await queueStrongFit(user, path, where, date);
   }
   timer.mark("queue");
+  timer.answered();
 
   // The user doesn't need links or the section to see the result, so they're
   // written after the response. Both edit the capture file, so one at a time:
@@ -162,7 +164,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     timer.mark("link");
     if (where) await writeWhereSection(token, repo, path, where);
     timer.mark("where");
-    console.info(JSON.stringify(timingLine(timer, llm, usage, fetched)));
+    console.info(JSON.stringify(timingLine("web", timer, llm, usage, fetched)));
   });
 
   return NextResponse.json({
@@ -172,31 +174,4 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     ...(card ? { where: card } : {}),
     ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
   });
-}
-
-/** Milliseconds per step since the previous mark, plus when the response left. */
-function stepTimer() {
-  const start = Date.now();
-  let last = start;
-  const ms: Record<string, number> = {};
-  return {
-    ms,
-    start,
-    mark(step: string) {
-      const now = Date.now();
-      ms[step] = now - last;
-      last = now;
-      if (step === "queue") ms.total = now - start;
-    },
-  };
-}
-
-/**
- * One log line per capture, so slow steps show up in the Vercel logs.
- * `total` is what the user waited; `background` is the work after the response.
- */
-function timingLine(timer: ReturnType<typeof stepTimer>, llm: ReturnType<typeof llmSettings>, usage: LlmUsage | null, fetched: boolean) {
-  const { provider, model, effort } = resolveLlm(llm);
-  const ms = { ...timer.ms, background: (timer.ms.link ?? 0) + (timer.ms.where ?? 0) };
-  return { event: "capture.timing", provider, model, effort, fetched, tokensIn: usage?.tokensIn ?? null, tokensOut: usage?.tokensOut ?? null, ms };
 }

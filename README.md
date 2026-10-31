@@ -76,7 +76,7 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
-The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
+The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
@@ -507,7 +507,7 @@ When you capture, the server talks to exactly four kinds of destination:
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
 
-Each web capture also writes one line to the server log (`capture.timing`): the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
+Each capture, from the app or from the `capture` tool, also writes one line to the server log (`capture.timing`): which of the two it came from, the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
 
 ### How your credentials are stored
 
