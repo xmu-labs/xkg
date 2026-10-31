@@ -152,6 +152,41 @@ test("the source check walks every page by itself, following the last checked ca
   await expect(page.getByRole("status")).toHaveText("");
 });
 
+test("when the hourly quota runs out, the next visit carries on where the check stopped", async ({ page }) => {
+  const many = Array.from({ length: 21 }, (_, i) => ({
+    date: `2026-09-${String(i + 1).padStart(2, "0")}`, slug: `c${i}`, filename: `2026-09-${String(i + 1).padStart(2, "0")}-c${i}.md`,
+    status: "inbox", summary: `Capture number ${i}.`, tags: [], type: null,
+  }));
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: many } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const bodies: unknown[] = [];
+  let quotaLeft = 1;
+  await page.route("**/api/captures/check", async (r) => {
+    const body = r.request().postDataJSON() as { after?: string };
+    bodies.push(body);
+    if (quotaLeft-- <= 0) return r.fulfill({ status: 429, json: { error: "Rate limit reached: 30 link checks per hour." } });
+    if (!body.after) {
+      return r.fulfill({ json: { results: many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" })), total: 21, next: 20, last: many[19]!.filename } });
+    }
+    return r.fulfill({ json: { results: [{ filename: many[20]!.filename, status: "stale", httpStatus: 404, reason: "" }], total: 21, next: null, last: null } });
+  });
+  await page.goto("/knowledge");
+  await expect.poll(() => bodies.length).toBe(2);
+  await expect(page.getByText("offline", { exact: false })).toHaveCount(0);
+  // The quota resets; the next visit resumes after capture 19 and finishes.
+  quotaLeft = 1;
+  await page.goto("/knowledge");
+  const last = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 20." });
+  await expect(last.getByText("The original page is offline", { exact: false })).toBeVisible();
+  expect(bodies).toEqual([{}, { after: many[19]!.filename }, { after: many[19]!.filename }]);
+  // A finished pass starts from the top next time.
+  quotaLeft = 5;
+  await page.goto("/knowledge");
+  await expect.poll(() => bodies.length).toBe(5);
+  expect(bodies[3]).toEqual({});
+});
+
 test("a 401 from the source check does not send the user to login", async ({ page }) => {
   await signIn(page);
   await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));

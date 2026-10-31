@@ -51,6 +51,15 @@ function flagNotes(check: LinkCheck | undefined): string[] {
   }
 }
 
+/** Where an unfinished source check stopped, kept per browser; null when none. */
+const CURSOR_KEY = "xkg-source-check-after";
+function readCursor(): string | null {
+  try { return localStorage.getItem(CURSOR_KEY); } catch { return null; }
+}
+function writeCursor(after: string | null): void {
+  try { after ? localStorage.setItem(CURSOR_KEY, after) : localStorage.removeItem(CURSOR_KEY); } catch { /* private mode: start over next time */ }
+}
+
 /** "Oct 26" from 2026-10-26. */
 function shortDate(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
@@ -78,17 +87,20 @@ export default function KnowledgePage() {
     // Source check: quietly, page by page, as soon as the page opens. It only
     // adds notes to cards, so any failure (even a 401) means no notes, never
     // an error or a redirect. Pages follow the last checked filename, so a
-    // capture archived meanwhile never makes the next page skip one. Leaving
-    // the page aborts the request in flight.
+    // capture archived meanwhile never makes the next page skip one. When the
+    // hourly quota runs out mid-way, the place is kept in this browser so the
+    // next visit carries on instead of starting over. Leaving the page aborts
+    // the request in flight.
     const aborter = new AbortController();
     void (async () => {
-      for (let after: string | null = null; ; ) {
+      for (let after: string | null = readCursor(); ; ) {
         const res = await fetch("/api/captures/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal: aborter.signal });
+        if (res.status === 429) return writeCursor(after);
         if (!res.ok) return;
         const data = (await res.json()) as { results: LinkCheck[]; last: string | null };
         if (aborter.signal.aborted) return;
         setChecks((c) => ({ ...c, ...Object.fromEntries(data.results.map((r) => [r.filename, r])) }));
-        if (data.last === null || data.results.length === 0) return;
+        if (data.last === null || data.results.length === 0) return writeCursor(null);
         after = data.last;
       }
     })().catch(() => { /* no notes this time */ });
