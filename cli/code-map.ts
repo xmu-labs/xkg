@@ -228,9 +228,9 @@ const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*
 const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
 
 // What reads as code rather than a declaration: a function body, a return, or a
-// call after a statement break. In Python, a lambda too.
+// call after a statement break. In Python, a lambda, comprehension or other expression keyword too.
 const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
-const PY_CODE = new RegExp(`${CODE.source}|\\blambda\\b`);
+const PY_CODE = new RegExp(`${CODE.source}|\\b(?:lambda|for|if|await|yield)\\b`);
 // No identifier in the mapped languages starts with a digit, so a token that
 // does is a literal: hex, binary, octal, bigint and suffixed forms included.
 const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|[0-7]{3}|.)|[^'\\\n])'/;
@@ -248,18 +248,37 @@ function scrub(lang: Lang, sig: string): string {
   return out.replace(NUMBER, "…");
 }
 
-/** Index of the brace closing the one at `open`, skipping quoted text; -1 if none. */
-function braceEnd(src: string, open: number): number {
+/** Index of the bracket closing the one at `open`, skipping quoted text; -1 if none. */
+function closingAt(lang: Lang, src: string, open: number): number {
+  const o = src[open]!;
+  const close = ({ "(": ")", "[": "]", "{": "}" } as Record<string, string>)[o]!;
   let depth = 0;
   for (let i = open; i < src.length; i++) {
     const c = src[i]!;
-    if (c === '"' || c === "`") {
+    const char = c === "'" && (lang === "rs" || lang === "go") ? CHAR_LITERAL.exec(src.slice(i, i + 16)) : null;
+    if (char) i += char[0].length - 1;
+    else if (c === '"' || c === "`" || (c === "'" && lang !== "rs" && lang !== "go")) {
       i++;
       while (i < src.length && src[i] !== c) i += src[i] === "\\" ? 2 : 1;
-    } else if (c === "{") depth++;
-    else if (c === "}" && --depth === 0) return i;
+    } else if (c === o) depth++;
+    else if (c === close && --depth === 0) return i;
   }
   return -1;
+}
+
+/**
+ * A bracket inside a signature that holds an expression, not a type: its
+ * contents are code, so they're replaced. Python: any parenthesis (a call).
+ * Rust: a brace (const block). Go: a brace that isn't a struct or interface
+ * type, and an array length that isn't a plain name or "...".
+ */
+function expressionBracket(lang: Lang, c: string, out: string, src: string, i: number, end: number): boolean {
+  if (lang === "py") return c === "(";
+  if (lang === "rs") return c === "{";
+  if (lang !== "go") return false;
+  if (c === "{") return !/\b(?:struct|interface)\s*$/.test(out);
+  // After a name, [ opens type parameters or a map key; anywhere else, an array length.
+  return c === "[" && !/\w$/.test(out) && !/^\[\s*(?:[A-Za-z_][\w.]*|\.\.\.)?\s*\]$/.test(src.slice(i, end + 1));
 }
 
 /**
@@ -282,6 +301,7 @@ function signatureAt(lang: Lang, src: string, start: number): string {
   const CLOSE: Record<string, string> = { ")": "(", "]": "[", "}": "{", ">": "<" };
   const CLOSER: Record<string, string> = { "(": ")", "[": "]", "{": "}", "<": ">" };
   const stack: string[] = [];
+  const opens: number[] = []; // where each bracket on the stack opened
   let out = "";
   let arrowValue = false; // a const holding an arrow function: its "=>" ends the signature
   let i = start;
@@ -315,21 +335,33 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     const angle = (c === "<" || c === ">") && lang !== "js" && lang !== "rs";
     if (OPEN.includes(c) && !angle) {
       if (c === "{" && stack.length === 0) break;
-      // Inside brackets, a Rust brace is a const block and a Go brace is a
-      // composite literal unless it opens a struct or interface type: both are
-      // code, so the whole block becomes {…}.
-      if (c === "{" && (lang === "rs" || (lang === "go" && !/\b(?:struct|interface)\s*$/.test(out)))) {
-        const end = braceEnd(src, i);
+      const mayHoldCode = (lang === "py" && c === "(") || (lang === "rs" && c === "{") || (lang === "go" && (c === "{" || c === "["));
+      if (mayHoldCode && (stack.length > 0 || lang === "go")) {
+        const end = closingAt(lang, src, i);
         if (end < 0) return "";
-        out += "{…}";
-        i = end;
-        continue;
+        if (expressionBracket(lang, c, out, src, i, end)) {
+          out += `${c}…${src[end]}`;
+          i = end;
+          continue;
+        }
       }
       stack.push(c);
+      opens.push(i);
     } else if (CLOSE[c] && !angle) {
       // A closer that doesn't match means the scan lost its place: send nothing.
       if (stack.at(-1) !== CLOSE[c]) return "";
       stack.pop();
+      opens.pop();
+    }
+    // A Rust array length ([T; N]) is an expression: anything but a plain name becomes "…".
+    if (lang === "rs" && c === ";" && stack.at(-1) === "[") {
+      const end = closingAt(lang, src, opens.at(-1)!);
+      if (end < 0) return "";
+      if (!/^\s*[A-Za-z_][\w:]*\s*$/.test(src.slice(i + 1, end))) {
+        out += "; …";
+        i = end - 1;
+        continue;
+      }
     }
     // In Rust, Iterator<Item = T> binds a type, not a value; <const N: usize = 4> is a default.
     const typeBinding = lang === "rs" && stack.at(-1) === "<" && !/\bconst\s+[A-Za-z_]\w*\s*:[^,<>]*$/.test(out);

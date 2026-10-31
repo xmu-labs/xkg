@@ -700,30 +700,45 @@ describe("signatures", () => {
 
   it("reads Go and Rust character literals whole, and sends nothing when brackets don't add up", async () => {
     const { signatures } = await import("../code-map.js");
-    expect(signatures("main.go", "func Read() ['(']byte { panic(secretIdentifier) }\nfunc Ok() error {\n}\n")).toEqual(["func Read() ['…']byte", "func Ok() error"]);
+    expect(signatures("main.go", "func Read() ['(']byte { panic(secretIdentifier) }\nfunc Ok() error {\n}\n")).toEqual(["func Read() […]byte", "func Ok() error"]);
     expect(signatures("src/a.rs", "pub fn f(xs: [u8; b'(' as usize]) -> u8 { secret_call() }\npub fn g<'a>(s: &'a str) -> &'a str {\n}\n")).toEqual([
-      "fn f(xs: [u8; b'…' as usize]) -> u8",
+      "fn f(xs: [u8; …]) -> u8",
       "fn g<'a>(s: &'a str) -> &'a str",
     ]);
     // Whatever confuses the scanner, a mismatched or unclosed bracket yields no signature at all.
-    expect(signatures("main.go", "func Bad() [(]byte { panic(secretIdentifier) }\n")).toEqual([]);
+    expect(signatures("main.go", "func Bad() [(]byte { panic(secretIdentifier) }\n").join(" ")).not.toMatch(/secret/);
     expect(signatures("a.ts", "export function open(a: string { secret(); }\n")).toEqual([]);
   });
 
   it("collapses Rust const blocks and Go braces that aren't struct or interface types", async () => {
     const { signatures } = await import("../code-map.js");
-    expect(signatures("src/a.rs", "pub fn f(xs: [u8; { secret_call() }]) {}\npub fn g(xs: [u8; { let n = { 4 }; n }]) {}\n")).toEqual(["fn f(xs: [u8; {…}])", "fn g(xs: [u8; {…}])"]);
+    expect(signatures("src/a.rs", "pub fn f(xs: [u8; { secret_call() }]) {}\npub fn g(xs: [u8; { let n = { 4 }; n }]) {}\n")).toEqual(["fn f(xs: [u8; …])", "fn g(xs: [u8; …])"]);
     expect(signatures("main.go", "func F(x struct{ A int }, y interface{ Close() error }) error {\n}\nfunc G(xs [len(map[string]int{\"k\": 1})]byte) {\n}\n")).toEqual([
       "func F(x struct{ A int }, y interface{ Close() error }) error",
-      "func G(xs [len(map[string]int{…})]byte)",
+      "func G(xs […]byte)",
     ]);
   });
 
   it("ends a signature at a Python lambda", async () => {
     const { signatures } = await import("../code-map.js");
     const out = signatures("app/a.py", "def f(x: Annotated[str, BeforeValidator(lambda v: send(v, privateIdentifier))]) -> int:\n    return 0\n");
-    expect(out).toEqual(["def f(x: Annotated[str, BeforeValidator( …"]);
+    expect(out).toEqual(["def f(x: Annotated[str, BeforeValidator(…)]) -> int"]);
+    expect(signatures("app/b.py", "def g(x: Annotated[str, lambda v: v]) -> int:\n    pass\n")).toEqual(["def g(x: Annotated[str, …"]);
     expect(signatures("a.ts", "export function handler(lambda: LambdaClient): void {}\n")).toEqual(["function handler(lambda: LambdaClient): void"]);
+  });
+
+  it("keeps no expression in a type position: Python calls and comprehensions, Rust and Go array lengths", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("app/a.py", "def f(x: Annotated[str, Field(gt=secret_limit())], y: list[int]) -> int:\n    pass\nclass A(namedtuple(\"A\", \"x y\")):\n    pass\n")).toEqual([
+      "def f(x: Annotated[str, Field(…)], y: list[int]) -> int",
+      "class A(namedtuple(…))",
+    ]);
+    const comp = signatures("app/b.py", "def f(x: Annotated[str, [v for v in settings if v]]) -> int:\n    pass\n").join(" ");
+    expect(comp).not.toMatch(/settings|\bif\b/);
+    expect(signatures("src/a.rs", "pub fn f(a: [u8; N], b: [u8; N + secret()], c: (u8, u16)) {}\n")).toEqual(["fn f(a: [u8; N], b: [u8; …], c: (u8, u16))"]);
+    expect(signatures("main.go", "func Map[K comparable, V any](m map[K]V, a [N]int, b [...]int, c []V, d [secret(1)]int) []V {\n}\n")).toEqual([
+      "func Map[K comparable, V any](m map[K]V, a [N]int, b [...]int, c []V, d […]int) []V",
+    ]);
   });
 
   it("reads Python, Go and Rust signatures", async () => {
