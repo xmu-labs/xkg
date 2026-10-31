@@ -122,7 +122,7 @@ test("Your knowledge has no sideways scroll at 320 px", async ({ page }) => {
   expect(overflow).toBe(0);
 });
 
-test("the source check walks every page of the inbox by itself", async ({ page }) => {
+test("the source check walks every page by itself, following the last checked capture", async ({ page }) => {
   const many = Array.from({ length: 21 }, (_, i) => ({
     date: `2026-09-${String(i + 1).padStart(2, "0")}`, slug: `c${i}`, filename: `2026-09-${String(i + 1).padStart(2, "0")}-c${i}.md`,
     status: "inbox", summary: `Capture number ${i}.`, tags: [], type: null,
@@ -130,17 +130,38 @@ test("the source check walks every page of the inbox by itself", async ({ page }
   await signIn(page);
   await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: many } }));
   await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
-  const offsets: unknown[] = [];
+  await page.route("**/api/captures/archive", (r) => r.fulfill({ json: { ok: true } }));
+  const bodies: unknown[] = [];
   await page.route("**/api/captures/check", async (r) => {
-    const { offset } = r.request().postDataJSON() as { offset: number };
-    offsets.push(offset);
-    const page1 = many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" }));
-    await r.fulfill({ json: offset === 0 ? { results: page1, total: 21, next: 20 } : { results: [{ filename: many[20]!.filename, status: "stale", httpStatus: 404, reason: "" }], total: 21, next: null } });
+    const body = r.request().postDataJSON() as { after?: string };
+    bodies.push(body);
+    if (!body.after) {
+      const page1 = many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" }));
+      await r.fulfill({ json: { results: page1, total: 21, next: 20, last: many[19]!.filename } });
+      return;
+    }
+    await r.fulfill({ json: { results: [{ filename: many[20]!.filename, status: "stale", httpStatus: 404, reason: "" }], total: 21, next: null, last: null } });
   });
   await page.goto("/knowledge");
   const last = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 20." });
   await expect(last.getByText("The original page is offline", { exact: false })).toBeVisible();
-  expect(offsets).toEqual([0, 20]);
+  expect(bodies).toEqual([{}, { after: many[19]!.filename }]);
+  await expect(page.getByRole("status")).toHaveText("Source check: 1 capture has a note.");
+  // Archiving a noted capture takes its note out of the count.
+  await last.getByRole("button", { name: "Archive" }).tap();
+  await expect(page.getByRole("status")).toHaveText("");
+});
+
+test("a 401 from the source check does not send the user to login", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  let checked = false;
+  await page.route("**/api/captures/check", (r) => { checked = true; return r.fulfill({ status: 401, json: { error: "Unauthorized" } }); });
+  await page.goto("/knowledge");
+  await expect.poll(() => checked).toBe(true);
+  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/knowledge$/);
 });
 
 test("a failed source check shows nothing", async ({ page }) => {

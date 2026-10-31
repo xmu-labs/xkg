@@ -77,18 +77,22 @@ export default function KnowledgePage() {
       .catch(() => { /* the applies line just stays hidden */ });
     // Source check: quietly, page by page, as soon as the page opens. It only
     // adds notes to cards, so any failure (even a 401) means no notes, never
-    // an error or a redirect.
-    let cancelled = false;
+    // an error or a redirect. Pages follow the last checked filename, so a
+    // capture archived meanwhile never makes the next page skip one. Leaving
+    // the page aborts the request in flight.
+    const aborter = new AbortController();
     void (async () => {
-      for (let offset: number | null = 0; offset !== null && !cancelled; ) {
-        const res = await fetch("/api/captures/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offset }) });
-        if (!res.ok || cancelled) return;
-        const data = (await res.json()) as { results: LinkCheck[]; next: number | null };
+      for (let after: string | null = null; ; ) {
+        const res = await fetch("/api/captures/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal: aborter.signal });
+        if (!res.ok) return;
+        const data = (await res.json()) as { results: LinkCheck[]; last: string | null };
+        if (aborter.signal.aborted) return;
         setChecks((c) => ({ ...c, ...Object.fromEntries(data.results.map((r) => [r.filename, r])) }));
-        offset = data.next;
+        if (data.last === null || data.results.length === 0) return;
+        after = data.last;
       }
     })().catch(() => { /* no notes this time */ });
-    return () => { cancelled = true; };
+    return () => aborter.abort();
   }, []);
 
   const shown = useMemo(() => (captures ?? []).filter((c) => c.status === tab), [captures, tab]);
@@ -107,6 +111,12 @@ export default function KnowledgePage() {
   function moved(filename: string, to: CaptureStatus | null) {
     setCaptures((list) => (list ?? []).flatMap((c) => (c.filename !== filename ? [c] : to ? [{ ...c, status: to }] : [])));
   }
+
+  /** Inbox captures with a note, so a screen reader hears that notes arrived. */
+  const noted = useMemo(
+    () => (captures ?? []).filter((c) => c.status === "inbox" && flagNotes(checks[c.filename]).length > 0).length,
+    [captures, checks],
+  );
 
   const thisWeek = weeks?.[0];
 
@@ -147,6 +157,7 @@ export default function KnowledgePage() {
       </div>
 
       {/* List */}
+      <p role="status" className="sr-only">{noted > 0 ? `Source check: ${noted} ${noted === 1 ? "capture has" : "captures have"} a note.` : ""}</p>
       {loadError && <p role="alert" className="text-sm" style={{ color: "var(--danger)" }}>{loadError}</p>}
       {!captures && !loadError && <p className="text-sm" style={{ color: "var(--fg-muted)" }}>Loading…</p>}
       {captures && shown.length === 0 && (
