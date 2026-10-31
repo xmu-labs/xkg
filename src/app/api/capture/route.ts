@@ -151,11 +151,11 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   // The user doesn't need links or the section to see the result, so they're
   // written after the response. Both edit the capture file, so one at a time:
   // linking first, then the section.
-  const { github_token: token, github_repo: repo, llm_api_key: apiKey } = user;
+  const { github_token: token, github_repo: repo } = user;
   after(async () => {
     try {
       const indexFile = await readFile(token, repo, "INDEX.md");
-      if (indexFile) await linkCapture(apiKey, token, repo, capture, filename, "inbox", indexFile.content, llm);
+      if (indexFile) await linkCapture(token, repo, capture, filename, "inbox", indexFile.content);
     } catch {
       // Linking is best-effort
     }
