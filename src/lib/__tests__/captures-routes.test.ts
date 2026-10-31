@@ -182,6 +182,22 @@ describe("POST /api/captures/check", () => {
     expect(githubPut).not.toHaveBeenCalled();
   });
 
+  // protects: paging by `after` starts right after that filename and says which filename comes next, so a capture archived between pages never shifts the next page; fails_when: `after` is ignored, or `last` is set on the final page; no_claim: the HEAD requests themselves
+  it("pages by the last checked filename and names the next starting point", async () => {
+    for (const n of ["a", "b", "c"]) files.set(`inbox/2026-10-30-${n}.md`, { content: captureFile("none", false), sha: n });
+    safeFetch.mockResolvedValue({ status: 200 });
+    const first = await (await check.POST(req("/api/captures/check", {}))).json() as { results: Array<{ filename: string }>; last: string | null };
+    expect(first.results.map((r) => r.filename)).toEqual([CAPTURE, "2026-10-30-a.md", "2026-10-30-b.md", "2026-10-30-c.md"]);
+    expect(first.last).toBeNull();
+    const after = await (await check.POST(req("/api/captures/check", { after: "2026-10-30-a.md" }))).json() as { results: Array<{ filename: string }>; last: string | null };
+    expect(after.results.map((r) => r.filename)).toEqual(["2026-10-30-b.md", "2026-10-30-c.md"]);
+    expect(after.last).toBeNull();
+    for (let i = 0; i < 20; i++) files.set(`inbox/2026-11-${String(i + 1).padStart(2, "0")}-x.md`, { content: captureFile("none", false), sha: `x${i}` });
+    const full = await (await check.POST(req("/api/captures/check", {}))).json() as { results: Array<{ filename: string }>; last: string | null };
+    expect(full.results).toHaveLength(20);
+    expect(full.last).toBe("2026-11-16-x.md");
+  });
+
   // protects: link checks make outbound requests, so they're rate limited; fails_when: a check runs past the quota; no_claim: the quota store
   it("answers 429 when the hourly quota is used up", async () => {
     consumeQuota.mockResolvedValue({ allowed: false, limit: 30, resetIn: 60 });

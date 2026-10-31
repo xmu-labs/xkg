@@ -7,9 +7,12 @@ const CHECKS_PER_HOUR = 30;
 const PAGE = 20;
 
 /**
- * The captures page's "Check links" button: one page of inbox captures, each
- * checked for a gone source and a low-confidence extraction. It flags only;
- * the user archives from the list. Body: { offset? }.
+ * The Your knowledge page's quiet source check, run as the page opens: one
+ * page of inbox captures, each checked for an offline source and a
+ * low-confidence extraction. It only adds notes; the user archives from the
+ * list. Body: { after?: filename } for the page after that capture (safe when
+ * captures leave the inbox meanwhile), or the older { offset? }. The answer's
+ * `last` is the filename to pass as `after` next, null when done.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
@@ -23,11 +26,14 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return fail(429, `Rate limit reached: ${quota.limit} link checks per hour.`, { "Retry-After": String(quota.resetIn) });
     }
 
-    const offset = typeof body.offset === "number" ? body.offset : 0;
-    const inbox = await inboxPage(user, { offset, limit: PAGE }, PAGE);
-    if (!inbox) return NextResponse.json({ results: [], total: 0, next: null });
+    const after = typeof body.after === "string" ? body.after : undefined;
+    const offset = !after && typeof body.offset === "number" ? body.offset : 0;
+    const inbox = await inboxPage(user, { after, offset, limit: PAGE }, PAGE);
+    if (!inbox) return NextResponse.json({ results: [], total: 0, next: null, last: null });
     const results = await Promise.all(inbox.page.items.map((f) => checkCapture(user, f.name)));
-    return NextResponse.json({ results, total: inbox.page.total, next: inbox.page.nextOffset });
+    const more = inbox.page.nextOffset !== null;
+    const last = more ? inbox.page.items[inbox.page.items.length - 1]!.name : null;
+    return NextResponse.json({ results, total: inbox.page.total, next: inbox.page.nextOffset, last });
   } catch (err) {
     const github = githubFailure(err);
     if (github) return github;

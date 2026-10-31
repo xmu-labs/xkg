@@ -81,8 +81,10 @@ test("a failed archive says why and keeps the capture", async ({ page }) => {
   await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(2);
 });
 
-test("check links flags captures whose source is gone", async ({ page }) => {
-  await open(page);
+test("a capture whose source is offline gets a reassuring note, without any tap", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
   await page.route("**/api/captures/check", (r) => r.fulfill({ json: {
     results: [
       { filename: "2026-10-28-llm-memory.md", status: "ok", httpStatus: 200, reason: "" },
@@ -90,10 +92,14 @@ test("check links flags captures whose source is gone", async ({ page }) => {
     ],
     total: 2, next: null,
   } }));
-  await page.getByRole("button", { name: "Check links" }).tap();
-  await expect(page.getByText("1 of 2 need a look.")).toBeVisible();
-  const row = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Most failures" });
-  await expect(row.getByText("Source is gone · Low confidence")).toBeVisible();
+  await page.goto("/knowledge");
+  await expect(page.getByRole("button", { name: /Check/ })).toHaveCount(0);
+  const list = page.getByTestId("capture-list");
+  const row = list.getByRole("listitem").filter({ hasText: "Most failures" });
+  await expect(row.getByText("The original page is offline. What you learned from it is saved in your knowledge repo.")).toBeVisible();
+  await expect(row.getByText("The AI wasn't sure about this one. Worth a quick read.")).toBeVisible();
+  await expect(list.getByRole("listitem").filter({ hasText: "Memory goes into the prompt" }).getByText("offline")).toHaveCount(0);
+  await expect(page.getByText(/need a look|not checked yet/)).toHaveCount(0);
 });
 
 test("make rules turns a tag into rules", async ({ page }) => {
@@ -116,7 +122,7 @@ test("Your knowledge has no sideways scroll at 320 px", async ({ page }) => {
   expect(overflow).toBe(0);
 });
 
-test("checking more links after an archive still checks the rest", async ({ page }) => {
+test("the source check walks every page by itself, following the last checked capture", async ({ page }) => {
   const many = Array.from({ length: 21 }, (_, i) => ({
     date: `2026-09-${String(i + 1).padStart(2, "0")}`, slug: `c${i}`, filename: `2026-09-${String(i + 1).padStart(2, "0")}-c${i}.md`,
     status: "inbox", summary: `Capture number ${i}.`, tags: [], type: null,
@@ -125,21 +131,86 @@ test("checking more links after an archive still checks the rest", async ({ page
   await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: many } }));
   await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
   await page.route("**/api/captures/archive", (r) => r.fulfill({ json: { ok: true } }));
-  const offsets: unknown[] = [];
+  const bodies: unknown[] = [];
   await page.route("**/api/captures/check", async (r) => {
-    const { offset } = r.request().postDataJSON() as { offset: number };
-    offsets.push(offset);
-    const page1 = many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" }));
-    await r.fulfill({ json: offset === 0 ? { results: page1, total: 21, next: 20 } : { results: [{ filename: many[20]!.filename, status: "ok", httpStatus: 200, reason: "" }], total: 20, next: null } });
+    const body = r.request().postDataJSON() as { after?: string };
+    bodies.push(body);
+    if (!body.after) {
+      const page1 = many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" }));
+      await r.fulfill({ json: { results: page1, total: 21, next: 20, last: many[19]!.filename } });
+      return;
+    }
+    await r.fulfill({ json: { results: [{ filename: many[20]!.filename, status: "stale", httpStatus: 404, reason: "" }], total: 21, next: null, last: null } });
   });
   await page.goto("/knowledge");
-  await page.getByRole("button", { name: "Check links" }).tap();
-  await expect(page.getByRole("button", { name: "Check more links" })).toBeVisible();
-  await page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 3." }).getByRole("button", { name: "Archive" }).tap();
-  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(20);
-  await page.getByRole("button", { name: "Check more links" }).tap();
-  await expect(page.getByText("0 of 20 need a look.")).toBeVisible();
-  expect(offsets).toEqual([0, 19]);
+  const last = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 20." });
+  await expect(last.getByText("The original page is offline", { exact: false })).toBeVisible();
+  expect(bodies).toEqual([{}, { after: many[19]!.filename }]);
+  await expect(page.getByRole("status")).toHaveText("Source check: 1 capture has a note.");
+  // Archiving a noted capture takes its note out of the count.
+  await last.getByRole("button", { name: "Archive" }).tap();
+  await expect(page.getByRole("status")).toHaveText("");
+});
+
+test("when the hourly quota runs out, the next visit carries on where the check stopped", async ({ page }) => {
+  const many = Array.from({ length: 21 }, (_, i) => ({
+    date: `2026-09-${String(i + 1).padStart(2, "0")}`, slug: `c${i}`, filename: `2026-09-${String(i + 1).padStart(2, "0")}-c${i}.md`,
+    status: "inbox", summary: `Capture number ${i}.`, tags: [], type: null,
+  }));
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: many } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const bodies: unknown[] = [];
+  let quotaLeft = 1;
+  await page.route("**/api/captures/check", async (r) => {
+    const body = r.request().postDataJSON() as { after?: string };
+    bodies.push(body);
+    if (quotaLeft-- <= 0) return r.fulfill({ status: 429, json: { error: "Rate limit reached: 30 link checks per hour." } });
+    if (!body.after) {
+      return r.fulfill({ json: { results: many.slice(0, 20).map((c) => ({ filename: c.filename, status: "ok", httpStatus: 200, reason: "" })), total: 21, next: 20, last: many[19]!.filename } });
+    }
+    return r.fulfill({ json: { results: [{ filename: many[20]!.filename, status: "stale", httpStatus: 404, reason: "" }], total: 21, next: null, last: null } });
+  });
+  await page.goto("/knowledge");
+  await expect.poll(() => bodies.length).toBe(2);
+  await expect(page.getByText("offline", { exact: false })).toHaveCount(0);
+  // The quota resets; the next visit resumes after capture 19 and finishes.
+  quotaLeft = 1;
+  await page.goto("/knowledge");
+  const last = page.getByTestId("capture-list").getByRole("listitem").filter({ hasText: "Capture number 20." });
+  await expect(last.getByText("The original page is offline", { exact: false })).toBeVisible();
+  expect(bodies).toEqual([{}, { after: many[19]!.filename }, { after: many[19]!.filename }]);
+  // A finished pass starts from the top next time.
+  quotaLeft = 5;
+  await page.goto("/knowledge");
+  await expect.poll(() => bodies.length).toBe(5);
+  expect(bodies[3]).toEqual({});
+});
+
+test("a 401 from the source check does not send the user to login", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  let checked = false;
+  await page.route("**/api/captures/check", (r) => { checked = true; return r.fulfill({ status: 401, json: { error: "Unauthorized" } }); });
+  await page.goto("/knowledge");
+  await expect.poll(() => checked).toBe(true);
+  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/knowledge$/);
+});
+
+test("a failed source check shows nothing", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  let checked = false;
+  await page.route("**/api/captures/check", (r) => { checked = true; return r.fulfill({ status: 500, json: { error: "boom" } }); });
+  await page.goto("/knowledge");
+  await expect(page.getByTestId("capture-list").getByRole("listitem")).toHaveCount(2);
+  await expect.poll(() => checked).toBe(true);
+  // Next's route announcer is an empty alert; a shown error would have text.
+  await expect(page.getByRole("alert").filter({ hasText: /\S/ })).toHaveCount(0);
+  await expect(page.getByText("offline", { exact: false })).toHaveCount(0);
 });
 
 test("make rules uses a tag that still exists after its last capture is deleted", async ({ page }) => {
