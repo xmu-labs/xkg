@@ -10,9 +10,10 @@ import type { ExtractedCapture, SourceSnapshot, ContentType, RelatedCapture, Rel
 
 // ── Config ──
 
-/** Answer budget for extraction. Claims with evidence roughly triple the
- *  answer; at 800 tokens longer sources were cut off mid-JSON. */
-const MAX_TOKENS = 4000;
+/** Answer budget for extraction: a ceiling, not a spend. A typical answer
+ *  with claims is about 1,000 tokens; at 800 longer sources were cut off
+ *  mid-JSON. The ceiling bounds what one runaway answer can cost. */
+const MAX_TOKENS = 2000;
 
 /** The model xkg uses for a provider when the user has not picked one: the
  *  first in its list, chosen for low cost. BYOK: the user's key, the user's bill.
@@ -342,7 +343,7 @@ INPUT
 You receive:
 - Source metadata, when available.
 - Source text divided into segments.
-- Application-provided sourceId, sourceVersionId, and segmentId values.
+- Application-provided segmentId values.
 - Optional readerContext.
 
 Use only these inputs. Do not use outside knowledge.
@@ -497,13 +498,9 @@ corresponding record in claims with this structure:
 
 {
   "outputPath": "/takeaways/0",
-  "text": "The exact text of the corresponding extracted field.",
-  "kind": "source_assertion",
   "evidence": [
     {
-      "sourceId": "An identifier supplied in the input.",
-      "sourceVersionId": "The supplied source version identifier.",
-      "segmentId": "An identifier supplied in that source version.",
+      "segmentId": "An identifier supplied in the input.",
       "exactQuote": "An exact, contiguous excerpt from that segment."
     }
   ]
@@ -511,12 +508,13 @@ corresponding record in claims with this structure:
 
 - Use "/coreIdea" for coreIdea.
 - Use zero-based paths such as "/takeaways/0" for takeaways.
-- Copy the corresponding output field exactly into text.
-- Use only source, version, and segment identifiers supplied in the input.
-- Include at least one evidence reference per claim.
-- Select the smallest passage or set of passages sufficient to support
-  the complete claim, including material qualifications.
-- Multiple evidence references may support one claim.
+- Do not copy the field's text into the record; outputPath links them.
+- Use only segment identifiers supplied in the input.
+- Include one evidence reference per claim: the shortest exact excerpt
+  that supports the complete claim, including material qualifications.
+  Keep it short: one sentence or part of one, about 25 words or fewer.
+- Add a second reference only when no single excerpt supports the
+  complete claim.
 - Evidence must support every assertion in the corresponding field.
 - If support is incomplete, narrow the wording or omit the claim and
   its corresponding output value.
@@ -553,7 +551,7 @@ Before returning:
 2. Material qualifications have survived extraction.
 3. Every core idea and takeaway has its corresponding claim record.
 4. Every evidence quote occurs exactly in its referenced segment.
-5. Every reference uses an identifier supplied in the input.
+5. Every reference uses a segment identifier supplied in the input.
 6. Suggestions are separate from source assertions and user decisions.
 7. The output follows the JSON contract.
 
