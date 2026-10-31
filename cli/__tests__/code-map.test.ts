@@ -710,6 +710,15 @@ describe("signatures", () => {
     expect(signatures("a.ts", "export function open(a: string { secret(); }\n")).toEqual([]);
   });
 
+  it("collapses Rust const blocks and Go braces that aren't struct or interface types", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("src/a.rs", "pub fn f(xs: [u8; { secret_call() }]) {}\npub fn g(xs: [u8; { let n = { 4 }; n }]) {}\n")).toEqual(["fn f(xs: [u8; {…}])", "fn g(xs: [u8; {…}])"]);
+    expect(signatures("main.go", "func F(x struct{ A int }, y interface{ Close() error }) error {\n}\nfunc G(xs [len(map[string]int{\"k\": 1})]byte) {\n}\n")).toEqual([
+      "func F(x struct{ A int }, y interface{ Close() error }) error",
+      "func G(xs [len(map[string]int{…})]byte)",
+    ]);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

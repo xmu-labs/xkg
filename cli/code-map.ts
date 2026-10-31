@@ -247,6 +247,20 @@ function scrub(sig: string): string {
   return out.replace(NUMBER, "…");
 }
 
+/** Index of the brace closing the one at `open`, skipping quoted text; -1 if none. */
+function braceEnd(src: string, open: number): number {
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    if (c === '"' || c === "`") {
+      i++;
+      while (i < src.length && src[i] !== c) i += src[i] === "\\" ? 2 : 1;
+    } else if (c === "{") depth++;
+    else if (c === "}" && --depth === 0) return i;
+  }
+  return -1;
+}
+
 /**
  * Whether a TypeScript declaration goes on past a line break at the top level:
  * the line ends mid-type, or the next line goes on with one. Code without
@@ -300,6 +314,16 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     const angle = (c === "<" || c === ">") && lang !== "js" && lang !== "rs";
     if (OPEN.includes(c) && !angle) {
       if (c === "{" && stack.length === 0) break;
+      // Inside brackets, a Rust brace is a const block and a Go brace is a
+      // composite literal unless it opens a struct or interface type: both are
+      // code, so the whole block becomes {…}.
+      if (c === "{" && (lang === "rs" || (lang === "go" && !/\b(?:struct|interface)\s*$/.test(out)))) {
+        const end = braceEnd(src, i);
+        if (end < 0) return "";
+        out += "{…}";
+        i = end;
+        continue;
+      }
       stack.push(c);
     } else if (CLOSE[c] && !angle) {
       // A closer that doesn't match means the scan lost its place: send nothing.
