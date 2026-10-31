@@ -28,7 +28,9 @@ test("a Strong fit shows the pill, the repo, each file with its reason, and also
   for (const f of WORST_CAPTURE.where.files) await expect(card.getByText(f.path)).toBeVisible();
   await expect(card.locator("code", { hasText: "retrievalRecallAtKEvaluatorWithSemanticChunkBoundaries" })).toBeVisible();
   await expect(card.getByText(/Also fits: .*\(Possible fit\)/)).toBeVisible();
-  await expect(card.getByText(/not yet checked in your code/)).toBeVisible();
+  await expect(card.getByText("Matched by file names. Your coding agent checks the code.")).toBeVisible();
+  await expect(card).not.toContainText("not yet checked");
+  await expect(card).not.toContainText("map from");
   await expect(card).not.toContainText(/\d\.\d/);
   // One card: the old blocks are gone.
   await expect(page.getByText("In your code", { exact: true })).toHaveCount(0);

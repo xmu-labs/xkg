@@ -211,8 +211,13 @@ test("tapping a card opens the whole capture", async ({ page }) => {
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Why RAG pipelines fail");
   await expect(page.getByText("Measure recall@k before tuning prompts.")).toBeVisible();
   await expect(page.getByText("Retrieval is the bottleneck.")).toBeVisible();
-  await expect(page.getByTestId("where")).toContainText("recall is checked before prompts");
-  await expect(page.getByText("Add a recall check to the eval suite.")).toBeVisible();
+  await expect(page.getByTestId("apply-it")).toContainText("recall is checked before prompts");
+  await expect(page.getByTestId("apply-it").getByTestId("fit")).toHaveText("Possible fit");
+  await expect(page.getByText("In your code", { exact: true })).toHaveCount(0);
+  // The menu is on a capture page too.
+  await page.getByRole("button", { name: "Menu" }).tap();
+  await expect(page.getByRole("dialog").getByRole("link", { name: /Your knowledge/ })).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("link", { name: /Read the source on northwind-industries-holdings/ })).toHaveAttribute("href", LONG_URL);
   // Markup in a capture is text, never HTML.
   await expect(page.getByText("<script>window.pwned = true</script>")).toBeVisible();

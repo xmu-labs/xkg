@@ -40,7 +40,8 @@ function withCode(text: string) {
   return text.split("`").map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[12px]">{part}</code> : part));
 }
 
-const DEFAULT_NOTE = "From file names. Your coding agent checks the code.";
+/** Always this line: the stored note ("from file names, not yet checked … · map from …") reads as noise on the card. */
+const NOTE = "Matched by file names. Your coding agent checks the code.";
 
 /**
  * Where and how a capture applies: the fit and the files in the user's code,
@@ -80,7 +81,7 @@ export default function ApplyIt({ where, advice, handoff, style }: ApplyItProps)
             </p>
           )}
           {handoff && <HandOff {...handoff} />}
-          <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{where.note ?? DEFAULT_NOTE}</p>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{NOTE}</p>
         </>
       ) : (
         <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{advice}</p>

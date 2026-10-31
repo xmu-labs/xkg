@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import BrandMark from "@/components/BrandMark";
+import Link from "next/link";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import Backdrop from "@/components/Backdrop";
 import type { CaptureRow, CaptureStatus, LinkCheck } from "@/lib/captures";
