@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
-import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings } from "@/lib/llm";
+import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, type LlmUsage } from "@/lib/llm";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota } from "@/lib/rate-limit";
@@ -83,6 +83,9 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   }
 
   const sourceType = detectSourceType(content);
+  const llm = llmSettings(user);
+  const timer = stepTimer();
+  let usage: LlmUsage | null = null;
 
   // For a bare URL, fetch the live page server-side so the LLM reasons over the
   // page's real content instead of guessing from training data (which risks
@@ -90,65 +93,71 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   // failure we fall back to URL-only mode and pass the raw URL string through.
   let llmContent = content;
   const sourceUrl = sourceType === "url" ? content.trim() : undefined;
+  let fetched = false;
   if (sourceUrl) {
-    const fetched = await fetchSourceContent(sourceUrl);
-    if (fetched) llmContent = fetched;
+    const page = await fetchSourceContent(sourceUrl);
+    if (page) {
+      llmContent = page;
+      fetched = true;
+    }
   }
+  timer.mark("fetch");
 
   // Extract insights via LLM
   let capture;
   try {
-    capture = await extractCapture(user.llm_api_key, llmContent, title, llmSettings(user), { url: sourceUrl });
+    capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Extraction failed";
     return NextResponse.json({ error: message }, { status: 502 });
   }
+  timer.mark("extract");
 
   // Where it applies: one more call (Jev, or the user's model when Jev can't
-  // answer), started now so it runs alongside writing and linking instead of
-  // after them. Never throws.
+  // answer), started now so it runs alongside writing the file. Never throws.
   const matching = matchCapture(user, capture);
 
   // Build Markdown and commit to user's repo
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
+  const path = `inbox/${filename}`;
   const markdown = buildMarkdown(date, capture, content, sourceType);
 
-  await githubPut(
-    user.github_token,
-    user.github_repo,
-    `inbox/${filename}`,
-    markdown,
-    `capture: add ${filename}`,
-  );
+  await githubPut(user.github_token, user.github_repo, path, markdown, `capture: add ${filename}`);
+  timer.mark("save");
 
   // Update INDEX.md
   const row = buildIndexRow(date, capture, filename, sourceType);
   await appendToIndex(user.github_token, user.github_repo, row, `capture: update index for ${filename}`);
-
-  // Auto-link to related captures (best-effort)
-  if (user.llm_api_key) {
-    try {
-      const indexFile = await readFile(user.github_token, user.github_repo, "INDEX.md");
-      if (indexFile) {
-        await linkCapture(user.llm_api_key, user.github_token, user.github_repo, capture, filename, "inbox", indexFile.content, llmSettings(user));
-      }
-    } catch {
-      // Linking is best-effort
-    }
-  }
+  timer.mark("index");
 
   const where = await matching;
+  timer.mark("match");
   const card = where ? whereCard(where) : null;
   let waitingIn: string | null = null;
   if (where) {
-    await Promise.all([
-      writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where),
-      recordWhereEvent(user.id, `inbox/${filename}`, where, card !== null),
-    ]);
+    await recordWhereEvent(user.id, path, where, card !== null);
     // A Strong fit waits for the next coding session in that repo.
-    if (card) waitingIn = await queueStrongFit(user, `inbox/${filename}`, where, date);
+    if (card) waitingIn = await queueStrongFit(user, path, where, date);
   }
+  timer.mark("queue");
+
+  // The user doesn't need links or the section to see the result, so they're
+  // written after the response. Both edit the capture file, so one at a time:
+  // linking first, then the section.
+  const { github_token: token, github_repo: repo, llm_api_key: apiKey } = user;
+  after(async () => {
+    try {
+      const indexFile = await readFile(token, repo, "INDEX.md");
+      if (indexFile) await linkCapture(apiKey, token, repo, capture, filename, "inbox", indexFile.content, llm);
+    } catch {
+      // Linking is best-effort
+    }
+    timer.mark("link");
+    if (where) await writeWhereSection(token, repo, path, where);
+    timer.mark("where");
+    console.info(JSON.stringify(timingLine(timer, llm, usage, fetched)));
+  });
 
   return NextResponse.json({
     capture,
@@ -157,4 +166,31 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     ...(card ? { where: card } : {}),
     ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
   });
+}
+
+/** Milliseconds per step since the previous mark, plus when the response left. */
+function stepTimer() {
+  const start = Date.now();
+  let last = start;
+  const ms: Record<string, number> = {};
+  return {
+    ms,
+    start,
+    mark(step: string) {
+      const now = Date.now();
+      ms[step] = now - last;
+      last = now;
+      if (step === "queue") ms.total = now - start;
+    },
+  };
+}
+
+/**
+ * One log line per capture, so slow steps show up in the Vercel logs.
+ * `total` is what the user waited; `background` is the work after the response.
+ */
+function timingLine(timer: ReturnType<typeof stepTimer>, llm: ReturnType<typeof llmSettings>, usage: LlmUsage | null, fetched: boolean) {
+  const { provider, model, effort } = resolveLlm(llm);
+  const ms = { ...timer.ms, background: (timer.ms.link ?? 0) + (timer.ms.where ?? 0) };
+  return { event: "capture.timing", provider, model, effort, fetched, tokensIn: usage?.tokensIn ?? null, tokensOut: usage?.tokensOut ?? null, ms };
 }

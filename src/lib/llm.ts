@@ -545,7 +545,7 @@ export async function extractCapture(
   content: string,
   title?: string,
   llm: LlmConfig = "anthropic",
-  meta: { url?: string } = {},
+  meta: { url?: string; onUsage?: (usage: LlmUsage) => void } = {},
 ): Promise<ExtractedCapture> {
   const source = buildSource(content, { title, url: meta.url, maxChars: MAX_INPUT_CHARS });
   const input = buildExtractionInput(source);
@@ -556,6 +556,7 @@ export async function extractCapture(
     system: SYSTEM_PROMPT,
     user: input,
     maxTokens: MAX_TOKENS,
+    onUsage: meta.onUsage,
   });
 
   const rawJson = rawText
