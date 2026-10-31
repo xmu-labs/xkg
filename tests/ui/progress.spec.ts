@@ -22,7 +22,7 @@ test("asks for the progress stream and shows the result it ends with", async ({ 
   });
   await start(page);
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByTestId("saved")).toBeVisible();
   expect(accept).toContain("application/x-ndjson");
 });
 
@@ -39,7 +39,7 @@ test("shows the current stage on the button while it waits", async ({ page }) =>
   await expect(button).toHaveText(/Extracting insights…/);
   await expect(button).toHaveAttribute("aria-busy", "true");
   finish();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByTestId("saved")).toBeVisible();
 });
 
 test("says to check the captures when the connection drops while saving", async ({ page }) => {
