@@ -71,10 +71,14 @@ function frontmatter(content: string): { fields: Map<string, string>; body: stri
   return { fields, body: m ? content.slice(m[0].length) : content };
 }
 
-/** The capture's own part: everything before the `---` that opens the raw capture and source text. */
+/**
+ * The capture's own part: everything before the raw capture and source text.
+ * Web captures put a `---` line before them; MCP captures go straight to the
+ * source text's `<details>` block.
+ */
 function ownPart(body: string): string {
-  const end = body.search(/\n---\n/);
-  return end < 0 ? body : body.slice(0, end);
+  const ends = [body.search(/\n---\n/), body.search(/^<details>/m)].filter((i) => i >= 0);
+  return ends.length ? body.slice(0, Math.min(...ends)) : body;
 }
 
 /** "## Heading" → its text, first occurrence only. */

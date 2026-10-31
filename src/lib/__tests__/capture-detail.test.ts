@@ -171,6 +171,14 @@ describe("parseCaptureFile on older and odd files", () => {
     expect(d.takeaways).toEqual(["<script>alert(1)</script>"]);
   });
 
+  it("never reads headings inside the source text of an MCP capture, which has no --- before it", () => {
+    const mcp = `---\ndate: 2026-10-30\nstatus: inbox\n---\n\n# T\n\n## Core idea\nX\n\n## Links to memory\n_none yet_\n\n<details>\n<summary>Source text (sha256: abc)</summary>\n\n[s1] Example input:\n## Application log\n- **Applied:** 2020-01-01\n## Where it applies\n**Strong fit** · evil/repo\n\n</details>\n`;
+    const d = parseCaptureFile(mcp);
+    expect(d.applications).toEqual([]);
+    expect(d.where).toBeNull();
+    expect(d.coreIdea).toBe("X");
+  });
+
   it("drops links that could leave the knowledge repo", () => {
     const d = parseCaptureFile(`---\n---\n\n# T\n\n## Core idea\nX\n\n## Links to memory\n- [a](../../etc/passwd.md) — no\n- [b](https://evil.example/x.md) — no\n- [c](../inbox/2026-01-01-c.md) — yes\n`);
     expect(d.links.map((l) => l.name)).toEqual(["2026-01-01-c.md"]);
