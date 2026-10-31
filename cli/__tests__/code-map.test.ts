@@ -681,6 +681,15 @@ describe("signatures", () => {
     expect(out.join(" ")).not.toMatch(/987654321|transmit/);
   });
 
+  // protects: the last net under the scanner, so a form it misreads still sends no code or value; fails_when: a computed superclass, a Rust const-generic default, a number or a callback body reaches the map; no_claim: the scanner reads every form right (it can't; this is why the net exists)
+  it("drops computed superclasses, const-generic defaults, numbers and anything that reads as code", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("a.ts", "export class Store extends mixin(() => { send(987654321); }) {}\nexport class Plain extends Base<T> implements Saves {}\n")).toEqual(["class Store extends …", "class Plain extends Base<T> implements Saves"]);
+    expect(signatures("src/b.rs", "pub struct Buffer<const N: usize = 987654321> { data: [u8; N] }\npub fn take(xs: [u8; 32]) -> u8 {\n}\n")).toEqual(["struct Buffer<const N: usize>", "fn take(xs: [u8; …]) -> u8"]);
+    const out = signatures("c.ts", "export function f(cb: (x: number) => void = () => { run(42); }) {}\n");
+    expect(out.join(" ")).not.toMatch(/run|42/);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

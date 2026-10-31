@@ -227,6 +227,23 @@ const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*
 /** In a parameter list it ends at "," or ")"; in a type parameter list, at "," or ">" (so "limit > 0" is not plain). */
 const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
 
+// What reads as code rather than a declaration: a function body, a return, or a
+// call after a statement break.
+const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
+const NUMBER = /(?<![\w$.])\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?(?![\w$])/gi;
+
+/**
+ * The last net under the scanner, which can misread a form it doesn't know: a
+ * computed superclass becomes "extends …", anything that reads as code ends the
+ * signature, and numbers become "…". Names and types pass; values don't.
+ */
+function scrub(sig: string): string {
+  let out = sig.replace(/\bextends\s+[\w$.]*\(.*$/, "extends …");
+  const code = CODE.exec(out);
+  if (code) out = `${out.slice(0, code.index).trimEnd()} …`;
+  return out.replace(NUMBER, "…");
+}
+
 /**
  * Whether a TypeScript declaration goes on past a line break at the top level:
  * the line ends mid-type, or the next line goes on with one. Code without
@@ -275,8 +292,9 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     } else if (CLOSE[c] && !angle && stack.at(-1) === CLOSE[c]) {
       stack.pop();
     }
-    // In Rust, Iterator<Item = T> binds a type, not a value.
-    if (c === "=" && src[i + 1] !== "=" && !(lang === "rs" && stack.at(-1) === "<")) {
+    // In Rust, Iterator<Item = T> binds a type, not a value; <const N: usize = 4> is a default.
+    const typeBinding = lang === "rs" && stack.at(-1) === "<" && !/\bconst\s+[A-Za-z_]\w*\s*:[^,<>]*$/.test(out);
+    if (c === "=" && src[i + 1] !== "=" && !typeBinding) {
       if (stack.length === 0) {
         // A const holding an arrow function keeps its parameters; any other value ends the signature.
         if (lang === "js" && ARROW_VALUE.test(src.slice(i, i + 400))) {
@@ -308,7 +326,8 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     .trim()
     .replace(/^export\s+(?:default\s+)?(?:declare\s+)?/, "")
     .replace(/^pub\s+/, "");
-  return flat.length <= MAX_SIGNATURE ? flat : flat.slice(0, MAX_SIGNATURE).trimEnd();
+  const safe = scrub(flat);
+  return safe.length <= MAX_SIGNATURE ? safe : safe.slice(0, MAX_SIGNATURE).trimEnd();
 }
 
 /** Signatures of the top-level declarations a file exports, in source order, at most 30. */
