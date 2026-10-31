@@ -86,6 +86,25 @@ describe("relatedByOverlap", () => {
     expect(relatedByOverlap(generic, index, `inbox/${SELF}`, SELF)).toEqual([]);
   });
 
+  // protects: older rows with a bare pipe in the summary stay eligible; fails_when: the tags are read from the wrong cell; no_claim: none
+  it("reads older rows whose summary holds a bare pipe", () => {
+    const index = HEADER + "| 2026-10-14 | [pipes](inbox/2026-10-14-pipes.md) | Use A | B to pipe output... | reliability, timeouts | url |\n";
+    expect(rank(index)).toEqual([{ filename: "inbox/2026-10-14-pipes.md", reason: "shared: reliability, timeouts" }]);
+  });
+
+  // protects: a plural tag and the same word in the text count once; fails_when: "agents" tag plus "agent" word scores 3; no_claim: none
+  it("counts a tag once when the same word is in both texts", () => {
+    const agents = { ...capture, slug: "agents-need-context", inferredTitle: "Agents need context", coreIdea: "Agents fail without context.", tags: ["agents"] } as ExtractedCapture;
+    const index = HEADER + row("inbox/2026-10-15-u.md", "Agents and tools", "agents");
+    expect(relatedByOverlap(agents, index, `inbox/${SELF}`, SELF)).toEqual([]);
+  });
+
+  // protects: tags match across singular and plural; fails_when: "agent" and "agents" tags don't match; no_claim: none
+  it("matches a singular tag to its plural", () => {
+    const index = HEADER + row("inbox/2026-10-16-t.md", "Bounded retries", "Timeout, reliability");
+    expect(rank(index)).toEqual([{ filename: "inbox/2026-10-16-t.md", reason: "shared: reliability, timeouts, retry, bounded" }]);
+  });
+
   // protects: empty or header-only index is handled; fails_when: parser throws; no_claim: none
   it("returns nothing for an index with no capture rows", () => {
     expect(rank("")).toEqual([]);
