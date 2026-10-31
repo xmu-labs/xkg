@@ -46,8 +46,8 @@ async function runAfterResponse() {
 
 vi.mock("@/lib/session", () => ({ getSession: async () => user }));
 const refundQuota = vi.fn();
-const WINDOW = new Date("2026-10-31T11:00:00.000Z");
-vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowStartedAt: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
+const WINDOW = "2026-10-31 11:00:00.123456";
+vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowKey: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
 vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => null, safeFetch: vi.fn() }));
 let extractFails = false;
 vi.mock("@/lib/llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), extractCapture: async () => { if (extractFails) throw new Error("[llm:openai] HTTP 503"); return capture; } }));
