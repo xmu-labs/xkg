@@ -76,6 +76,8 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
+The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later.
+
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
 **Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
@@ -503,6 +505,8 @@ When you capture, the server talks to exactly four kinds of destination:
 4. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
+
+Each web capture also writes one line to the server log (`capture.timing`): the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
 
 ### How your credentials are stored
 
