@@ -719,6 +719,13 @@ describe("signatures", () => {
     ]);
   });
 
+  it("ends a signature at a Python lambda", async () => {
+    const { signatures } = await import("../code-map.js");
+    const out = signatures("app/a.py", "def f(x: Annotated[str, BeforeValidator(lambda v: send(v, privateIdentifier))]) -> int:\n    return 0\n");
+    expect(out).toEqual(["def f(x: Annotated[str, BeforeValidator( …"]);
+    expect(signatures("a.ts", "export function handler(lambda: LambdaClient): void {}\n")).toEqual(["function handler(lambda: LambdaClient): void"]);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

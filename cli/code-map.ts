@@ -228,8 +228,9 @@ const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*
 const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
 
 // What reads as code rather than a declaration: a function body, a return, or a
-// call after a statement break.
+// call after a statement break. In Python, a lambda too.
 const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
+const PY_CODE = new RegExp(`${CODE.source}|\\blambda\\b`);
 // No identifier in the mapped languages starts with a digit, so a token that
 // does is a literal: hex, binary, octal, bigint and suffixed forms included.
 const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|[0-7]{3}|.)|[^'\\\n])'/;
@@ -240,9 +241,9 @@ const NUMBER = /(?<![\w$.])(?:\d[\w$]*(?:\.\d[\w$]*)?|\.\d[\w$]*)(?:[+-]\d[\w$]*
  * computed superclass becomes "extends …", anything that reads as code ends the
  * signature, and numbers become "…". Names and types pass; values don't.
  */
-function scrub(sig: string): string {
+function scrub(lang: Lang, sig: string): string {
   let out = sig.replace(/\bextends\s+[\w$.]*\(.*$/, "extends …");
-  const code = CODE.exec(out);
+  const code = (lang === "py" ? PY_CODE : CODE).exec(out);
   if (code) out = `${out.slice(0, code.index).trimEnd()} …`;
   return out.replace(NUMBER, "…");
 }
@@ -366,7 +367,7 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     .trim()
     .replace(/^export\s+(?:default\s+)?(?:declare\s+)?/, "")
     .replace(/^pub\s+/, "");
-  const safe = scrub(flat);
+  const safe = scrub(lang, flat);
   return safe.length <= MAX_SIGNATURE ? safe : safe.slice(0, MAX_SIGNATURE).trimEnd();
 }
 
