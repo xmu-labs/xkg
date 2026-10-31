@@ -40,16 +40,25 @@ export function applyWhere(w: { fit: string; repo: string | null; files: ApplyIt
   return { fit: w.fit, repo: w.repo, files: w.files, also: w.also, note: w.note };
 }
 
+const NOT_READY_TRIES = 6;
+const NOT_READY_WAIT_MS = 1500;
+
 /**
  * Asks the server for Why and After on a capture's files and returns them
  * merged into `files`; throws when it fails.
  */
 export async function explainFiles<F extends { path: string; why?: string; after?: string }>(name: string, files: F[]): Promise<F[]> {
-  const res = await fetch("/api/captures/explain", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
+  let res: Response;
+  // 409: a new capture's match is still being saved, a second or two after the result shows.
+  for (let attempt = 1; ; attempt++) {
+    res = await fetch("/api/captures/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    if (res.status !== 409 || attempt >= NOT_READY_TRIES) break;
+    await new Promise((resolve) => setTimeout(resolve, NOT_READY_WAIT_MS));
+  }
   if (!res.ok) throw new Error(`explain ${res.status}`);
   const data = (await res.json()) as { files?: { path: string; why: string; after: string }[] };
   return files.map((f) => {
@@ -76,12 +85,17 @@ const NOTE = "Matched by file names. Your coding agent checks the code.";
 export default function ApplyIt({ where, advice, handoff, explain, style }: ApplyItProps) {
   const needs = Boolean(explain && where?.files.some((f) => !f.after));
   const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
+  // After one answer, files still without After get the button even on a Strong fit.
+  const [answered, setAnswered] = useState(false);
   const asked = useRef(false);
   const run = () => {
     if (!explain) return;
     setState("loading");
     explain.onRequest().then(
-      () => setState("idle"),
+      () => {
+        setAnswered(true);
+        setState("idle");
+      },
       () => setState("failed"),
     );
   };
@@ -134,7 +148,7 @@ export default function ApplyIt({ where, advice, handoff, explain, style }: Appl
               </button>
             </div>
           )}
-          {needs && state === "idle" && !explain?.auto && (
+          {needs && state === "idle" && (!explain?.auto || answered) && (
             <button type="button" onClick={run} className="inline-flex items-center min-h-11 px-4 rounded-full text-sm font-medium"
               style={{ color: "var(--gold)", border: "1px solid var(--gold-low)" }}>
               Why and how

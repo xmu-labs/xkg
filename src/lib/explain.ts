@@ -177,6 +177,8 @@ export async function explainCapture(user: ExplainUser, markdown: string, deps: 
     let usage: LlmUsage | null = null;
     const raw = await complete(SYSTEM, explainPrompt(capture, where.repo, todo), EXPLAIN_MAX_TOKENS, (u) => { usage = u; });
     const fresh = checkExplain(raw, todo);
+    // Nothing usable (empty, cut off or rejected): a failure the user can retry.
+    if (!fresh.length) return null;
     const files = where.files.flatMap((f) => {
       const line = f.why && f.after ? { path: f.path, why: f.why, after: f.after } : fresh.find((x) => x.path === f.path);
       return line ? [line] : [];

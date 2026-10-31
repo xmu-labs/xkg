@@ -169,3 +169,27 @@ test("files that already have After are not asked about again", async ({ page })
   await expect(page.getByTestId("apply-it").getByRole("button", { name: "Why and how" })).toHaveCount(0);
   expect(calls).toBe(0);
 });
+
+test("a Strong fit waits while its match is still being saved", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) =>
+    ++calls < 3 ? r.fulfill({ status: 409, json: { error: "This capture's match is still being saved." } }) : r.fulfill({ json: EXPLAINED }),
+  );
+  await capture(page, WORST_CAPTURE);
+  await expect(page.getByTestId("apply-it").getByText("After line 1")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("apply-it").getByRole("alert")).toHaveCount(0);
+  expect(calls).toBe(3);
+});
+
+test("after a partial answer, Why and how asks again for the rest", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) =>
+    ++calls === 1 ? r.fulfill({ json: { files: EXPLAINED.files.slice(0, 1) } }) : r.fulfill({ json: EXPLAINED }),
+  );
+  await capture(page, WORST_CAPTURE);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByText("After line 0")).toBeVisible();
+  await card.getByRole("button", { name: "Why and how" }).tap();
+  await expect(card.getByText("After line 1")).toBeVisible();
+  expect(calls).toBe(2);
+});

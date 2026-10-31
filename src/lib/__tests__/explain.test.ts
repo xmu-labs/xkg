@@ -167,6 +167,15 @@ describe("explainCapture", () => {
     expect(out!.files.find((f) => f.path === "src/rerank.ts")?.after).toBe("Better chunks");
   });
 
+  it("is null when the reply has nothing usable, and keeps a partial answer", async () => {
+    expect(await explainCapture(user, FILE, { complete: async () => "{\"files\":[", listMaps: async () => [MAP] })).toBeNull();
+    const part = await explainCapture(user, FILE, {
+      complete: async () => reply([{ path: "src/rerank.ts", why: "Orders chunks", after: "Better chunks" }]),
+      listMaps: async () => [MAP],
+    });
+    expect(part!.files).toEqual([{ path: "src/rerank.ts", why: "Orders chunks", after: "Better chunks" }]);
+  });
+
   it("is null with no fit, no key, or a failed call", async () => {
     const noFit = FILE.replace(/\*\*Strong fit\*\*[^\n]*\n- [^\n]*\n- [^\n]*\nAlso[^\n]*\n/, "No clear fit in your repos yet.\n");
     expect(await explainCapture(user, noFit, { complete: vi.fn(), listMaps: async () => [MAP] })).toBeNull();

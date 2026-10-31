@@ -150,9 +150,12 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
 
   // The user doesn't need links or the section to see the result, so they're
   // written after the response. Both edit the capture file, so one at a time:
-  // linking first, then the section.
+  // the section first (the card asks for Why and After from it right away,
+  // and it needs no model call), then linking.
   const { github_token: token, github_repo: repo, llm_api_key: apiKey } = user;
   after(async () => {
+    if (where) await writeWhereSection(token, repo, path, where);
+    timer.mark("where");
     try {
       const indexFile = await readFile(token, repo, "INDEX.md");
       if (indexFile) await linkCapture(apiKey, token, repo, capture, filename, "inbox", indexFile.content, llm);
@@ -160,8 +163,6 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
       // Linking is best-effort
     }
     timer.mark("link");
-    if (where) await writeWhereSection(token, repo, path, where);
-    timer.mark("where");
     console.info(JSON.stringify(timingLine(timer, llm, usage, fetched)));
   });
 
