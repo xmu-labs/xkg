@@ -81,7 +81,7 @@ On a phone: open the app → **Share → Add to Home Screen**. It runs like a na
 **Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
-- **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.
+- **Source check**: when the page opens, xkg quietly checks each inbox capture's source URL. If the page is offline (404 or 410), the capture says so and reminds you that what you learned is saved in your repo. A capture the AI marked low confidence gets a short note too. Nothing is archived for you.
 - **Make rules** from every capture with a tag. The rules go in `RULES.md`, and your agent gets them with the session-start briefing. This runs on your own AI model and key.
 - See how many captures were applied each week, and how many came with a commit (from `APPLIED.md`).
 
@@ -409,7 +409,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `read_capture` | Read a capture in full (or `RULES.md`) |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
 
-Archiving, deleting, checking links, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
+Archiving, deleting, the source check, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
 
 Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 

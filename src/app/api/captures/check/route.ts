@@ -7,9 +7,10 @@ const CHECKS_PER_HOUR = 30;
 const PAGE = 20;
 
 /**
- * The captures page's "Check links" button: one page of inbox captures, each
- * checked for a gone source and a low-confidence extraction. It flags only;
- * the user archives from the list. Body: { offset? }.
+ * The Your knowledge page's quiet source check, run as the page opens: one
+ * page of inbox captures, each checked for an offline source and a
+ * low-confidence extraction. It only adds notes; the user archives from the
+ * list. Body: { offset? }.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {

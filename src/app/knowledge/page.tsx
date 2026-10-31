@@ -9,7 +9,7 @@ import type { WeekStats } from "@/lib/ledger";
 
 /**
  * Your knowledge: the decisions about saved knowledge that are the user's to
- * make (archive, delete, check links, rules per tag) and how much of it got
+ * make (archive, delete, rules per tag), notes from the source check, and how much got
  * applied. Everything reads and writes the user's knowledge repo.
  */
 
@@ -38,13 +38,16 @@ async function post<T>(url: string, body: unknown): Promise<T> {
   return data;
 }
 
-/** What a link check found, in words; null when the capture looks fine. */
-function flagText(check: LinkCheck | undefined): string | null {
+const OFFLINE = "The original page is offline. What you learned from it is saved in your knowledge repo.";
+const UNSURE = "The AI wasn't sure about this one. Worth a quick read.";
+
+/** What the source check found, as notes for the card; empty when the capture looks fine. */
+function flagNotes(check: LinkCheck | undefined): string[] {
   switch (check?.status) {
-    case "stale": return "Source is gone";
-    case "low_confidence": return "Low confidence";
-    case "stale_and_low_confidence": return "Source is gone · Low confidence";
-    default: return null;
+    case "stale": return [OFFLINE];
+    case "low_confidence": return [UNSURE];
+    case "stale_and_low_confidence": return [OFFLINE, UNSURE];
+    default: return [];
   }
 }
 
@@ -59,7 +62,6 @@ export default function KnowledgePage() {
   const [weeks, setWeeks] = useState<WeekStats[] | null>(null);
   const [tab, setTab] = useState<CaptureStatus>("inbox");
   const [checks, setChecks] = useState<Record<string, LinkCheck>>({});
-  const [checkState, setCheckState] = useState<{ busy: boolean; checked: number; total: number; next: number | null; error: string }>({ busy: false, checked: 0, total: 0, next: 0, error: "" });
 
   useEffect(() => {
     void fetch("/api/captures")
@@ -73,6 +75,20 @@ export default function KnowledgePage() {
     void fetch("/api/apply-stats")
       .then(async (res) => (res.ok ? setWeeks(((await res.json()) as { weeks: WeekStats[] }).weeks) : undefined))
       .catch(() => { /* the applies line just stays hidden */ });
+    // Source check: quietly, page by page, as soon as the page opens. It only
+    // adds notes to cards, so any failure (even a 401) means no notes, never
+    // an error or a redirect.
+    let cancelled = false;
+    void (async () => {
+      for (let offset: number | null = 0; offset !== null && !cancelled; ) {
+        const res = await fetch("/api/captures/check", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ offset }) });
+        if (!res.ok || cancelled) return;
+        const data = (await res.json()) as { results: LinkCheck[]; next: number | null };
+        setChecks((c) => ({ ...c, ...Object.fromEntries(data.results.map((r) => [r.filename, r])) }));
+        offset = data.next;
+      }
+    })().catch(() => { /* no notes this time */ });
+    return () => { cancelled = true; };
   }, []);
 
   const shown = useMemo(() => (captures ?? []).filter((c) => c.status === tab), [captures, tab]);
@@ -90,31 +106,8 @@ export default function KnowledgePage() {
 
   function moved(filename: string, to: CaptureStatus | null) {
     setCaptures((list) => (list ?? []).flatMap((c) => (c.filename !== filename ? [c] : to ? [{ ...c, status: to }] : [])));
-    // It left the inbox, so the next link check's offset counts one file fewer
-    // when this one was already checked; otherwise a file would be skipped.
-    const wasChecked = filename in checks;
-    setChecks(({ [filename]: _, ...rest }) => rest);
-    setCheckState((s) => ({
-      ...s,
-      total: Math.max(s.total - 1, 0),
-      checked: wasChecked ? s.checked - 1 : s.checked,
-      next: wasChecked && s.next !== null ? s.next - 1 : s.next,
-    }));
   }
 
-  async function checkLinks() {
-    const offset = checkState.next ?? 0;
-    setCheckState((s) => ({ ...s, busy: true, error: "" }));
-    try {
-      const data = await post<{ results: LinkCheck[]; total: number; next: number | null }>("/api/captures/check", { offset });
-      setChecks((c) => ({ ...c, ...Object.fromEntries(data.results.map((r) => [r.filename, r])) }));
-      setCheckState((s) => ({ busy: false, checked: offset + data.results.length, total: data.total, next: data.next, error: "" }));
-    } catch (err) {
-      setCheckState((s) => ({ ...s, busy: false, error: err instanceof Error ? err.message : TRY_AGAIN }));
-    }
-  }
-
-  const flagged = Object.values(checks).filter((c) => flagText(c) && captures?.some((r) => r.filename === c.filename && r.status === "inbox")).length;
   const thisWeek = weeks?.[0];
 
   return (
@@ -153,26 +146,6 @@ export default function KnowledgePage() {
         ))}
       </div>
 
-      {tab === "inbox" && counts.inbox > 0 && (
-        <div className="stack-1.5">
-          <button
-            onClick={() => void checkLinks()}
-            disabled={checkState.busy || (checkState.checked > 0 && checkState.next === null)}
-            aria-busy={checkState.busy}
-            className="btn-secondary w-full py-2.5 rounded-xl font-medium text-sm disabled:cursor-not-allowed"
-          >
-            {checkState.checked > 0 && checkState.next !== null ? "Check more links" : "Check links"}
-          </button>
-          {checkState.checked > 0 && (
-            <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-              {flagged} of {checkState.checked} need a look.
-              {checkState.next !== null && ` ${checkState.total - checkState.checked} not checked yet.`}
-            </p>
-          )}
-          {checkState.error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{checkState.error}</p>}
-        </div>
-      )}
-
       {/* List */}
       {loadError && <p role="alert" className="text-sm" style={{ color: "var(--danger)" }}>{loadError}</p>}
       {!captures && !loadError && <p className="text-sm" style={{ color: "var(--fg-muted)" }}>Loading…</p>}
@@ -183,7 +156,7 @@ export default function KnowledgePage() {
       )}
       <ul data-testid="capture-list" className="stack-2.5">
         {shown.map((c) => (
-          <CaptureItem key={c.filename} capture={c} flag={tab === "inbox" ? flagText(checks[c.filename]) : null} onMoved={moved} />
+          <CaptureItem key={c.filename} capture={c} notes={tab === "inbox" ? flagNotes(checks[c.filename]) : []} onMoved={moved} />
         ))}
       </ul>
 
@@ -193,9 +166,9 @@ export default function KnowledgePage() {
   );
 }
 
-function CaptureItem({ capture, flag, onMoved }: {
+function CaptureItem({ capture, notes, onMoved }: {
   capture: CaptureRow;
-  flag: string | null;
+  notes: string[];
   onMoved: (filename: string, to: CaptureStatus | null) => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -221,7 +194,7 @@ function CaptureItem({ capture, flag, onMoved }: {
       <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
         {shortDate(capture.date)}{capture.tags.length > 0 && ` · ${capture.tags.join(", ")}`}
       </p>
-      {flag && <p className="text-xs font-medium" style={{ color: "var(--danger)" }}>{flag}</p>}
+      {notes.map((n) => <p key={n} className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{n}</p>)}
       {capture.status === "inbox" && (
         confirming ? (
           <div className="flex gap-2 pt-1">
