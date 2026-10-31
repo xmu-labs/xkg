@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
-import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, type LlmUsage } from "@/lib/llm";
+import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, type LlmUsage } from "@/lib/llm";
 import { stepTimer, timingLine } from "@/lib/capture-timing";
 import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage } from "@/lib/capture-stream";
 import { fetchSourceContent } from "@/lib/fetch-source";
@@ -228,6 +228,8 @@ async function capturePipeline(
   // linking first, then the section.
   const { github_token: token, github_repo: repo } = user;
   const savedCapture = capture;
+  // The card shows what the capture cost: the model and its token counts.
+  const spent = usage as LlmUsage | null;
   handOver(async () => {
     try {
       const indexFile = await readFile(token, repo, "INDEX.md");
@@ -249,6 +251,7 @@ async function capturePipeline(
       fileUrl: captureFileUrl(user.github_repo, filename),
       ...(card ? { where: card } : {}),
       ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
+      usage: { model: resolveLlm(llm).model, tokensIn: spent?.tokensIn ?? null, tokensOut: spent?.tokensOut ?? null },
     },
   };
 }
