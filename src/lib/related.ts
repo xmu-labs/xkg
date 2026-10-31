@@ -19,14 +19,24 @@ const REASON_TERMS = 4;
 const STOPWORDS = new Set(
   (
     "about above after again also among another because been before being below between both cannot could does doing down during each even every from further have having here into just like made make makes many more most much must need needs only other over same should since some such than that their them then there these they this those through under until upon very want were what when where which while will with within without would your yours " +
-    "para como pero este esta esto sobre entre cuando donde porque también todo todos tiene puede hacer desde hasta"
+    "para como pero este esta esto sobre entre cuando donde porque también todo todos tiene puede hacer desde hasta " +
+    // Generic in any capture, so sharing them says nothing.
+    "show user using used uses thing good better best always never often first keep help work time"
   ).split(" "),
 );
+
+/** Singular form, so "retries" and "retry" are one word. Not a stemmer. */
+function singular(w: string): string {
+  if (w.length > 4 && w.endsWith("ies")) return `${w.slice(0, -3)}y`;
+  if (w.length > 4 && w.endsWith("s") && !w.endsWith("ss") && !w.endsWith("us") && !w.endsWith("is")) return w.slice(0, -1);
+  return w;
+}
 
 function words(text: string): string[] {
   return text
     .toLowerCase()
     .split(/[^\p{L}\p{N}]+/u)
+    .map(singular)
     .filter((w) => w.length >= 4 && !STOPWORDS.has(w) && !/^\d+$/.test(w));
 }
 
