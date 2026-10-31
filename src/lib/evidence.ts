@@ -82,11 +82,10 @@ export function buildSource(
   };
 }
 
-/** The user message for extraction: ids, metadata and segments, as JSON. */
+/** The user message for extraction: metadata and segments, as JSON. The
+ *  source ids stay with the app, so the model never copies them per quote. */
 export function buildExtractionInput(source: SourceSnapshot): string {
   return JSON.stringify({
-    sourceId: source.sourceId,
-    sourceVersionId: source.sourceVersionId,
     metadata: {
       ...(source.title ? { title: source.title } : {}),
       ...(source.url ? { url: source.url } : {}),
@@ -118,8 +117,8 @@ function fieldText(path: string, fields: ClaimFields): string | null {
 }
 
 /**
- * Keep only claims the source backs. Evidence survives when it names the ids
- * this source was sent with and its quote occurs in the named segment
+ * Keep only claims the source backs. Evidence survives when its quote occurs
+ * in the named segment (and any ids it names are this source's)
  * (whitespace aside). A claim survives when it points at a real coreIdea or
  * takeaway and keeps at least one piece of evidence. The model is never
  * trusted for ids or claim text: the text is taken from the field itself.
@@ -143,7 +142,10 @@ export function checkClaims(
     const evidence: ClaimEvidence[] = [];
     for (const e of r.evidence) {
       const ev = asRecord(e);
-      if (!ev || ev.sourceId !== source.sourceId || ev.sourceVersionId !== source.sourceVersionId) continue;
+      if (!ev) continue;
+      // The model names only a segment; ids it does send must be this source's.
+      if (ev.sourceId !== undefined && ev.sourceId !== source.sourceId) continue;
+      if (ev.sourceVersionId !== undefined && ev.sourceVersionId !== source.sourceVersionId) continue;
       if (typeof ev.segmentId !== "string" || typeof ev.exactQuote !== "string") continue;
       const segment = segments.get(ev.segmentId);
       const quote = squash(ev.exactQuote);
