@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
+import type { User } from "@/lib/db";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, type LlmUsage } from "@/lib/llm";
 import { stepTimer, timingLine } from "@/lib/capture-timing";
+import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage } from "@/lib/capture-stream";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
@@ -83,6 +85,82 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     );
   }
 
+  // Narrowed here: a closure doesn't keep the checks above.
+  const ready = { ...user, github_repo: user.github_repo, llm_api_key: user.llm_api_key };
+
+  // The links and the section are written after the answer. after() is
+  // registered here, inside the request, and waits for the pipeline to hand
+  // over that work (or nothing, when it fails), so a streamed answer never
+  // depends on calling after() from inside the stream.
+  let background: (() => Promise<void>) | null = null;
+  let release!: () => void;
+  const handedOver = new Promise<void>((resolve) => { release = resolve; });
+  after(async () => {
+    await handedOver;
+    if (background) await background();
+  });
+  const run = async (emit: (stage: CaptureStage) => void): Promise<Outcome> => {
+    try {
+      return await capturePipeline({ user: ready, content, title, quotaWindow: quota.windowKey }, emit, (task) => { background = task; });
+    } finally {
+      release();
+    }
+  };
+
+  if (!(req.headers.get("accept") ?? "").includes(CAPTURE_STREAM_TYPE)) {
+    const { status, body } = await run(() => {});
+    return NextResponse.json(body, { status });
+  }
+
+  // The page asked for progress: one JSON line per stage, then the result.
+  // If the page goes away mid-capture the stream is cancelled; the capture
+  // still finishes and saves, so later writes are dropped instead of throwing.
+  const encoder = new TextEncoder();
+  let cancelled = false;
+  const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
+    async start(controller) {
+      const send = (line: CaptureLine) => {
+        if (!cancelled) controller.enqueue(encoder.encode(JSON.stringify(line) + "\n"));
+      };
+      try {
+        const { status, body } = await run((stage) => send({ stage }));
+        send(status === 200 ? { result: body } : { error: (body as { error: string }).error, status });
+      } catch (err) {
+        console.error("[capture] unhandled error:", err);
+        send({ error: `[capture] ${err instanceof Error ? err.message : "Unexpected error"}`, status: 500 });
+      } finally {
+        if (!cancelled) controller.close();
+      }
+    },
+  });
+  return new NextResponse(stream, {
+    headers: { "Content-Type": `${CAPTURE_STREAM_TYPE}; charset=utf-8`, "Cache-Control": "no-store", "X-Accel-Buffering": "no" },
+  });
+}
+
+type Outcome = { status: number; body: unknown };
+
+interface CaptureInput {
+  /** The signed-in user, with the repo and key the checks above made sure of. */
+  user: User & { github_repo: string; llm_api_key: string };
+  content: string;
+  title: string | undefined;
+  quotaWindow: string;
+}
+
+/**
+ * Fetch, extract, save, index, match, queue. Reports each stage through
+ * `emit` and hands the after-answer work (links, then the section) to
+ * `handOver`. Throws only on an unexpected failure (GitHub, the database).
+ */
+async function capturePipeline(
+  { user, content, title, quotaWindow }: CaptureInput,
+  emit: (stage: CaptureStage) => void,
+  handOver: (task: () => Promise<void>) => void,
+): Promise<Outcome> {
   const sourceType = detectSourceType(content);
   const llm = llmSettings(user);
   const timer = stepTimer();
@@ -96,6 +174,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   const sourceUrl = sourceType === "url" ? content.trim() : undefined;
   let fetched = false;
   if (sourceUrl) {
+    emit("reading");
     const page = await fetchSourceContent(sourceUrl);
     if (page) {
       llmContent = page;
@@ -105,6 +184,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   timer.mark("fetch");
 
   // Extract insights via LLM
+  emit("extracting");
   let capture;
   try {
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
@@ -112,11 +192,11 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     const message = err instanceof Error ? err.message : "Extraction failed";
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
-      await refundQuota(`capture:user:${user.id}`, quota.windowKey);
+      await refundQuota(`capture:user:${user.id}`, quotaWindow);
     } catch {
       // The refund is a courtesy; the error above is what the user needs.
     }
-    return NextResponse.json({ error: message }, { status: 502 });
+    return { status: 502, body: { error: message } };
   }
   timer.mark("extract");
 
@@ -125,6 +205,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   const matching = matchCapture(user, capture);
 
   // Build Markdown and commit to user's repo
+  emit("saving");
   const date = formatDate();
   const filename = `${date}-${capture.slug}.md`;
   const path = `inbox/${filename}`;
@@ -151,13 +232,14 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   timer.answered();
 
   // The user doesn't need links or the section to see the result, so they're
-  // written after the response. Both edit the capture file, so one at a time:
+  // written after the answer. Both edit the capture file, so one at a time:
   // linking first, then the section.
   const { github_token: token, github_repo: repo } = user;
-  after(async () => {
+  const savedCapture = capture;
+  handOver(async () => {
     try {
       const indexFile = await readFile(token, repo, "INDEX.md");
-      if (indexFile) await linkCapture(token, repo, capture, filename, "inbox", indexFile.content);
+      if (indexFile) await linkCapture(token, repo, savedCapture, filename, "inbox", indexFile.content);
     } catch {
       // Linking is best-effort
     }
@@ -167,11 +249,14 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     console.info(JSON.stringify(timingLine("web", timer, llm, usage, fetched)));
   });
 
-  return NextResponse.json({
-    capture,
-    filename,
-    fileUrl: captureFileUrl(user.github_repo, filename),
-    ...(card ? { where: card } : {}),
-    ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
-  });
+  return {
+    status: 200,
+    body: {
+      capture,
+      filename,
+      fileUrl: captureFileUrl(user.github_repo, filename),
+      ...(card ? { where: card } : {}),
+      ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
+    },
+  };
 }

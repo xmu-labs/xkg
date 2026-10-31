@@ -8,6 +8,7 @@ import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
 import ApplyIt, { applyWhere } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
+import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, readCaptureResponse, type CaptureStage } from "@/lib/capture-stream";
 
 interface CaptureResult {
   capture: {
@@ -38,9 +39,14 @@ const TYPE_LABELS: Record<string, string> = {
   book: "Book",
 };
 
-/** A field inside the composer: borderless, the composer card draws the edge. */
-const CAPTURE_FAILED = "Couldn't capture that. Try again in a moment.";
+/** What the button says while a capture runs, by the stage the server last reported. */
+const STAGE_LABELS: Record<CaptureStage, string> = {
+  reading: "Reading the page…",
+  extracting: "Extracting insights…",
+  saving: "Saving to GitHub…",
+};
 
+/** A field inside the composer: borderless, the composer card draws the edge. */
 const COMPOSER_FIELD = "w-full bg-transparent px-4 py-3 text-base focus:outline-hidden";
 
 /** Known types get their label; a type the model invented reads as words. */
@@ -62,6 +68,8 @@ export default function CapturePage() {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [result, setResult] = useState<CaptureResult | null>(null);
   const [error, setError] = useState("");
+  const [stage, setStage] = useState<CaptureStage | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
   const initialBuildId = useRef<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -94,38 +102,33 @@ export default function CapturePage() {
       .catch(() => { /* ignore */ });
   }, []);
 
+  // Seconds since the capture started, so a long extraction still shows life.
+  useEffect(() => {
+    if (status !== "loading") return;
+    const started = Date.now();
+    const tick = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => clearInterval(tick);
+  }, [status]);
+
   async function handleSubmit() {
     if (!content.trim()) return;
     setStatus("loading");
+    setStage(null);
+    setElapsed(0);
     setResult(null);
     setError("");
 
     try {
       const res = await fetch("/api/capture", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: CAPTURE_STREAM_TYPE },
         body: JSON.stringify({ content, title: title.trim() || undefined }),
       });
-
-      if (!res.ok) {
-        if (res.status === 401) {
-          window.location.href = "/login";
-          return;
-        }
-        let errorMsg = CAPTURE_FAILED;
-        try {
-          const data = await res.json() as { error?: string };
-          if (data.error) errorMsg = data.error;
-        } catch { /* response was not JSON */ }
-        throw new Error(errorMsg);
+      if (res.status === 401) {
+        window.location.href = "/login";
+        return;
       }
-
-      let data: CaptureResult;
-      try {
-        data = await res.json() as CaptureResult;
-      } catch {
-        throw new Error("Unexpected response from server. Please refresh and try again.");
-      }
+      const data = await readCaptureResponse<CaptureResult>(res, setStage);
       setResult(data);
       setStatus("done");
       setContent("");
@@ -219,7 +222,8 @@ export default function CapturePage() {
               <span data-label="loading" key="loading" className="flex items-center justify-center gap-2">
                 <span className="inline-block w-3.5 h-3.5 border-2 rounded-full animate-spin"
                   style={{ borderColor: "var(--spinner-track)", borderTopColor: "var(--fg)" }} />
-                Extracting insights…
+                <span aria-live="polite">{STAGE_LABELS[stage ?? "extracting"]}</span>
+                {elapsed >= 3 && <span className="tabular-nums opacity-60">{elapsed}s</span>}
               </span>
             ) : (
               <span data-label="idle" key="idle">Capture</span>
