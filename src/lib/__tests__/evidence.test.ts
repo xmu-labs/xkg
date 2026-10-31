@@ -79,11 +79,12 @@ describe("buildSource", () => {
 });
 
 describe("buildExtractionInput", () => {
-  it("sends the ids, metadata and segments the prompt expects", () => {
+  // protects: the model has no ids to copy into every quote; fails_when: the input carries sourceId or sourceVersionId; no_claim: none
+  it("sends the metadata and segments, not the source ids the app fills in", () => {
     const src = buildSource(STUDY, { url: "https://example.com/study", title: "Pairing study" });
     const input = JSON.parse(buildExtractionInput(src));
-    expect(input.sourceId).toBe(src.sourceId);
-    expect(input.sourceVersionId).toBe(src.sourceVersionId);
+    expect(input).not.toHaveProperty("sourceId");
+    expect(input).not.toHaveProperty("sourceVersionId");
     expect(input.metadata).toEqual({ title: "Pairing study", url: "https://example.com/study" });
     expect(input.segments).toEqual(src.segments);
   });
@@ -119,6 +120,16 @@ describe("checkClaims", () => {
         evidence: [ev("s1", "small and self-selected"), ev("s3", "Our sample is small")] },
     ], fields, src);
     expect(claims[0]?.evidence).toEqual([ev("s3", "Our sample is small")]);
+  });
+
+  // protects: the shorter answer names only a segment; fails_when: evidence without source ids is dropped or stored without them; no_claim: none
+  it("keeps evidence that names only a segment and fills in the source ids", () => {
+    const claims = checkClaims([
+      { outputPath: "/takeaways/0", evidence: [{ segmentId: "s3", exactQuote: "small and self-selected" }] },
+    ], fields, src);
+    expect(claims).toHaveLength(1);
+    expect(claims[0]?.text).toBe(fields.takeaways[0]);
+    expect(claims[0]?.evidence).toEqual([ev("s3", "small and self-selected")]);
   });
 
   it("drops evidence that cites ids the app never supplied", () => {
@@ -259,6 +270,15 @@ describe("SYSTEM_PROMPT", () => {
     expect(SYSTEM_PROMPT.startsWith("You are XKG’s knowledge extraction engine.")).toBe(true);
     expect(SYSTEM_PROMPT).toContain("CLAIM-LEVEL EVIDENCE");
     expect(SYSTEM_PROMPT.trimEnd().endsWith("Return only the JSON object.")).toBe(true);
+  });
+
+  // protects: the claim record stays short; fails_when: the prompt asks for source ids or a copy of the field text, or drops the quote limit; no_claim: the model obeys
+  it("asks for a segment and one short quote per claim, nothing the app already knows", () => {
+    const record = SYSTEM_PROMPT.slice(SYSTEM_PROMPT.indexOf("CLAIM-LEVEL EVIDENCE"), SYSTEM_PROMPT.indexOf("EDGE CASES"));
+    expect(record).toContain('"segmentId"');
+    expect(record).not.toContain('"sourceId"');
+    expect(record).not.toContain('"text"');
+    expect(record).toContain("25 words");
   });
 });
 
