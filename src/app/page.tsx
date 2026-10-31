@@ -264,9 +264,11 @@ export default function CapturePage() {
               <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
                 {result.capture.inferredTitle}
               </h2>
-              {captureStats(tookMs, result.usage) && (
-                <p data-testid="capture-stats" className="text-[11px] tabular-nums wrap-anywhere" style={{ color: "var(--fg-muted)" }}>
-                  {captureStats(tookMs, result.usage)}
+              {result.usage && (
+                <p data-testid="capture-stats" className="text-[11px] tabular-nums" style={{ color: "var(--fg-muted)" }}>
+                  {/* The model stays in one piece and moves to the next line; only an ID wider than the card breaks. */}
+                  {captureStats(tookMs, result.usage)?.slice(0, -result.usage.model.length)}
+                  <span className="inline-block max-w-full break-all">{result.usage.model}</span>
                 </p>
               )}
             </div>

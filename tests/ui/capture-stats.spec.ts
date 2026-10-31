@@ -30,3 +30,11 @@ test("Settings tells the user which models make captures fast", async ({ page })
   await page.getByRole("button", { name: "Open settings" }).tap();
   await expect(page.getByRole("dialog").getByText("Captures are fastest on a small model. Reasoning models can take 30 seconds or more.")).toBeVisible();
 });
+
+test("a short model name stays in one piece on a narrow phone", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await capture(page, { ...WORST_CAPTURE, usage: { model: "gpt-6.1-terra", tokensIn: 2400, tokensOut: 1817 } });
+  const model = page.getByTestId("capture-stats").getByText("gpt-6.1-terra", { exact: true });
+  const lines = await model.evaluate((el) => el.getClientRects().length);
+  expect(lines).toBe(1);
+});
