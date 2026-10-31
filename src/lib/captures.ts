@@ -153,11 +153,12 @@ export async function checkCapture(user: User, filename: string): Promise<LinkCh
 /**
  * One page of inbox capture names, date-sorted (filenames are date-prefixed),
  * within an optional date window. Null when the inbox is empty; `inInbox` is
- * the count before the window.
+ * the count before the window. `after` starts the page right after that
+ * filename, which stays correct when captures leave the inbox between pages.
  */
 export async function inboxPage(
   user: User,
-  args: { since?: string; until?: string; offset?: number; limit?: number },
+  args: { since?: string; until?: string; offset?: number; limit?: number; after?: string },
   defaultLimit: number,
 ): Promise<{ page: PageResult<{ name: string }>; inInbox: number } | null> {
   if (!user.github_repo) return null;
@@ -166,7 +167,8 @@ export async function inboxPage(
   if (!res.ok || !res.data) throw new GitHubReadError("inbox", res.status);
   const allMd = res.data.filter((f) => f.name.endsWith(".md")).sort((a, b) => a.name.localeCompare(b.name));
   if (allMd.length === 0) return null;
-  const filtered = filterByDateRange(allMd, args.since, args.until);
+  const windowed = filterByDateRange(allMd, args.since, args.until);
+  const filtered = args.after ? windowed.filter((f) => f.name > args.after!) : windowed;
   return { page: paginate(filtered, args.offset ?? 0, args.limit ?? defaultLimit), inInbox: allMd.length };
 }
 

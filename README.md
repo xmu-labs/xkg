@@ -76,6 +76,8 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
+The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later.
+
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
 After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead.
@@ -86,7 +88,7 @@ The **☰ menu** (top right on every page) holds your account, **Capture**, **Yo
 
 - **Open** a capture to read it again in full: the core idea, takeaways, quotes, its source, where it applies in your code, when it was applied, and its links to related captures (tap one to open it).
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
-- **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.
+- **Source check**: when the page opens, xkg quietly checks each inbox capture's source URL. If the page is offline (404 or 410), the capture says so and reminds you that what you learned is saved in your repo. A capture the AI marked low confidence gets a short note too. Nothing is archived for you.
 - **Make rules** from every capture with a tag. The rules go in `RULES.md`, and your agent gets them with the session-start briefing. This runs on your own AI model and key.
 - See how many captures were applied each week, and how many came with a commit (from `APPLIED.md`).
 
@@ -414,7 +416,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | `read_capture` | Read a capture in full (or `RULES.md`) |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
 
-Archiving, deleting, checking links, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
+Archiving, deleting, the source check, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
 
 Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
 
@@ -509,6 +511,8 @@ When you capture, the server talks to exactly four kinds of destination:
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
 
+Each web capture also writes one line to the server log (`capture.timing`): the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
+
 ### How your credentials are stored
 
 | Secret | How it's stored |
@@ -545,7 +549,7 @@ xkg is BYOK. You bring your own API key. xkg never charges you for inference.
 
 Each provider starts on a low-cost model, which you can change in Settings → AI model. For example, Anthropic starts on Claude Haiku 4.5, OpenAI on GPT-4o mini and Google on Gemini 2.0 Flash.
 
-A capture uses about 2,000–3,700 input tokens and 750–1,100 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt). At list prices:
+A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. At list prices:
 
 | Usage | Claude Haiku 4.5 | GPT-4o mini |
 | --- | --- | --- |

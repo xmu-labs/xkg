@@ -6,6 +6,8 @@ import type { WhereResult } from "../where";
  * Both capture paths (web route and MCP tool) start matching right after
  * extraction, run it alongside writing and linking, then add the "Where it
  * applies" section to the saved file. With no maps, the file stays as today.
+ * The web route answers once the file is saved and the match is in; linking
+ * and the section write run after the response (next/server `after`).
  */
 
 const capture = {
@@ -26,18 +28,29 @@ const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: st
 });
 
 let matchResult: WhereResult | null = null;
-let releaseMatch: (() => void) | null = null;
-const matchCapture = vi.fn(() => {
+const matchCapture = vi.fn(async () => {
   order.push("match");
-  return new Promise<WhereResult | null>((resolve) => {
-    releaseMatch = () => resolve(matchResult);
-  });
+  return matchResult;
 });
 
+const afterResponse: Array<() => unknown> = [];
+vi.mock("next/server", async (orig) => ({
+  ...(await orig<typeof import("next/server")>()),
+  after: (task: () => unknown) => { afterResponse.push(task); },
+}));
+
+/** Run what the route scheduled for after the response. */
+async function runAfterResponse() {
+  for (const task of afterResponse.splice(0)) await task();
+}
+
 vi.mock("@/lib/session", () => ({ getSession: async () => user }));
-vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0 }), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
+const refundQuota = vi.fn();
+const WINDOW = "2026-10-31 11:00:00.123456";
+vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowKey: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
 vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => null, safeFetch: vi.fn() }));
-vi.mock("@/lib/llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), extractCapture: async () => capture }));
+let extractFails = false;
+vi.mock("@/lib/llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), extractCapture: async () => { if (extractFails) throw new Error("[llm:openai] HTTP 503"); return capture; } }));
 vi.mock("@/lib/github", () => ({
   githubPut: (...a: [string, string, string, string]) => githubPut(...a),
   githubGet: async () => ({ ok: false }),
@@ -46,12 +59,9 @@ vi.mock("@/lib/github", () => ({
   appendToIndex: async () => { order.push("index"); },
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
 }));
-// Linking finishes only after matching has started; matching resolves only once
-// linking has run. A route that awaited one before starting the other would hang.
 vi.mock("@/lib/linking", () => ({
   linkCapture: vi.fn(async () => {
     order.push("link");
-    releaseMatch?.();
     return [];
   }),
 }));
@@ -74,8 +84,11 @@ const strong: WhereResult = {
   map: { date: "2026-10-29", head7: "abc1234" }, scorer: "evidence", modelConf: 0.9,
 };
 
-function post(): Promise<Response> {
-  return POST(new NextRequest("https://xkg.test/api/capture", { method: "POST", body: JSON.stringify({ content: "some notes about memory" }) }));
+/** POST a capture and finish the work scheduled after the response. */
+async function post(): Promise<Response> {
+  const res = await POST(new NextRequest("https://xkg.test/api/capture", { method: "POST", body: JSON.stringify({ content: "some notes about memory" }) }));
+  await runAfterResponse();
+  return res;
 }
 
 const capturePath = () => `inbox/${formatDate()}-llm-memory.md`;
@@ -84,11 +97,14 @@ beforeEach(() => {
   files.clear();
   files.set("INDEX.md", { content: "# Index\n", sha: "i" });
   order.length = 0;
+  afterResponse.length = 0;
   githubPut.mockClear();
   matchCapture.mockClear();
   recordWhereEvent.mockClear();
   recordHandoffEvent.mockClear();
   failWhereWrite = false;
+  extractFails = false;
+  refundQuota.mockClear();
 });
 
 describe("web capture", () => {
@@ -108,13 +124,51 @@ describe("web capture", () => {
     expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
   });
 
-  // protects: AC9, matching runs alongside writing and linking; fails_when: matching starts after the file is written or blocks linking; no_claim: real latency
-  it("starts matching before the file is written and lets linking run meanwhile", async () => {
+  // protects: AC9, matching runs alongside writing; fails_when: matching starts after the file is written; no_claim: real latency
+  it("starts matching before the file is written", async () => {
     matchResult = strong;
     await post();
     expect(order.indexOf("match")).toBeLessThan(order.indexOf(`put:${capturePath()}`));
-    expect(order.indexOf("link")).toBeGreaterThan(order.indexOf("match"));
+  });
+
+  // protects: the result shows without waiting for linking or the section write; fails_when: the route awaits either before answering; no_claim: real latency
+  it("answers before linking and the section write, then runs both after the response", async () => {
+    matchResult = strong;
+    const res = await POST(new NextRequest("https://xkg.test/api/capture", { method: "POST", body: JSON.stringify({ content: "some notes about memory" }) }));
+    expect((await res.json()).where.fit).toBe("Strong fit");
+    expect(order).not.toContain("link");
+    expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
+    await runAfterResponse();
+    expect(order).toContain("link");
+    expect(files.get(capturePath())!.content).toContain("## Where it applies");
+  });
+
+  // protects: linking and the section write never edit the file at the same time; fails_when: the section is written before linking ends; no_claim: none
+  it("writes the section after linking", async () => {
+    matchResult = strong;
+    await post();
     expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("link"));
+  });
+
+  // protects: a failed extraction costs no quota; fails_when: the hourly count keeps the failed try; no_claim: none
+  it("gives the quota back when extraction fails", async () => {
+    extractFails = true;
+    const res = await post();
+    expect(res.status).toBe(502);
+    expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  // protects: each capture leaves one log line with time per step; fails_when: a step or the model is missing, or no line is logged; no_claim: the times are accurate
+  it("logs one timing line per capture", async () => {
+    matchResult = strong;
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await post();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("capture.timing"));
+    info.mockRestore();
+    expect(lines).toHaveLength(1);
+    const line = JSON.parse(lines[0]!);
+    expect(line).toMatchObject({ event: "capture.timing", provider: "openai", fetched: false });
+    for (const step of ["fetch", "extract", "save", "index", "match", "total", "background"]) expect(typeof line.ms[step]).toBe("number");
   });
 
   // protects: AC3, users with no maps keep today's file; fails_when: the file differs from buildMarkdown or is written twice; no_claim: none
@@ -204,11 +258,13 @@ describe("auto-queue for the coding agent", () => {
     expect(queued()).toHaveLength(1);
   });
 
-  // protects: the queue write never touches GitHub while the section is being written; fails_when: HANDOFFS.md is written before the capture's section; no_claim: none
-  it("web: writes the queue after the section", async () => {
+  // protects: the queue write never touches GitHub while the section is being written; fails_when: HANDOFFS.md is written after the response; no_claim: none
+  it("web: writes the queue before the response, the section after it", async () => {
     matchResult = strong;
-    await post();
-    expect(order.indexOf(`put:${HANDOFFS_PATH}`)).toBeGreaterThan(order.lastIndexOf(`put:${capturePath()}`));
+    await POST(new NextRequest("https://xkg.test/api/capture", { method: "POST", body: JSON.stringify({ content: "some notes about memory" }) }));
+    expect(order).toContain(`put:${HANDOFFS_PATH}`);
+    await runAfterResponse();
+    expect(order.indexOf(`put:${HANDOFFS_PATH}`)).toBeLessThan(order.lastIndexOf(`put:${capturePath()}`));
   });
 
   // protects: AC2 on the MCP path; fails_when: only the web path queues; no_claim: none
