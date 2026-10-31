@@ -50,10 +50,12 @@ export default function KnowledgePage() {
   const [checks, setChecks] = useState<Record<string, LinkCheck>>({});
 
   // The tab lives in the address, so Back from a capture lands on the same one.
-  useEffect(() => {
+  // It is read once the list arrives, in the same update, so the chosen tab
+  // and its captures appear together.
+  function tabFromAddress(): CaptureStatus | null {
     const t = new URLSearchParams(window.location.search).get("tab");
-    if (TABS.some((x) => x.status === t)) setTab(t as CaptureStatus);
-  }, []);
+    return TABS.some((x) => x.status === t) ? (t as CaptureStatus) : null;
+  }
 
   function pickTab(t: CaptureStatus) {
     setTab(t);
@@ -66,6 +68,8 @@ export default function KnowledgePage() {
         if (res.status === 401) return window.location.assign("/login");
         const data = (await res.json()) as { captures?: CaptureRow[]; error?: string };
         if (!res.ok || !data.captures) throw new Error(data.error ?? TRY_AGAIN);
+        const fromAddress = tabFromAddress();
+        if (fromAddress) setTab(fromAddress);
         setCaptures(data.captures);
       })
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : TRY_AGAIN));
