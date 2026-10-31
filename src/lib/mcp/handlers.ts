@@ -110,7 +110,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   let linkedCount = 0;
   if (existing) {
     try {
-      const related = await linkCapture(user.llm_api_key!, user.github_token, user.github_repo, capture, filename, "inbox", existing.content, llmSettings(user));
+      const related = await linkCapture(user.github_token, user.github_repo, capture, filename, "inbox", existing.content);
       linkedCount = related.length;
     } catch {
       // Linking is best-effort — don't fail the capture

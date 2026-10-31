@@ -76,7 +76,7 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
-The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later.
+The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
@@ -545,7 +545,7 @@ xkg is BYOK. You bring your own API key. xkg never charges you for inference.
 
 Each provider starts on a low-cost model, which you can change in Settings → AI model. For example, Anthropic starts on Claude Haiku 4.5, OpenAI on GPT-4o mini and Google on Gemini 2.0 Flash.
 
-A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. At list prices:
+A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. That is the only AI call a capture makes: linking to related captures uses no model. At list prices:
 
 | Usage | Claude Haiku 4.5 | GPT-4o mini |
 | --- | --- | --- |
