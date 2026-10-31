@@ -690,6 +690,14 @@ describe("signatures", () => {
     expect(out.join(" ")).not.toMatch(/run|42/);
   });
 
+  it("drops every numeric literal form: hex, binary, octal, bigint, suffixed and leading-dot", async () => {
+    const { signatures } = await import("../code-map.js");
+    const out = signatures("a.ts", "export function f(code: 0xCAFE, mask: 0b1010, mode: 0o755, big: 123n, ratio: .75, e: 1.5e+3): void {}\n");
+    expect(out).toEqual(["function f(code: …, mask: …, mode: …, big: …, ratio: …, e: …): void"]);
+    expect(signatures("main.go", "func Read() [0xCAFE]byte {\n}\n")).toEqual(["func Read() […]byte"]);
+    expect(signatures("src/a.rs", "pub fn take(xs: [u8; 32usize], ys: [u16; 0x1F_u16]) -> u8 {\n}\n")).toEqual(["fn take(xs: [u8; …], ys: [u16; …]) -> u8"]);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

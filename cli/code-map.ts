@@ -230,7 +230,9 @@ const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: n
 // What reads as code rather than a declaration: a function body, a return, or a
 // call after a statement break.
 const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
-const NUMBER = /(?<![\w$.])\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?(?![\w$])/gi;
+// No identifier in the mapped languages starts with a digit, so a token that
+// does is a literal: hex, binary, octal, bigint and suffixed forms included.
+const NUMBER = /(?<![\w$.])(?:\d[\w$]*(?:\.\d[\w$]*)?|\.\d[\w$]*)(?:[+-]\d[\w$]*)?/g;
 
 /**
  * The last net under the scanner, which can misread a form it doesn't know: a
