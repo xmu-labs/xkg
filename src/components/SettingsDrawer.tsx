@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 import CodeRepos from "./CodeRepos";
 
@@ -41,6 +42,11 @@ const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
 ];
 
 type Theme = "light" | "dark";
+
+const MENU_PAGES: ReadonlyArray<{ href: string; label: string; hint?: string }> = [
+  { href: "/", label: "Capture" },
+  { href: "/knowledge", label: "Your knowledge", hint: "Everything you captured" },
+];
 
 /** Matches --motion-sheet-out: the panel unmounts once its slide-out ends. */
 const SHEET_OUT_MS = 200;
@@ -155,6 +161,11 @@ export default function SettingsDrawer({
 }) {
   const [open, setOpen] = useState(false);
   const [visible, setVisible] = useState(false);
+  // The panel opens on the menu; Settings is one level in.
+  const [view, setView] = useState<"menu" | "settings">("menu");
+  const pathname = usePathname();
+  const router = useRouter();
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const [theme, setTheme] = useState<Theme>(() =>
     typeof document === "undefined" ? "dark" : readTheme(),
   );
@@ -240,6 +251,7 @@ export default function SettingsDrawer({
     cleanup();
     setVisible(false);
     window.setTimeout(() => setOpen(false), SHEET_OUT_MS);
+    triggerRef.current?.focus();
     if (openedFromPop.current && window.history.state?.xkgDrawer) {
       openedFromPop.current = false;
       window.history.back();
@@ -267,6 +279,7 @@ export default function SettingsDrawer({
   const openDrawer = useCallback(() => {
     fillForm(me);
     closing.current = false;
+    setView("menu");
     setOpen(true);
     requestAnimationFrame(() => setVisible(true));
     openedFromPop.current = true;
@@ -277,7 +290,6 @@ export default function SettingsDrawer({
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    closeRef.current?.focus();
 
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -317,6 +329,29 @@ export default function SettingsDrawer({
       window.removeEventListener("popstate", onPop);
     };
   }, [open, close, cleanup]);
+
+  // Focus the panel's first control on open and on every switch between menu and Settings.
+  useEffect(() => {
+    if (open) closeRef.current?.focus();
+  }, [open, view]);
+
+  /**
+   * Goes to another page from the menu. The menu added a history entry when it
+   * opened; replacing it keeps Back stepping through pages, not menus.
+   */
+  function go(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    if (href === pathname) {
+      close();
+      return;
+    }
+    openedFromPop.current = false;
+    closing.current = true;
+    cleanup();
+    if (window.history.state?.xkgDrawer) router.replace(href);
+    else router.push(href);
+  }
 
   function chooseTheme(next: Theme) {
     setTheme(next);
@@ -544,29 +579,19 @@ export default function SettingsDrawer({
   return (
     <>
       <button
+        ref={triggerRef}
         type="button"
         onClick={openDrawer}
-        aria-label="Open settings"
+        aria-label="Menu"
         aria-haspopup="dialog"
         aria-expanded={open}
-        className="ml-auto shrink-0 rounded-full overflow-hidden transition-opacity"
-        style={{
-          width: 36,
-          height: 36,
-          background: "var(--card-bg)",
-          border: "1px solid var(--gold-low)",
-          opacity: 0.95,
-        }}
+        className="relative shrink-0 flex items-center justify-center rounded-xl"
+        style={{ width: 44, height: 44, border: "1px solid var(--gold-faint)", color: "var(--fg)" }}
       >
-        <AvatarImage src={avatar} size={36} fallback={
-          <span className="flex items-center justify-center w-full h-full" style={{ color: "var(--fg-muted)" }}>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="8" r="4" />
-              <path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" />
-            </svg>
-          </span>
-        } />
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" />
+        </svg>
       </button>
 
       {open && (
@@ -607,14 +632,31 @@ export default function SettingsDrawer({
           >
             <header className="flex items-center justify-between px-5 h-14 shrink-0"
               style={{ borderBottom: "1px solid var(--gold-faint)" }}>
-              <h2 id={titleId} className="text-base font-semibold" style={{ color: "var(--fg)" }}>
-                Settings
-              </h2>
+              <div className="flex items-center gap-1 min-w-0">
+                {view === "settings" && (
+                  <button
+                    ref={closeRef}
+                    type="button"
+                    onClick={() => setView("menu")}
+                    aria-label="Back to menu"
+                    className="p-2 -ml-2 rounded-lg"
+                    style={{ color: "var(--fg-muted)" }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                      stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M15 18l-6-6 6-6" />
+                    </svg>
+                  </button>
+                )}
+                <h2 id={titleId} className="text-base font-semibold" style={{ color: "var(--fg)" }}>
+                  {view === "menu" ? "Menu" : "Settings"}
+                </h2>
+              </div>
               <button
-                ref={closeRef}
+                ref={view === "menu" ? closeRef : undefined}
                 type="button"
                 onClick={close}
-                aria-label="Close settings"
+                aria-label="Close menu"
                 className="p-2 -mr-2 rounded-lg"
                 style={{ color: "var(--fg-muted)" }}
               >
@@ -625,6 +667,59 @@ export default function SettingsDrawer({
               </button>
             </header>
 
+            {view === "menu" ? (
+            <nav aria-label="Main" className="flex-1 overflow-y-auto overscroll-contain px-3 py-4 flex flex-col">
+              <button type="button" onClick={() => setView("settings")}
+                className="flex items-center gap-3 px-2 pb-4 mb-2 text-left"
+                style={{ borderBottom: "1px solid var(--gold-faint)" }}>
+                <span className="rounded-full overflow-hidden shrink-0"
+                  style={{ width: 44, height: 44, border: "1px solid var(--gold-low)", background: "var(--card-bg)" }}>
+                  <AvatarImage src={avatar} size={44} fallback={
+                    <span className="flex items-center justify-center w-full h-full" style={{ color: "var(--fg-muted)" }}>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <circle cx="12" cy="8" r="4" />
+                        <path d="M4 20c1.5-4 5-6 8-6s6.5 2 8 6" />
+                      </svg>
+                    </span>
+                  } />
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold truncate" style={{ color: "var(--fg)" }}>{me?.displayName ?? ""}</span>
+                  <span className="block text-xs truncate" style={{ color: "var(--fg-muted)" }}>{me ? `@${me.githubUsername}` : ""}</span>
+                </span>
+              </button>
+              <ul className="stack-1">
+                {MENU_PAGES.map((p) => (
+                  <li key={p.href}>
+                    <Link
+                      href={p.href}
+                      onClick={(e) => go(e, p.href)}
+                      aria-current={pathname === p.href ? "page" : undefined}
+                      className="flex flex-col justify-center min-h-12 px-3 py-2 rounded-xl"
+                      style={{ color: "var(--fg)", background: pathname === p.href ? "var(--gold-faint)" : undefined }}
+                    >
+                      <span className="text-[15px] font-medium">{p.label}</span>
+                      {p.hint && <span className="text-xs" style={{ color: "var(--fg-muted)" }}>{p.hint}</span>}
+                    </Link>
+                  </li>
+                ))}
+                <li>
+                  <button type="button" onClick={() => setView("settings")}
+                    className="w-full flex items-center min-h-12 px-3 py-2 rounded-xl text-left text-[15px] font-medium"
+                    style={{ color: "var(--fg)" }}>
+                    Settings
+                  </button>
+                </li>
+              </ul>
+              {me?.knowledgeRepo && (
+                <p className="mt-auto pt-6 px-3 text-xs leading-relaxed wrap-anywhere" style={{ color: "var(--fg-muted)" }}>
+                  Stored in your GitHub repo<br />
+                  <span style={{ color: "var(--fg)" }}>{me.knowledgeRepo}</span>
+                </p>
+              )}
+            </nav>
+            ) : (
             <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-5 stack-8">
               {/* 1. Account */}
               <section>
@@ -1132,6 +1227,7 @@ export default function SettingsDrawer({
                 <Link href="/terms" className="underline underline-offset-2">Terms</Link>
               </p>
             </div>
+            )}
           </aside>
         </div>
       )}

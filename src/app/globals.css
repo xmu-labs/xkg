@@ -78,6 +78,11 @@
   --drawer-shadow:    0 12px 40px rgba(17,19,26,0.16);
   --danger:           #b42318;
   --focus:            #2A2D3B;
+  /* Fit colors (Apply it card): text passes 4.5:1 on the card. */
+  --fit-strong:       #1E7A47;
+  --fit-strong-bg:    rgba(30,122,71,0.10);
+  --fit-possible:     #8A5A00;
+  --fit-possible-bg:  rgba(138,90,0,0.10);
   color-scheme:       light;
   --motion-quick:     150ms;
   --motion-sheet-in:  280ms;
@@ -107,6 +112,10 @@
   --drawer-shadow:    -8px 0 40px rgba(0,0,0,0.5);
   --danger:           #ff7b72;
   --focus:            #B8B5D0;
+  --fit-strong:       #7BE0A4;
+  --fit-strong-bg:    rgba(56,190,120,0.16);
+  --fit-possible:     #F2C46B;
+  --fit-possible-bg:  rgba(240,180,70,0.14);
   color-scheme:       dark;
 }
 
@@ -323,6 +332,12 @@ textarea::placeholder {
    visit and after a keyboard submit, so it stays still. */
 [data-label="loading"] { animation: xkg-label-in var(--motion-quick) var(--ease-out); }
 .fade-in { animation: xkg-fade var(--motion-quick) var(--ease-out); }
+/* Apply it: the one card that carries the fit color, as a left bar and the pill. */
+.apply-it { background: var(--card-bg); border: 1px solid var(--gold-faint); border-left: 3px solid var(--gold-low); }
+.apply-it[data-tone="strong"] { --fit: var(--fit-strong); --fit-bg: var(--fit-strong-bg); border-left-color: var(--fit-strong); }
+.apply-it[data-tone="possible"] { --fit: var(--fit-possible); --fit-bg: var(--fit-possible-bg); border-left-color: var(--fit-possible); }
+.fit-pill { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.4; padding: 2px 10px; border-radius: 9999px; color: var(--fit); background: var(--fit-bg); border: 1px solid color-mix(in srgb, var(--fit) 45%, transparent); white-space: nowrap; }
+
 .saved-pop { display: inline-block; animation: xkg-pop 200ms var(--ease-out) 160ms both; }
 
 @media (prefers-reduced-motion: reduce) {

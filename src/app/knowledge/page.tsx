@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import BrandMark from "@/components/BrandMark";
+import Link from "next/link";
+import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import Backdrop from "@/components/Backdrop";
 import type { CaptureRow, CaptureStatus, LinkCheck } from "@/lib/captures";
 import type { WeekStats } from "@/lib/ledger";
@@ -43,6 +44,7 @@ function writeCursor(after: string | null): void {
 }
 
 export default function KnowledgePage() {
+  const [me, setMe] = useState<Me | null>(null);
   const [captures, setCaptures] = useState<CaptureRow[] | null>(null);
   const [loadError, setLoadError] = useState("");
   const [weeks, setWeeks] = useState<WeekStats[] | null>(null);
@@ -73,6 +75,9 @@ export default function KnowledgePage() {
         setCaptures(data.captures);
       })
       .catch((err: unknown) => setLoadError(err instanceof Error ? err.message : TRY_AGAIN));
+    void fetch("/api/me")
+      .then(async (res) => (res.ok ? setMe((await res.json()) as Me) : undefined))
+      .catch(() => { /* the menu shows no name */ });
     void fetch("/api/apply-stats")
       .then(async (res) => (res.ok ? setWeeks(((await res.json()) as { weeks: WeekStats[] }).weeks) : undefined))
       .catch(() => { /* the applies line just stays hidden */ });
@@ -132,7 +137,9 @@ export default function KnowledgePage() {
         <div className="flex items-center gap-3">
           <BrandMark size={40} />
           <h1 className="text-xl font-semibold" style={{ color: "var(--fg)" }}>Your knowledge</h1>
-          <Link href="/" className="ml-auto shrink-0 text-sm font-medium" style={{ color: "var(--gold)" }}>Capture</Link>
+          <div className="ml-auto shrink-0">
+            <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={false} />
+          </div>
         </div>
         {thisWeek && (
           <p className="text-[15px] leading-snug mt-3" style={{ color: "var(--fg-muted)" }}>

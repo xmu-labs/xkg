@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import ApplyIt, { applyWhere } from "@/components/ApplyIt";
 import Backdrop from "@/components/Backdrop";
+import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import type { CaptureDetail } from "@/lib/capture-detail";
 import { CARD_STYLE, TRY_AGAIN, captureHref, post, shortDate } from "../ui";
 
@@ -18,11 +20,6 @@ const TYPE_LABELS: Record<string, string> = {
   notes: "Notes", post: "Post", book: "Book", url: "Link",
 };
 const STATUS_LABELS: Record<CaptureDetail["status"], string> = { inbox: "Inbox", applied: "Applied", archived: "Archived" };
-
-/** Text with `backticked` names shown as code. */
-function withCode(text: string) {
-  return text.split("`").map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[12px]">{part}</code> : part));
-}
 
 function domain(url: string): string {
   try {
@@ -52,6 +49,13 @@ export default function CapturePage() {
 function CaptureLoader({ filename }: { filename: string }) {
   const [capture, setCapture] = useState<CaptureDetail | null>(null);
   const [error, setError] = useState("");
+  const [me, setMe] = useState<Me | null>(null);
+
+  useEffect(() => {
+    void fetch("/api/me")
+      .then(async (res) => (res.ok ? setMe((await res.json()) as Me) : undefined))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     void fetch(`/api/captures/read?name=${encodeURIComponent(filename)}`)
@@ -70,9 +74,14 @@ function CaptureLoader({ filename }: { filename: string }) {
     <>
     <Backdrop strength="quiet" />
     <main className="min-h-dvh flex flex-col px-4 py-8 max-w-xl mx-auto stack-4 wrap-anywhere">
-      <Link href={back} className="self-start min-h-11 -my-2 flex items-center text-sm font-medium" style={{ color: "var(--gold)" }}>
-        ← Your knowledge
-      </Link>
+      <div className="flex items-center gap-3">
+        <Link href={back} className="min-h-11 -my-2 flex items-center text-sm font-medium" style={{ color: "var(--gold)" }}>
+          ← Your knowledge
+        </Link>
+        <div className="ml-auto shrink-0">
+          <SettingsDrawer me={me} onMe={setMe} newVersionAvailable={false} />
+        </div>
+      </div>
 
       {error && <p role="alert" className="text-sm" style={{ color: "var(--danger)" }}>{error}</p>}
       {!capture && !error && <p className="text-sm" style={{ color: "var(--fg-muted)" }}>Loading…</p>}
@@ -84,7 +93,6 @@ function CaptureLoader({ filename }: { filename: string }) {
 
 function CaptureView({ capture: c }: { capture: CaptureDetail }) {
   const meta = [c.date && shortDate(c.date), c.type && (TYPE_LABELS[c.type] ?? c.type), STATUS_LABELS[c.status]].filter(Boolean).join(" · ");
-  const where = c.where;
   return (
     <div className="w-full min-w-0 stack-3">
       <div className="stack-1.5">
@@ -120,6 +128,8 @@ function CaptureView({ capture: c }: { capture: CaptureDetail }) {
         </Card>
       )}
 
+      <ApplyIt where={applyWhere(c.where)} advice={c.advice} />
+
       {c.takeaways.length > 0 && (
         <Card label="Takeaways">
           <ul className="stack-2.5">
@@ -144,39 +154,6 @@ function CaptureView({ capture: c }: { capture: CaptureDetail }) {
         </Card>
       )}
 
-      {where && (
-        <Card label="In your code" testId="where">
-          {where.repo && (
-            <p className="text-sm leading-relaxed">
-              <span className="font-medium" style={{ color: "var(--fg)" }}>{where.fit}</span>
-              <span style={{ color: "var(--fg-muted)" }}> · {where.repo}</span>
-            </p>
-          )}
-          {where.files.length > 0 && (
-            <ul className="stack-2">
-              {where.files.map((f) => (
-                <li key={f.path} className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-                  <code className="font-mono text-[12px]" style={{ color: "var(--fg)" }}>{f.path}</code>
-                  {f.why && <>: {withCode(f.why)}</>}
-                  {f.after && <> · After: {withCode(f.after)}</>}
-                </li>
-              ))}
-            </ul>
-          )}
-          {where.also.length > 0 && (
-            <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-              Also fits: {where.also.map((a) => `${a.repo} (${a.fit})`).join(", ")}
-            </p>
-          )}
-          {where.note && <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>{where.note}</p>}
-        </Card>
-      )}
-
-      {c.advice && (
-        <Card label="Where to use it">
-          <p className="text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>{c.advice}</p>
-        </Card>
-      )}
 
       {c.applications.length > 0 && (
         <Card label={c.applications.length > 1 ? `Applied ${c.applications.length} times` : "Applied"} testId="applied">
