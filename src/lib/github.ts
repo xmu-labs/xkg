@@ -230,12 +230,15 @@ export async function appendToIndex(
   try {
     await appendRow(token, repo, row, commitMessage);
   } catch {
+    // The first write may have landed with its answer lost on the way back;
+    // appendRow re-reads and skips a row that is already there.
     await appendRow(token, repo, row, commitMessage);
   }
 }
 
 async function appendRow(token: string, repo: string, row: string, commitMessage: string): Promise<void> {
   const existing = await readFile(token, repo, "INDEX.md");
+  if (existing?.content.includes(row)) return;
 
   if (existing) {
     await githubPut(token, repo, "INDEX.md", existing.content + row, commitMessage, existing.sha);

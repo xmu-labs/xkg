@@ -29,6 +29,16 @@ describe("appendToIndex", () => {
     expect(Buffer.from(second.content, "base64").toString()).toBe("# Index\n| other |\n| mine |\n");
   });
 
+  // protects: a write that landed but lost its answer isn't repeated; fails_when: the retry appends the row a second time; no_claim: none
+  it("does not append the row again when the first write landed but its answer was lost", async () => {
+    fetchSpy
+      .mockResolvedValueOnce(file("# Index\n", "sha1"))
+      .mockRejectedValueOnce(new TypeError("fetch failed"))
+      .mockResolvedValueOnce(file("# Index\n| mine |\n", "sha2"));
+    await appendToIndex("t", "o/r", "| mine |\n", "m");
+    expect(fetchSpy.mock.calls.filter((c: unknown[]) => (c[1] as RequestInit)?.method === "PUT")).toHaveLength(1);
+  });
+
   // protects: a persistent failure is still reported; fails_when: a second failure is swallowed or a third try made; no_claim: none
   it("throws after the second failure", async () => {
     fetchSpy

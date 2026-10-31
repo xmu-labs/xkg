@@ -120,6 +120,8 @@ export const CAPTURE_QUOTA = 60;
 export const QUOTA_WINDOW_SECONDS = 60 * 60;
 
 export interface QuotaState {
+  /** The window this unit was charged to; refundQuota needs it back. */
+  windowStartedAt: Date;
   allowed: boolean;
   used: number;
   limit: number;
@@ -160,19 +162,20 @@ export async function consumeQuota(
     Math.ceil((startedAt + windowSeconds * 1000 - Date.now()) / 1000),
   );
 
-  return { allowed: used <= limit, used, limit, resetIn };
+  return { allowed: used <= limit, used, limit, resetIn, windowStartedAt: new Date(startedAt) };
 }
 
 /**
  * Give one unit back, so a capture that failed before it cost anything (the
  * provider was down, the key was rejected) doesn't count against the hour.
- * Never below zero, and never touching a window that has already reset.
+ * Only the window the unit was charged to is touched: if the window rolled
+ * over in between, the new window's count belongs to other requests. Never
+ * below zero.
  */
-export async function refundQuota(identifier: string, windowSeconds = QUOTA_WINDOW_SECONDS): Promise<void> {
+export async function refundQuota(identifier: string, windowStartedAt: Date): Promise<void> {
   const key = identifier.toLowerCase();
   await sql`
     UPDATE usage_quota SET used = GREATEST(used - 1, 0)
-    WHERE identifier = ${key}
-      AND window_started_at >= NOW() - (${windowSeconds} * INTERVAL '1 second')
+    WHERE identifier = ${key} AND window_started_at = ${windowStartedAt.toISOString()}
   `;
 }

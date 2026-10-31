@@ -111,7 +111,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
     const message = err instanceof Error ? err.message : "Extraction failed";
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
-      await refundQuota(`capture:user:${user.id}`);
+      await refundQuota(`capture:user:${user.id}`, quota.windowStartedAt);
     } catch {
       // The refund is a courtesy; the error above is what the user needs.
     }
