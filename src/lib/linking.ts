@@ -1,10 +1,12 @@
 /**
  * Auto-linking: connects new captures to related existing captures.
  * Populates "Links to memory" sections and maintains back-links.
+ * Related captures come from shared tags and words (./related), not a model
+ * call, so linking is free and its cost doesn't grow with the index.
  */
 
 import { readFile, githubPut } from "./github";
-import { findRelatedCaptures, type LlmConfig } from "./llm";
+import { relatedByOverlap } from "./related";
 import type { ExtractedCapture, RelatedCapture } from "./types";
 
 /** Format related captures as Markdown links for the "Links to memory" section. */
@@ -15,22 +17,6 @@ function formatLinks(related: RelatedCapture[]): string {
       const slug = r.filename.replace(/^.*\//, "").replace(/\.md$/, "").replace(/^\d{4}-\d{2}-\d{2}-/, "");
       return `- [${slug}](../${r.filename}) — ${r.reason}`;
     })
-    .join("\n");
-}
-
-const basename = (path: string) => path.replace(/^.*\//, "");
-
-/** True when `path` names the capture `filename`: by repo path, or by bare filename as a fallback. */
-function isSelf(path: string, selfPath: string, filename: string): boolean {
-  const p = path.trim().replace(/^\.?\//, "");
-  return p === selfPath || basename(p) === filename;
-}
-
-/** The index without the capture's own row, so it is never offered as its own candidate. */
-function indexWithout(indexContent: string, selfPath: string, filename: string): string {
-  return indexContent
-    .split("\n")
-    .filter((line) => ![...line.matchAll(/\]\(([^)]+)\)/g)].some((m) => isSelf(m[1]!, selfPath, filename)))
     .join("\n");
 }
 
@@ -45,25 +31,17 @@ function buildBackLink(newFilename: string, newSlug: string, reason: string): st
  * to related captures (up to 3 to limit GitHub API calls).
  */
 export async function linkCapture(
-  apiKey: string,
   githubToken: string,
   repo: string,
   capture: ExtractedCapture,
   filename: string,
   folder: string,
   indexContent: string,
-  llm: LlmConfig = "anthropic",
 ): Promise<RelatedCapture[]> {
-  // The web route appends this capture's row before linking, so take it out
-  // of the candidates, and drop it again if the model names it anyway.
+  // The web route appends this capture's row before linking; the ranker
+  // never offers a capture its own row.
   const newFilePath = `${folder}/${filename}`;
-  const candidates = indexWithout(indexContent, newFilePath, filename);
-  if (!/\]\([^)]+\.md\)/.test(candidates)) return [];
-
-  // Find related captures via LLM
-  const related = (await findRelatedCaptures(apiKey, capture, candidates, llm)).filter(
-    (r) => typeof r?.filename === "string" && !isSelf(r.filename, newFilePath, filename),
-  );
+  const related = relatedByOverlap(capture, indexContent, newFilePath, filename);
   if (related.length === 0) return [];
 
   // Update the new capture's "Links to memory" section
@@ -78,9 +56,9 @@ export async function linkCapture(
     }
   }
 
-  // Add back-links to related captures (limit to 3 to avoid excessive API calls)
+  // Add back-links to related captures (the ranker returns at most 3)
   const newSlug = capture.slug;
-  const backLinkPromises = related.slice(0, 3).map(async (r) => {
+  const backLinkPromises = related.map(async (r) => {
     try {
       const relatedFile = await readFile(githubToken, repo, r.filename);
       if (!relatedFile) return;

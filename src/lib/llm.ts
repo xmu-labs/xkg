@@ -6,7 +6,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { LLM_PROVIDERS, PROVIDERS } from "./providers";
 import { buildSource, buildExtractionInput, checkClaims, sourceFrontmatter, renderEvidenceSection, renderSourceSection, sourceText } from "./evidence";
-import type { ExtractedCapture, SourceSnapshot, ContentType, RelatedCapture, RelevanceResult, SynthesisResult, ApplicationSuggestion, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
+import type { ExtractedCapture, SourceSnapshot, ContentType, RelevanceResult, SynthesisResult, ApplicationSuggestion, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
 // ── Config ──
 
@@ -735,53 +735,6 @@ _none yet_
 ---
 
 ${rawSection}${sourceSection}`;
-}
-
-// ── Auto-linking ──
-
-const LINKING_PROMPT = `You identify connections between knowledge captures. Given a NEW capture and an INDEX of existing captures, find the most semantically related existing captures.
-
-Return ONLY valid JSON — no markdown, no wrapping:
-[{"filename":"path/to/file.md","reason":"one sentence explaining the connection"}]
-
-RULES:
-- Return up to 5 related captures, or [] if none are meaningfully related
-- Only include captures where the connection is genuinely useful for building on either insight
-- The "reason" should explain WHY these two insights connect (shared principle, complementary framing, tension worth exploring)
-- Use the exact filename/path from the index rows (e.g. "inbox/2026-04-02-some-slug.md")
-- Prefer conceptual connections over superficial tag overlap`;
-
-/** Find captures in the index that are semantically related to a new capture. */
-export async function findRelatedCaptures(
-  apiKey: string,
-  capture: ExtractedCapture,
-  indexContent: string,
-  llm: LlmConfig = "anthropic",
-): Promise<RelatedCapture[]> {
-  const userMessage = `NEW CAPTURE:
-Title: ${capture.inferredTitle}
-Core idea: ${capture.coreIdea}
-Tags: ${capture.tags.join(", ")}
-Takeaways:
-${capture.takeaways.map((t) => `- ${t}`).join("\n")}
-
-INDEX OF EXISTING CAPTURES:
-${indexContent}`;
-
-  const rawText = (await callLlm({
-    llm,
-    apiKey,
-    system: LINKING_PROMPT,
-    user: userMessage,
-    maxTokens: 500,
-  })) || "[]";
-  const rawJson = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-
-  try {
-    return JSON.parse(rawJson) as RelatedCapture[];
-  } catch {
-    return [];
-  }
 }
 
 // ── Semantic retrieval ──
