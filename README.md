@@ -78,7 +78,11 @@ xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and th
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
-**Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
+After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead.
+
+The **☰ menu** (top right on every page) holds your account, **Capture**, **Your knowledge** and **Settings**, and shows the GitHub repo your captures are stored in.
+
+**Your knowledge** (in the ☰ menu) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
 - **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.

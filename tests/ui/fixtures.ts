@@ -62,6 +62,17 @@ export async function signIn(page: Page, me = WORST_ME) {
   await page.route("**/api/code-repos", (r) => r.fulfill({ json: { repos: [] } }));
 }
 
+/** Opens the ☰ menu. */
+export async function openMenu(page: Page) {
+  await page.getByRole("button", { name: "Menu" }).tap();
+}
+
+/** Opens Settings: it lives inside the ☰ menu. */
+export async function openSettings(page: Page) {
+  await openMenu(page);
+  await page.getByRole("dialog").getByRole("button", { name: "Settings" }).tap();
+}
+
 export async function setTheme(page: Page, theme: "light" | "dark") {
   await page.addInitScript((t) => localStorage.setItem("xkg-theme", t), theme);
 }

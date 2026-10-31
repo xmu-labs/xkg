@@ -1,4 +1,4 @@
-import { test, expect, signIn } from "./fixtures";
+import { test, expect, signIn, openMenu } from "./fixtures";
 import type { Page } from "@playwright/test";
 
 // Your knowledge page: the human decisions that used to be MCP tools (archive,
@@ -24,10 +24,21 @@ async function open(page: Page) {
   await page.goto("/knowledge");
 }
 
-test("home links to Your knowledge", async ({ page }) => {
+test("the menu on home goes to Your knowledge, and back to Capture", async ({ page }) => {
   await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
   await page.goto("/");
-  await page.getByRole("link", { name: "Your knowledge" }).tap();
+  await openMenu(page);
+  await page.getByRole("dialog").getByRole("link", { name: /Your knowledge/ }).tap();
+  await expect(page).toHaveURL(/\/knowledge$/);
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
+  await openMenu(page);
+  await expect(page.getByRole("dialog").getByRole("link", { name: /Your knowledge/ })).toHaveAttribute("aria-current", "page");
+  await page.getByRole("dialog").getByRole("link", { name: "Capture", exact: true }).tap();
+  await expect(page).toHaveURL(/\/$/);
+  // The menu replaces its own history entry, so Back steps through pages, not menus.
+  await page.goBack();
   await expect(page).toHaveURL(/\/knowledge$/);
 });
 
