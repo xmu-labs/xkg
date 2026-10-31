@@ -113,10 +113,18 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   }
 
   // The page asked for progress: one JSON line per stage, then the result.
+  // If the page goes away mid-capture the stream is cancelled; the capture
+  // still finishes and saves, so later writes are dropped instead of throwing.
   const encoder = new TextEncoder();
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
     async start(controller) {
-      const send = (line: CaptureLine) => controller.enqueue(encoder.encode(JSON.stringify(line) + "\n"));
+      const send = (line: CaptureLine) => {
+        if (!cancelled) controller.enqueue(encoder.encode(JSON.stringify(line) + "\n"));
+      };
       try {
         const { status, body } = await run((stage) => send({ stage }));
         send(status === 200 ? { result: body } : { error: (body as { error: string }).error, status });
@@ -124,7 +132,7 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
         console.error("[capture] unhandled error:", err);
         send({ error: `[capture] ${err instanceof Error ? err.message : "Unexpected error"}`, status: 500 });
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
   });
