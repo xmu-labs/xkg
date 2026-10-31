@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { askJev, jevPayload, jevScorer, JEV_CUTOFFS, JEV_MODEL, JEV_TIMEOUT_MS, JEV_URL } from "../jev";
+import { askJev, jevPayload, jevScorer, JEV_CUTOFFS, RICH_MAP_POSSIBLE, JEV_MODEL, JEV_TIMEOUT_MS, JEV_URL } from "../jev";
 import type { MapFile } from "../code-map";
 import type { Candidate } from "../where-score";
 
@@ -150,6 +150,28 @@ describe("jevScorer", () => {
     expect(onUsage).toHaveBeenCalledWith({ tokensIn: 12000, tokensOut: 800 });
     expect(scorer.name).toBe("jev");
     expect(scorer.cutoffs).toEqual(JEV_CUTOFFS);
+  });
+
+  // protects: a richer map's lower scores land on the same scale as a names-only map's, so one set of cutoffs serves both and repos compare fairly; fails_when: a rich repo's 0.30 is not Possible, a names-only repo's p changes, Strong moves, or order inside a repo changes; no_claim: the 0.30 value itself (set offline on 30 captures)
+  it("lifts a richer map's scores so Possible starts at 0.30 for it, leaving names-only maps and Strong alone", async () => {
+    const rich: MapFile = { ...files[0]!, d: "Calls the user's model.", g: ["function callLlm(): void"] };
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const repo = JSON.parse(init.body as string).state.repo.name as string;
+      return repo === "acme/rich"
+        ? reply({ fit_0: noul(0.3), fit_1: noul(0.15), fit_2: noul(0.6), anything_fits: noul(1) })
+        : reply({ fit_0: noul(0.3), anything_fits: noul(1) });
+    });
+    const scores = await jevScorer("ts-key", fetch).score(capture, [
+      cand("acme/rich", rich),
+      cand("acme/rich", { p: "src/a.ts", e: ["a"] }),
+      cand("acme/rich", { p: "src/b.ts", e: ["b"] }),
+      cand("acme/names", { p: "src/c.ts", e: ["c"] }),
+    ]);
+    expect(RICH_MAP_POSSIBLE).toBe(0.3);
+    expect(scores[0]!.p).toBeCloseTo(JEV_CUTOFFS.possible, 10);
+    expect(scores[1]!.p).toBeCloseTo(0.2, 10);
+    expect(scores[2]!.p).toBeCloseTo(0.6, 10);
+    expect(scores[3]!.p).toBeCloseTo(0.3, 10);
   });
 
   // protects: a candidate's note reaches Jev; fails_when: the scorer drops it on the way to the payload; no_claim: none

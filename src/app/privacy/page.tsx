@@ -53,7 +53,7 @@ export default function PrivacyPage() {
             "Code maps",
             "The xkg CLI's git hooks, from repositories where you set them up; or GitHub, for a repository you add in Settings",
             "To show where a capture applies in your code",
-            "Per repository (at most 20): file paths, exported function and class names, and which files import which. For a repository added from GitHub, file paths only, read again when they are a week old. Never file contents, comments or package names",
+            "Per repository (at most 20): file paths, exported function and class names with their signatures (parameter and return types, never default values), which files import which, and the first sentence of the doc comment a file opens with. For a repository added from GitHub, file paths only, read again when they are a week old. Never code, other comments or package names",
           ],
           [
             "Surface counts",
@@ -137,7 +137,8 @@ export default function PrivacyPage() {
             <>
               When a new capture is matched to your code: its title, core idea and takeaways, and for
               up to 15 files in each of your 5 most recently synced repositories, their paths, exported
-              names and the paths of the files they import, and for a file that applies of two of
+              names and signatures, the first sentence of the doc comment they open with, and the paths
+              of the files they import, and for a file that applies of two of
               your captures sharing a tag changed, a note naming that tag. Never code or file
               contents. Sent with xkg&apos;s TypeSafe key, not yours
             </>,

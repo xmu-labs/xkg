@@ -25,6 +25,24 @@ export const JEV_TIMEOUT_MS = 5000;
  * shift of 0.05 moves one or two captures, so re-measure before changing.
  */
 export const JEV_CUTOFFS: Cutoffs = { strong: 0.5, possible: 0.4 };
+/**
+ * When candidate files carry doc lines or signatures, Jev answers more
+ * cautiously: on the same 30 captures, files that fit scored lower. For those
+ * repos Possible starts here; Strong stays at 0.5.
+ */
+export const RICH_MAP_POSSIBLE = 0.3;
+
+/**
+ * A richer map's p moved onto the names-only scale, so one set of cutoffs
+ * serves every repo and repos compare fairly: RICH_MAP_POSSIBLE maps to
+ * Possible, Strong and above stay put, and order is kept.
+ */
+function onNamesScale(p: number): number {
+  const { possible, strong } = JEV_CUTOFFS;
+  if (p >= strong) return p;
+  if (p <= RICH_MAP_POSSIBLE) return (p * possible) / RICH_MAP_POSSIBLE;
+  return possible + ((p - RICH_MAP_POSSIBLE) * (strong - possible)) / (strong - RICH_MAP_POSSIBLE);
+}
 
 const MAX_EXPORTS = 50;
 const MAX_IMPORTS = 20;
@@ -143,7 +161,12 @@ export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
       const p = new Map<string, number>();
       repos.forEach((repo, r) => {
         const a = answers[r]!;
-        byRepo.get(repo)!.forEach((f, i) => p.set(`${repo}\n${f.p}`, a.fits[i]! * a.anythingFits));
+        const files = byRepo.get(repo)!;
+        const rich = files.some((f) => f.d || f.g?.length);
+        files.forEach((f, i) => {
+          const raw = a.fits[i]! * a.anythingFits;
+          p.set(`${repo}\n${f.p}`, rich ? onNamesScale(raw) : raw);
+        });
       });
       // Like the model path, usage is reported only when every count is known:
       // a missing count is unknown, not zero.
