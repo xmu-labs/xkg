@@ -2,9 +2,10 @@
  * Jev, TypeSafe's decision model, decides where a capture applies. One request
  * per repo asks, for each candidate file from the name ranker, whether applying
  * the capture would change that file, and whether anything in the repo fits at
- * all. Only names leave xkg: the repo name, file paths, exported names, mapped
- * import paths and the capture's extracted text, plus a note on a file that
- * earlier applies proved for one of the capture's tags. Never code.
+ * all. Only the map leaves xkg: the repo name, file paths, exported names and
+ * their signatures, mapped import paths, each file's one-line doc comment and
+ * the capture's extracted text, plus a note on a file that earlier applies
+ * proved for one of the capture's tags. Never code.
  *
  * The questions and cutoffs live here so they can be read and tuned together.
  * A failed call is an error, never a "no": the caller falls back to the model.
@@ -27,8 +28,9 @@ export const JEV_CUTOFFS: Cutoffs = { strong: 0.5, possible: 0.4 };
 
 const MAX_EXPORTS = 50;
 const MAX_IMPORTS = 20;
+const MAX_SIGNATURES = 30;
 
-type FileState = { exports: string[]; imports: string[]; history?: string };
+type FileState = { exports: string[]; imports: string[]; summary?: string; signatures?: string[]; history?: string };
 /** A candidate file: its map entry, and what xkg learned about it from earlier applies, if anything. */
 export type JevFile = MapFile & { note?: string };
 
@@ -37,6 +39,8 @@ export function jevPayload(repo: string, capture: CaptureText, files: JevFile[])
     path: f.p,
     exports: (f.e ?? []).slice(0, MAX_EXPORTS),
     imports: (f.i ?? []).slice(0, MAX_IMPORTS),
+    ...(f.d ? { summary: f.d } : {}),
+    ...(f.g?.length ? { signatures: f.g.slice(0, MAX_SIGNATURES) } : {}),
     ...(f.note ? { history: f.note } : {}),
   }));
   const questions: Record<string, { type: "noul"; instructions: unknown; criteria: { true: string; false: string } }> = {};

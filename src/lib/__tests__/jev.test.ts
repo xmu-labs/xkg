@@ -70,6 +70,21 @@ describe("jevPayload", () => {
   });
 });
 
+describe("jevPayload with a richer map", () => {
+  // protects: Jev sees what each file does, from the map only; fails_when: a file's doc line or signatures are dropped, or a file without them gets empty fields; no_claim: how Jev weighs them
+  it("sends a file's doc line as summary and its signatures", () => {
+    const rich: MapFile = { ...files[0]!, d: "Calls the user's model.", g: ["function callLlm(opts: LlmCallOptions): Promise<string>"] };
+    const p = jevPayload("acme/app", capture, [rich, files[1]!]);
+    expect(p.state.repo.candidate_files["src/lib/llm.ts"]).toEqual({
+      exports: ["callLlm", "llmSettings"],
+      imports: ["src/lib/providers.ts"],
+      summary: "Calls the user's model.",
+      signatures: ["function callLlm(opts: LlmCallOptions): Promise<string>"],
+    });
+    expect(p.state.repo.candidate_files["src/lib/providers.ts"]).toEqual({ exports: ["PROVIDERS"], imports: [] });
+  });
+});
+
 describe("askJev", () => {
   // protects: the key stays on the server and goes only to TypeSafe; fails_when: the key goes elsewhere, without Bearer, or the payload differs from jevPayload; no_claim: none
   it("posts the payload to TypeSafe with the key as a bearer token and returns each file's yes-score", async () => {
