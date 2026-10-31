@@ -5,6 +5,7 @@
  * link never claims a deeper connection than the overlap shows.
  */
 
+import { parseIndexRows, type CaptureRow } from "./captures";
 import type { ExtractedCapture, RelatedCapture } from "./types";
 
 /** Links written per capture; also bounds the back-link writes. */
@@ -41,31 +42,7 @@ function words(text: string): string[] {
 }
 
 const basename = (path: string) => path.replace(/^.*\//, "");
-
-interface IndexRow {
-  path: string;
-  slug: string;
-  summary: string;
-  tags: string[];
-}
-
-/** INDEX.md table rows that link to a capture file. Escaped pipes stay inside their cell. */
-function parseRows(indexContent: string): IndexRow[] {
-  const rows: IndexRow[] = [];
-  for (const line of indexContent.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split(/(?<!\\)\|/).map((c) => c.trim());
-    const link = cells[2]?.match(/^\[([^\]]*)\]\(([^)]+\.md)\)$/);
-    if (!link) continue;
-    rows.push({
-      slug: link[1]!,
-      path: link[2]!.replace(/^\.?\//, ""),
-      summary: (cells[3] ?? "").replace(/\.\.\.$/, "").replace(/\\\|/g, " "),
-      tags: (cells[4] ?? "").split(",").map((t) => t.trim().toLowerCase()).filter(Boolean),
-    });
-  }
-  return rows;
-}
+const tagKey = (tag: string) => singular(tag.trim().toLowerCase());
 
 /**
  * Up to MAX_LINKS captures from the index that share enough with `capture`,
@@ -78,21 +55,33 @@ export function relatedByOverlap(
   selfPath: string,
   filename: string,
 ): RelatedCapture[] {
-  const ownTags = new Set((capture.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean));
+  // Tags compare in singular form ("agent" matches "agents"); a reason shows
+  // the capture's own spelling.
+  const ownTags = new Map<string, string>();
+  for (const t of capture.tags ?? []) if (t.trim()) ownTags.set(tagKey(t), t.trim().toLowerCase());
   // Ordered and distinct, so a reason lists words in the capture's own order.
   const ownWords = [...new Set(words([capture.slug.replace(/-/g, " "), capture.inferredTitle ?? "", capture.coreIdea ?? ""].join(" ")))];
 
-  return parseRows(indexContent)
-    .map((row, i) => ({ row, i }))
-    .filter(({ row }) => row.path !== selfPath && basename(row.path) !== filename)
-    .map(({ row, i }) => {
-      const tags = [...ownTags].filter((t) => row.tags.includes(t));
-      const theirs = new Set(words(`${row.slug.replace(/-/g, " ")} ${row.summary}`));
-      const shared = ownWords.filter((w) => theirs.has(w) && !tags.includes(w));
-      return { row, i, terms: [...tags, ...shared], score: tags.length * TAG_WEIGHT + shared.length };
+  // Older rows can hold a bare pipe in the summary; parseIndexRows reads them.
+  return parseIndexRows(indexContent)
+    .map((row: CaptureRow) => ({ row, path: `${row.status}/${row.filename}` }))
+    .filter(({ path }) => path !== selfPath && basename(path) !== filename)
+    .map(({ row, path }) => {
+      const theirTags = new Set(row.tags.map(tagKey));
+      const tagKeys = [...ownTags.keys()].filter((k) => theirTags.has(k));
+      const theirWords = new Set(words(`${row.slug.replace(/-/g, " ")} ${row.summary}`));
+      // A word that is also a shared tag counts once, as the tag.
+      const shared = ownWords.filter((w) => theirWords.has(w) && !tagKeys.includes(w));
+      return {
+        row,
+        path,
+        terms: [...tagKeys.map((k) => ownTags.get(k)!), ...shared],
+        score: tagKeys.length * TAG_WEIGHT + shared.length,
+      };
     })
     .filter((m) => m.score >= MIN_SCORE)
-    .sort((a, b) => b.score - a.score || b.i - a.i)
+    // Strongest first; on a tie the newer capture, by date then file name.
+    .sort((a, b) => b.score - a.score || b.row.date.localeCompare(a.row.date) || b.row.filename.localeCompare(a.row.filename))
     .slice(0, MAX_LINKS)
-    .map((m) => ({ filename: m.row.path, reason: `shared: ${m.terms.slice(0, REASON_TERMS).join(", ")}` }));
+    .map((m) => ({ filename: m.path, reason: `shared: ${m.terms.slice(0, REASON_TERMS).join(", ")}` }));
 }
