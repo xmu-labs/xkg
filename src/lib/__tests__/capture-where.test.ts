@@ -6,8 +6,8 @@ import type { WhereResult } from "../where";
  * Both capture paths (web route and MCP tool) start matching right after
  * extraction, run it alongside writing and linking, then add the "Where it
  * applies" section to the saved file. With no maps, the file stays as today.
- * The web route answers once the file is saved and the match is in; linking
- * and the section write run after the response (next/server `after`).
+ * Both paths answer once the file is saved and the match is in; linking and
+ * the section write run after the response (next/server `after`).
  */
 
 const capture = {
@@ -59,10 +59,11 @@ vi.mock("@/lib/github", () => ({
   appendToIndex: async () => { order.push("index"); },
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
 }));
+let linked: Array<{ filename: string; reason: string }> = [];
 vi.mock("@/lib/linking", () => ({
   linkCapture: vi.fn(async () => {
     order.push("link");
-    return [];
+    return linked;
   }),
 }));
 vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: vi.fn() }));
@@ -93,6 +94,13 @@ async function post(): Promise<Response> {
 
 const capturePath = () => `inbox/${formatDate()}-llm-memory.md`;
 
+/** Call the MCP tool and finish the work scheduled after its answer. */
+async function mcp(): Promise<string> {
+  const result = await handleCapture(user as never, { content: "notes" });
+  await runAfterResponse();
+  return result;
+}
+
 beforeEach(() => {
   files.clear();
   files.set("INDEX.md", { content: "# Index\n", sha: "i" });
@@ -105,6 +113,7 @@ beforeEach(() => {
   failWhereWrite = false;
   extractFails = false;
   refundQuota.mockClear();
+  linked = [];
 });
 
 describe("web capture", () => {
@@ -167,7 +176,7 @@ describe("web capture", () => {
     info.mockRestore();
     expect(lines).toHaveLength(1);
     const line = JSON.parse(lines[0]!);
-    expect(line).toMatchObject({ event: "capture.timing", provider: "openai", fetched: false });
+    expect(line).toMatchObject({ event: "capture.timing", via: "web", provider: "openai", fetched: false });
     for (const step of ["fetch", "extract", "save", "index", "match", "total", "background"]) expect(typeof line.ms[step]).toBe("number");
   });
 
@@ -202,27 +211,71 @@ describe("MCP capture", () => {
   // protects: the MCP path writes the section too and tells the agent; fails_when: only the web path gets it; no_claim: none
   it("writes the section and adds one line to the tool result", async () => {
     matchResult = strong;
-    const result = await handleCapture(user as never, { content: "notes" });
+    const result = await mcp();
     expect(files.get(capturePath())!.content).toContain("## Where it applies\n**Strong fit** · acme/app");
     expect(result).toContain("Where it applies: Strong fit in acme/app: src/llm.ts");
     expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, true);
   });
 
-  // protects: card credit only for a fit the agent was shown; fails_when: a fit whose section write failed is logged as shown; no_claim: none
-  it("when the section can't be written, leaves it out of the result and logs it as not shown", async () => {
+  // protects: the agent gets its answer without waiting for linking or the section write; fails_when: the tool awaits either before answering; no_claim: real latency
+  it("answers before linking and the section write, then runs both after the answer", async () => {
+    matchResult = strong;
+    const result = await handleCapture(user as never, { content: "notes" });
+    expect(result).toContain("Where it applies: Strong fit");
+    expect(order).not.toContain("link");
+    expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
+    await runAfterResponse();
+    expect(order).toContain("link");
+    expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("link"));
+  });
+
+  // protects: the result doesn't promise a link count it can't know yet; fails_when: "Linked to" stays in the text; no_claim: none
+  it("doesn't report a link count", async () => {
+    linked = [{ filename: "inbox/a.md", reason: "shared: llm, memory" }, { filename: "inbox/b.md", reason: "shared: llm, prompt" }];
+    expect(await mcp()).not.toContain("Linked to");
+  });
+
+  // protects: a section write that fails after the answer changes nothing already said; fails_when: the write failure throws out of the background task; no_claim: none
+  it("when the section can't be written after the answer, the file stays without it", async () => {
     matchResult = strong;
     failWhereWrite = true;
-    const result = await handleCapture(user as never, { content: "notes" });
-    expect(result).not.toContain("Where it applies");
-    expect(recordWhereEvent).toHaveBeenCalledWith(7, capturePath(), strong, false);
+    const result = await mcp();
+    expect(result).toContain("Where it applies: Strong fit");
+    expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
   });
 
   // protects: AC3 on the MCP path; fails_when: a user with no maps gets a second write or a new result line; no_claim: none
   it("with no maps, writes the file once and keeps today's result", async () => {
     matchResult = { repo: null, tier: "none", files: [], also: [], noFit: { reason: "no-maps" }, scorer: "evidence", modelConf: null };
-    const result = await handleCapture(user as never, { content: "notes" });
+    const result = await mcp();
     expect(githubPut.mock.calls.filter((c) => c[2] === capturePath())).toHaveLength(1);
     expect(result).not.toContain("Where it applies");
+  });
+
+  // protects: the MCP index row gets the same retry as the web path; fails_when: the tool writes INDEX.md itself without appendToIndex; no_claim: none
+  it("adds the index row through appendToIndex", async () => {
+    await mcp();
+    expect(order).toContain("index");
+    expect(order).not.toContain("put:INDEX.md");
+  });
+
+  // protects: a failed MCP extraction costs no quota; fails_when: the hourly count keeps the failed try; no_claim: none
+  it("gives the quota back when extraction fails, and still reports the error", async () => {
+    extractFails = true;
+    await expect(handleCapture(user as never, { content: "notes" })).rejects.toThrow("HTTP 503");
+    expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  // protects: MCP captures are timed like web ones; fails_when: no line, or the path isn't named; no_claim: the times are accurate
+  it("logs one timing line marked mcp", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await mcp();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("capture.timing"));
+    info.mockRestore();
+    expect(lines).toHaveLength(1);
+    const line = JSON.parse(lines[0]!);
+    expect(line).toMatchObject({ event: "capture.timing", via: "mcp", provider: "openai" });
+    for (const step of ["extract", "save", "index", "match", "total", "background"]) expect(typeof line.ms[step]).toBe("number");
   });
 });
 
@@ -270,7 +323,7 @@ describe("auto-queue for the coding agent", () => {
   // protects: AC2 on the MCP path; fails_when: only the web path queues; no_claim: none
   it("MCP: queues a Strong fit and says so", async () => {
     matchResult = strong;
-    const result = await handleCapture(user as never, { content: "notes" });
+    const result = await mcp();
     expect(queued()).toEqual([expect.objectContaining({ capture: capturePath(), repo: "acme/app", source: "auto" })]);
     expect(result).toContain("Queued for your next coding session in acme/app.");
   });
@@ -278,7 +331,7 @@ describe("auto-queue for the coding agent", () => {
   // protects: AC2 on the MCP path; fails_when: a Possible fit is queued or announced; no_claim: none
   it("MCP: doesn't queue a Possible fit", async () => {
     matchResult = possible;
-    const result = await handleCapture(user as never, { content: "notes" });
+    const result = await mcp();
     expect(files.has(HANDOFFS_PATH)).toBe(false);
     expect(result).not.toContain("Queued");
   });

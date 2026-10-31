@@ -76,15 +76,11 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
-The result shows as soon as the file is saved. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
+The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
-After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead.
-
-The **☰ menu** (top right on every page) holds your account, **Capture**, **Your knowledge** and **Settings**, and shows the GitHub repo your captures are stored in.
-
-**Your knowledge** (in the ☰ menu) lists what you saved, by folder: inbox, applied and archived. From there you can:
+**Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
 - **Open** a capture to read it again in full: the core idea, takeaways, quotes, its source, where it applies in your code, when it was applied, and its links to related captures (tap one to open it).
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
@@ -511,7 +507,7 @@ When you capture, the server talks to exactly four kinds of destination:
 
 No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
 
-Each web capture also writes one line to the server log (`capture.timing`): the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
+Each capture, from the app or from the `capture` tool, also writes one line to the server log (`capture.timing`): which of the two it came from, the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
 
 ### How your credentials are stored
 
