@@ -671,6 +671,16 @@ describe("signatures", () => {
     expect(out.join(" ")).not.toMatch(/private|pattern|123456789|make/);
   });
 
+  // protects: a signature never runs past its declaration into code; fails_when: a Go channel arrow or a semicolon-free TS line lets a body or the next statement into the map; no_claim: every ASI rule
+  it("stops at the end of a declaration in Go channel types and semicolon-free TypeScript", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("w.go", "func Watch() <-chan int { return make(chan int, 987654321) }\nfunc Send(c chan<- int) {\n}\n")).toEqual(["func Watch() <-chan int", "func Send(c chan<- int)"]);
+    const ts = "export let ready: boolean\ntransmit(987654321)\nexport class Store<T>\n  extends Base\n  implements Saves {\n}\nexport type Pair =\n  | A\n  | B\n";
+    const out = signatures("a.ts", ts);
+    expect(out).toEqual(["let ready: boolean", "class Store<T> extends Base implements Saves", "type Pair"]);
+    expect(out.join(" ")).not.toMatch(/987654321|transmit/);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

@@ -228,6 +228,15 @@ const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*
 const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
 
 /**
+ * Whether a TypeScript declaration goes on past a line break at the top level:
+ * the line ends mid-type, or the next line goes on with one. Code without
+ * semicolons would otherwise run into the next statement.
+ */
+function continues(sofar: string, next: string): boolean {
+  return /(?:[,(:|&<=]|=>|\bextends|\bimplements)\s*$/.test(sofar) || /^\s*(?:[|&:{]|=>|extends\b|implements\b)/.test(next);
+}
+
+/**
  * One declaration's head, from its start to where its body or value begins:
  * name, parameters and types. Default values are left out, so no literal from
  * the code leaves the machine with it.
@@ -251,16 +260,19 @@ function signatureAt(lang: Lang, src: string, start: number): string {
       i = j;
       continue;
     }
-    if (two === "=>" || two === "->") {
+    // Go's channel arrow (<-chan, chan<-) is an operator, not a bracket.
+    if (two === "=>" || two === "->" || (two === "<-" && lang === "go")) {
       i++;
       out += two;
       if (stack.length === 0 && two === "=>" && arrowValue) break;
       continue;
     }
-    if (OPEN.includes(c)) {
+    // Only TypeScript and Rust put type parameters in < >.
+    const angle = (c === "<" || c === ">") && lang !== "js" && lang !== "rs";
+    if (OPEN.includes(c) && !angle) {
       if (c === "{" && stack.length === 0) break;
       stack.push(c);
-    } else if (CLOSE[c] && stack.at(-1) === CLOSE[c]) {
+    } else if (CLOSE[c] && !angle && stack.at(-1) === CLOSE[c]) {
       stack.pop();
     }
     // In Rust, Iterator<Item = T> binds a type, not a value.
@@ -285,7 +297,7 @@ function signatureAt(lang: Lang, src: string, start: number): string {
       out += ` = …${CLOSER[stack.at(-1)!]}`;
       break;
     }
-    if (stack.length === 0 && (c === ";" || (c === ":" && lang === "py") || (c === "\n" && lang !== "js"))) break;
+    if (stack.length === 0 && (c === ";" || (c === ":" && lang === "py") || (c === "\n" && (lang !== "js" || !continues(out, src.slice(i + 1, i + 200)))))) break;
     out += c;
   }
   const flat = out
