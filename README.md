@@ -545,7 +545,7 @@ xkg is BYOK. You bring your own API key. xkg never charges you for inference.
 
 Each provider starts on a low-cost model, which you can change in Settings → AI model. For example, Anthropic starts on Claude Haiku 4.5, OpenAI on GPT-4o mini and Google on Gemini 2.0 Flash.
 
-A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. That is the only AI call a capture makes: linking to related captures uses no model. At list prices:
+A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. Linking to related captures uses no model. The only other call a capture can make is for **Where it applies**, and only when you sync a code map: it goes to TypeSafe's Jev on xkg's key, or to your model when Jev can't answer. At list prices:
 
 | Usage | Claude Haiku 4.5 | GPT-4o mini |
 | --- | --- | --- |
