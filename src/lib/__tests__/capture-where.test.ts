@@ -54,7 +54,15 @@ let extractFails = false;
 /** When set, extraction waits for it, so a test can act mid-capture. */
 let extractGate: Promise<void> | null = null;
 let indexFails = false;
-vi.mock("@/lib/llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), extractCapture: async () => { if (extractGate) await extractGate; if (extractFails) throw new Error("[llm:openai] HTTP 503"); return capture; } }));
+vi.mock("@/lib/llm", async (orig) => ({
+  ...(await orig<typeof import("../llm")>()),
+  extractCapture: async (_k: string, _c: string, _t: unknown, _l: unknown, meta?: { onUsage?: (u: { tokensIn: number; tokensOut: number }) => void }) => {
+    if (extractGate) await extractGate;
+    if (extractFails) throw new Error("[llm:openai] HTTP 503");
+    meta?.onUsage?.({ tokensIn: 2400, tokensOut: 780 });
+    return capture;
+  },
+}));
 vi.mock("@/lib/github", () => ({
   githubPut: (...a: [string, string, string, string]) => githubPut(...a),
   githubGet: async () => ({ ok: false }),
@@ -176,6 +184,12 @@ describe("web capture", () => {
     matchResult = strong;
     await post();
     expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("link"));
+  });
+
+  // protects: the card can show what the capture cost; fails_when: the result lacks the model or the token counts; no_claim: the provider's counts are right
+  it("returns the model and the token counts with the result", async () => {
+    const body = await (await post()).json();
+    expect(body.usage).toEqual({ model: "gpt-4o-mini", tokensIn: 2400, tokensOut: 780 });
   });
 
   // protects: a failed extraction costs no quota; fails_when: the hourly count keeps the failed try; no_claim: none
