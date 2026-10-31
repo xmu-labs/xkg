@@ -275,6 +275,9 @@ function closingAt(lang: Lang, src: string, open: number): number {
 function expressionBracket(lang: Lang, c: string, out: string, src: string, i: number, end: number): boolean {
   if (lang === "py") return c === "(";
   if (lang === "rs") return c === "{";
+  // JS: a [ in key position inside braces is a computed key (code) unless it's
+  // an index signature or mapped type ([key: string], [K in Keys]).
+  if (lang === "js") return c === "[" && /[{,;]\s*$/.test(out) && !/^\[\s*[A-Za-z_$][\w$]*\s*(?::|in\b)/.test(src.slice(i, end + 1));
   if (lang !== "go") return false;
   if (c === "{") return !/\b(?:struct|interface)\s*$/.test(out);
   // After a name, [ opens type parameters or a map key; anywhere else, an array length.
@@ -345,7 +348,7 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     const angle = (c === "<" || c === ">") && lang !== "js" && lang !== "rs";
     if (OPEN.includes(c) && !angle) {
       if (c === "{" && stack.length === 0) break;
-      const mayHoldCode = (lang === "py" && c === "(") || (lang === "rs" && c === "{") || (lang === "go" && (c === "{" || c === "["));
+      const mayHoldCode = (lang === "js" && c === "[" && stack.at(-1) === "{") || (lang === "py" && c === "(") || (lang === "rs" && c === "{") || (lang === "go" && (c === "{" || c === "["));
       if (mayHoldCode && (stack.length > 0 || lang === "go")) {
         const end = closingAt(lang, src, i);
         if (end < 0) return "";

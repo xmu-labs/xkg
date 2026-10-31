@@ -750,6 +750,14 @@ describe("signatures", () => {
     expect(signatures("a.ts", 'export function k(x: `a${"b"}c`): void {}\n').join(" ")).not.toMatch(/\bb\b|c`/);
   });
 
+  it("blanks computed keys in destructured parameters, keeping index signatures and tuples", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("a.ts", "export function f({ [/private-token/.source]: value, [send(privateIdentifier)]: v2 }: Input) {}\n")).toEqual(["function f({ […]: value, […]: v2 }: Input)"]);
+    expect(signatures("b.ts", "export function g(o: { [key: string]: number; [K in Keys]?: T; pair: [string, number] }) {}\n")).toEqual([
+      "function g(o: { [key: string]: number; [K in Keys]?: T; pair: [string, number] })",
+    ]);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);
