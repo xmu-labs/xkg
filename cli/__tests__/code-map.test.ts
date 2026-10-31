@@ -651,17 +651,31 @@ describe("signatures", () => {
     expect(out).toEqual([
       "const token",
       "const run",
-      "function f(x, y: number)",
+      "function f(x = …)",
       'function g(mode: "…" | "…"): void',
       "const h = async (a: Map<string, number>, b): Promise<void> =>",
     ]);
     expect(out.join(" ")).not.toMatch(/private|secret|other|fast/);
   });
 
+  // protects: an expression default can't leak through punctuation it contains; fails_when: any part of a regex, a generic call or a nested expression in a default reaches the map; no_claim: which complex defaults keep their later parameters (none do)
+  it("ends the signature at a default that is an expression", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = [
+      "export function f(x = /private,pattern/, y: number) {}",
+      "export function g(a: string, x = make<A, B>(123456789)): void {}",
+      "export function h<T = Map<string, number>>(t: T) {}",
+    ].join("\n");
+    const out = signatures("a.ts", src);
+    expect(out).toEqual(["function f(x = …)", "function g(a: string, x = …)", "function h<T = …>"]);
+    expect(out.join(" ")).not.toMatch(/private|pattern|123456789|make/);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);
     expect(signatures("main.go", "func (s *Server) Start(ctx context.Context) error {\n\treturn nil\n}\ntype Config struct{}\n")).toEqual(["func (s *Server) Start(ctx context.Context) error", "type Config struct"]);
+    expect(signatures("src/env.rs", "pub fn from_vars(cwd: PathBuf, vars: impl IntoIterator<Item = (String, String)>) -> Env {\n}\n")).toEqual(["fn from_vars(cwd: PathBuf, vars: impl IntoIterator<Item = (String, String)>) -> Env"]);
     expect(signatures("src/budget.rs", "pub fn check_call_spend(limits: &[Money], spent: &Money) -> Result<(), SpendDenied> {\n    Ok(())\n}\npub struct RunBudget { pub max: u32 }\n")).toEqual([
       "fn check_call_spend(limits: &[Money], spent: &Money) -> Result<(), SpendDenied>",
       "struct RunBudget",

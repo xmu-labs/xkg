@@ -221,6 +221,12 @@ export function docLine(path: string, source: string): string | null {
 // parameters are part of the signature. Anything else after "=" is a value.
 const ARROW_VALUE = /^=\s*(?:async\s+)?(?:<[^<>]*>\s*)?(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[A-Za-z_$][\w$]*)\s*(?::[^=;{]+?)?\s*=>/;
 
+// A default value that is one token: a name or number, a quoted string with
+// nothing interpolated, or an empty {}, [] or (). It ends where the parameter does.
+const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*\}|\[\s*\]|\(\s*\))\s*/.source;
+/** In a parameter list it ends at "," or ")"; in a type parameter list, at "," or ">" (so "limit > 0" is not plain). */
+const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
+
 /**
  * One declaration's head, from its start to where its body or value begins:
  * name, parameters and types. Default values are left out, so no literal from
@@ -230,45 +236,36 @@ function signatureAt(lang: Lang, src: string, start: number): string {
   const quotes = lang === "rs" || lang === "go" ? ['"'] : ['"', "'", "`"];
   const OPEN = "([{<";
   const CLOSE: Record<string, string> = { ")": "(", "]": "[", "}": "{", ">": "<" };
+  const CLOSER: Record<string, string> = { "(": ")", "[": "]", "{": "}", "<": ">" };
   const stack: string[] = [];
   let out = "";
-  let skipFrom = -1; // stack depth of the default value being skipped
   let arrowValue = false; // a const holding an arrow function: its "=>" ends the signature
   for (let i = start; i < src.length && out.length < 600; i++) {
     const c = src[i]!;
     const two = src.slice(i, i + 2);
-    const skipping = skipFrom >= 0;
     if (quotes.includes(c)) {
       // A string's contents never leave the machine, even in a type.
       let j = i + 1;
       while (j < src.length && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
-      if (!skipping) out += `${c}…${c}`;
+      out += `${c}…${c}`;
       i = j;
       continue;
     }
     if (two === "=>" || two === "->") {
       i++;
-      if (skipping) continue;
       out += two;
       if (stack.length === 0 && two === "=>" && arrowValue) break;
       continue;
     }
-    // Inside a default value, < and > are comparisons, not generics (but a ">"
-    // still closes the type parameter list a default sits in, as in <T = unknown>).
-    if (OPEN.includes(c) && !(c === "<" && skipping)) {
+    if (OPEN.includes(c)) {
       if (c === "{" && stack.length === 0) break;
       stack.push(c);
-    } else if (CLOSE[c] && !(c === ">" && (stack.at(-1) !== "<" || (skipping && stack.length !== skipFrom)))) {
-      if (stack.at(-1) === CLOSE[c]) stack.pop();
-      if (skipping && stack.length < skipFrom) skipFrom = -1;
+    } else if (CLOSE[c] && stack.at(-1) === CLOSE[c]) {
+      stack.pop();
     }
-    if (skipFrom >= 0) {
-      if (c === "," && stack.length === skipFrom) skipFrom = -1;
-      else continue;
-    }
-    if (stack.length === 0) {
-      if (c === ";" || (c === ":" && lang === "py") || (c === "\n" && lang !== "js")) break;
-      if (c === "=" && src[i + 1] !== "=") {
+    // In Rust, Iterator<Item = T> binds a type, not a value.
+    if (c === "=" && src[i + 1] !== "=" && !(lang === "rs" && stack.at(-1) === "<")) {
+      if (stack.length === 0) {
         // A const holding an arrow function keeps its parameters; any other value ends the signature.
         if (lang === "js" && ARROW_VALUE.test(src.slice(i, i + 400))) {
           out += c;
@@ -277,10 +274,18 @@ function signatureAt(lang: Lang, src: string, start: number): string {
         }
         break;
       }
-    } else if (c === "=" && src[i + 1] !== "=" && !skipping) {
-      skipFrom = stack.length;
-      continue;
+      // A default value. A plain one (a name, number, quoted string, {} or [])
+      // is skipped whole. Anything else can't be skipped safely without parsing
+      // the expression, so the signature ends at it: no part of a value is sent.
+      const plain = PLAIN_DEFAULT[stack.at(-1) === "<" ? "type" : "param"].exec(src.slice(i, i + 200));
+      if (plain) {
+        i += plain[0].length - 1;
+        continue;
+      }
+      out += ` = …${CLOSER[stack.at(-1)!]}`;
+      break;
     }
+    if (stack.length === 0 && (c === ";" || (c === ":" && lang === "py") || (c === "\n" && lang !== "js"))) break;
     out += c;
   }
   const flat = out
