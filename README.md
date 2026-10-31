@@ -82,6 +82,7 @@ On a phone: open the app → **Share → Add to Home Screen**. It runs like a na
 
 **Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
+- **Open** a capture to read it again in full: the core idea, takeaways, quotes, its source, where it applies in your code, when it was applied, and its links to related captures (tap one to open it).
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
 - **Check links**: flags inbox captures whose source is gone (404 or 410) or whose extraction was low confidence. It only flags; you decide what to archive.
 - **Make rules** from every capture with a tag. The rules go in `RULES.md`, and your agent gets them with the session-start briefing. This runs on your own AI model and key.
