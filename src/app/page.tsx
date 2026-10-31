@@ -6,7 +6,7 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
-import ApplyIt, { type ApplyItWhere } from "@/components/ApplyIt";
+import ApplyIt, { applyWhere } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 
 interface CaptureResult {
@@ -55,12 +55,6 @@ const CARD_STYLE: React.CSSProperties = {
 
 /** Stagger slot for a result card's entrance (see [data-reveal] in globals.css). */
 const reveal = (i: number) => ({ "--i": i }) as React.CSSProperties;
-
-/** The card's files, or null when matching found no fit (or the server is older). */
-function applyWhere(w: WhereCard | undefined): ApplyItWhere | null {
-  if (!w?.repo || (w.fit !== "Strong fit" && w.fit !== "Possible fit")) return null;
-  return { fit: w.fit, repo: w.repo, files: w.files, also: w.also, note: w.note };
-}
 
 export default function CapturePage() {
   const [content, setContent] = useState("");

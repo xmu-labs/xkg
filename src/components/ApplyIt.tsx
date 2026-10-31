@@ -23,6 +23,16 @@ export interface ApplyItProps {
   style?: React.CSSProperties;
 }
 
+/**
+ * The card's `where` from a "Where it applies" result (the capture result's
+ * `where`, or the one parsed from a capture file): null when nothing fits or
+ * there is none.
+ */
+export function applyWhere(w: { fit: string; repo: string | null; files: ApplyItWhere["files"]; also?: ApplyItWhere["also"]; note?: string } | null | undefined): ApplyItWhere | null {
+  if (!w?.repo || (w.fit !== "Strong fit" && w.fit !== "Possible fit")) return null;
+  return { fit: w.fit, repo: w.repo, files: w.files, also: w.also, note: w.note };
+}
+
 const FIT_TONE: Record<Fit, string> = { "Strong fit": "strong", "Possible fit": "possible" };
 
 /** Text with `backticked` names shown as code. */
