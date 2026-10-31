@@ -96,7 +96,7 @@ export default function CodeRepos({ cardStyle, inputClass }: { cardStyle: React.
       </p>
       <div className="rounded-2xl p-4 stack-4" style={cardStyle}>
         <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-          xkg suggests where a capture applies in these repos. It keeps file and function names, signatures and each file's opening comment line, never code.
+          xkg suggests where a capture applies in these repos. It keeps file and function names, signatures and each file&apos;s opening comment line, never code.
         </p>
 
         {repos && repos.length === 0 && (
