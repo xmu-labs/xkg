@@ -698,6 +698,18 @@ describe("signatures", () => {
     expect(signatures("src/a.rs", "pub fn take(xs: [u8; 32usize], ys: [u16; 0x1F_u16]) -> u8 {\n}\n")).toEqual(["fn take(xs: [u8; …], ys: [u16; …]) -> u8"]);
   });
 
+  it("reads Go and Rust character literals whole, and sends nothing when brackets don't add up", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("main.go", "func Read() ['(']byte { panic(secretIdentifier) }\nfunc Ok() error {\n}\n")).toEqual(["func Read() ['…']byte", "func Ok() error"]);
+    expect(signatures("src/a.rs", "pub fn f(xs: [u8; b'(' as usize]) -> u8 { secret_call() }\npub fn g<'a>(s: &'a str) -> &'a str {\n}\n")).toEqual([
+      "fn f(xs: [u8; b'…' as usize]) -> u8",
+      "fn g<'a>(s: &'a str) -> &'a str",
+    ]);
+    // Whatever confuses the scanner, a mismatched or unclosed bracket yields no signature at all.
+    expect(signatures("main.go", "func Bad() [(]byte { panic(secretIdentifier) }\n")).toEqual([]);
+    expect(signatures("a.ts", "export function open(a: string { secret(); }\n")).toEqual([]);
+  });
+
   it("reads Python, Go and Rust signatures", async () => {
     const { signatures } = await import("../code-map.js");
     expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);

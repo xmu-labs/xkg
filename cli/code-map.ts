@@ -232,6 +232,7 @@ const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: n
 const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
 // No identifier in the mapped languages starts with a digit, so a token that
 // does is a literal: hex, binary, octal, bigint and suffixed forms included.
+const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|[0-7]{3}|.)|[^'\\\n])'/;
 const NUMBER = /(?<![\w$.])(?:\d[\w$]*(?:\.\d[\w$]*)?|\.\d[\w$]*)(?:[+-]\d[\w$]*)?/g;
 
 /**
@@ -268,9 +269,18 @@ function signatureAt(lang: Lang, src: string, start: number): string {
   const stack: string[] = [];
   let out = "";
   let arrowValue = false; // a const holding an arrow function: its "=>" ends the signature
-  for (let i = start; i < src.length && out.length < 600; i++) {
+  let i = start;
+  for (; i < src.length && out.length < 600; i++) {
     const c = src[i]!;
     const two = src.slice(i, i + 2);
+    // A Go rune or Rust char ('(' , '\n', b'x') is read whole, so a bracket in it
+    // can't throw off the scan. A Rust lifetime ('a) has no closing quote.
+    const char = c === "'" && (lang === "rs" || lang === "go") ? CHAR_LITERAL.exec(src.slice(i, i + 16)) : null;
+    if (char) {
+      out += "'…'";
+      i += char[0].length - 1;
+      continue;
+    }
     if (quotes.includes(c)) {
       // A string's contents never leave the machine, even in a type.
       let j = i + 1;
@@ -291,7 +301,9 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     if (OPEN.includes(c) && !angle) {
       if (c === "{" && stack.length === 0) break;
       stack.push(c);
-    } else if (CLOSE[c] && !angle && stack.at(-1) === CLOSE[c]) {
+    } else if (CLOSE[c] && !angle) {
+      // A closer that doesn't match means the scan lost its place: send nothing.
+      if (stack.at(-1) !== CLOSE[c]) return "";
       stack.pop();
     }
     // In Rust, Iterator<Item = T> binds a type, not a value; <const N: usize = 4> is a default.
@@ -320,6 +332,8 @@ function signatureAt(lang: Lang, src: string, start: number): string {
     if (stack.length === 0 && (c === ";" || (c === ":" && lang === "py") || (c === "\n" && (lang !== "js" || !continues(out, src.slice(i + 1, i + 200)))))) break;
     out += c;
   }
+  // Ran off the end of the file inside brackets: the scan lost its place, send nothing.
+  if (i >= src.length && stack.length > 0) return "";
   const flat = out
     .replace(/\s+/g, " ")
     .replace(/\(\s/g, "(")
