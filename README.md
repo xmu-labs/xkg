@@ -80,7 +80,11 @@ The result shows as soon as the file is saved. Links to related captures and the
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
-**Your knowledge** (top of the app) lists what you saved, by folder: inbox, applied and archived. From there you can:
+After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead.
+
+The **☰ menu** (top right on every page) holds your account, **Capture**, **Your knowledge** and **Settings**, and shows the GitHub repo your captures are stored in.
+
+**Your knowledge** (in the ☰ menu) lists what you saved, by folder: inbox, applied and archived. From there you can:
 
 - **Open** a capture to read it again in full: the core idea, takeaways, quotes, its source, where it applies in your code, when it was applied, and its links to related captures (tap one to open it).
 - **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).

@@ -1,4 +1,4 @@
-import { test, expect, signIn, setTheme, WORST_CAPTURE } from "./fixtures";
+import { test, expect, signIn, setTheme, WORST_CAPTURE, openSettings } from "./fixtures";
 
 // M1 (XKG-9): the platform floor on a 320 px touch phone.
 
@@ -8,7 +8,7 @@ test("a capture full of long URLs never scrolls the page sideways", async ({ pag
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByText("Added to your knowledge")).toBeVisible();
 
   // Compare with the device width, not innerWidth: a mobile browser widens
   // the layout viewport to fit overflowing content, which hides the bug.
@@ -19,7 +19,7 @@ test("a capture full of long URLs never scrolls the page sideways", async ({ pag
 test("every text field is at least 16px, so iOS never zooms on focus", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("button", { name: "Change PIN" }).tap();
 
@@ -33,7 +33,7 @@ test("every text field is at least 16px, so iOS never zooms on focus", async ({ 
 test("an avatar that fails to load falls back to the placeholder, not a broken image", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog")).toBeVisible();
 
   const broken = await page.locator("img").evaluateAll((imgs) =>
@@ -94,7 +94,7 @@ test("the Android keyboard resizes the layout instead of covering it", async ({ 
 test("the Settings list keeps its scroll to itself", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const scroller = page.getByRole("dialog").locator(".overflow-y-auto");
   await expect(scroller).toHaveCSS("overscroll-behavior-y", "contain");
 });

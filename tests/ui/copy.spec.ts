@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE, WORST_ME, WORST_REPO } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME, WORST_REPO, openSettings } from "./fixtures";
 
 // Framing and copy (2026-10-24 review): say what xkg does, and show the next step.
 
@@ -30,9 +30,9 @@ test("the result says where it was saved and what to do next", async ({ page }) 
   await page.goto("/");
   await page.getByLabel("Content to capture").fill("x");
   await page.getByRole("button", { name: "Capture", exact: true }).tap();
-  await expect(page.getByText("Saved to GitHub ✓")).toBeVisible();
+  await expect(page.getByText("Added to your knowledge")).toBeVisible();
   await expect(page.getByRole("link", { name: WORST_CAPTURE.filename })).toHaveAttribute("href", FILE_URL);
-  await expect(page.getByText("Where to use it", { exact: true })).toBeVisible();
+  await expect(page.getByText("Apply it", { exact: true })).toBeVisible();
   await expect(page.getByText(/brief me on what I saved today/)).toBeVisible();
 });
 
@@ -48,7 +48,7 @@ test("a failed capture says what failed and what to do", async ({ page }) => {
 test("Settings gives the connector URL for Claude and ChatGPT on the web", async ({ page, baseURL }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(`${baseURL}/api/mcp`, { exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Copy URL" })).toBeVisible();
@@ -65,7 +65,7 @@ test("with reduced motion Settings fades instead of sliding", async ({ page }) =
   await page.emulateMedia({ reducedMotion: "reduce" });
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const panel = page.getByRole("dialog");
   await expect(panel).toBeVisible();
   const t = await panel.evaluate((el) => {
@@ -78,7 +78,7 @@ test("with reduced motion Settings fades instead of sliding", async ({ page }) =
 test("Settings says where captures are stored and links to the repo", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Captures are saved in", { exact: true })).toBeVisible();
   const link = dialog.getByRole("link", { name: WORST_REPO });
@@ -89,6 +89,6 @@ test("Settings says where captures are stored and links to the repo", async ({ p
 test("Settings leaves out the repo row before onboarding", async ({ page }) => {
   await signIn(page, { ...WORST_ME, knowledgeRepo: null });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   await expect(page.getByRole("dialog").getByText("Captures are saved in")).toHaveCount(0);
 });

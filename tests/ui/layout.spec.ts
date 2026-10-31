@@ -1,4 +1,4 @@
-import { test, expect, signIn, WORST_CAPTURE, WORST_ME } from "./fixtures";
+import { test, expect, signIn, WORST_CAPTURE, WORST_ME, openSettings } from "./fixtures";
 
 // M3 (XKG-11): one composer, a reachable Capture button, quieter Settings.
 
@@ -50,7 +50,7 @@ test("an invented capture type reads as words, not a slug", async ({ page }) => 
 test("Settings shows Save name only once the name changes", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("button", { name: "Save name" })).toHaveCount(0);
   await dialog.getByLabel("Name").fill("Ola");
@@ -60,7 +60,7 @@ test("Settings shows Save name only once the name changes", async ({ page }) => 
 test("the PIN fields stay folded behind one row until asked for", async ({ page }) => {
   await signIn(page);
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByPlaceholder("Current PIN")).toHaveCount(0);
   const row = dialog.getByRole("button", { name: "Change PIN" });
@@ -86,7 +86,7 @@ test("Settings saves the model and effort together, only once they change", asyn
     return r.fulfill({ json: WORST_ME });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   // A model outside the list opens on "Other model…" with its ID in the text field.
   await expect(dialog.getByLabel("Model", { exact: true })).toHaveValue("__other__");
@@ -113,7 +113,7 @@ test("Settings switches provider only with that provider's key", async ({ page }
     return r.fulfill({ json: WORST_ME });
   });
   await page.goto("/");
-  await page.getByRole("button", { name: "Open settings" }).tap();
+  await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByLabel("API key")).toHaveAttribute("placeholder", "•••• 9xYz");
 
