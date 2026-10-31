@@ -48,15 +48,17 @@ vi.mock("@/lib/session", () => ({ getSession: async () => user }));
 const refundQuota = vi.fn();
 const WINDOW = "2026-10-31 11:00:00.123456";
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowKey: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
-vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => null, safeFetch: vi.fn() }));
+let fetchedPage: string | null = null;
+vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => fetchedPage, safeFetch: vi.fn() }));
 let extractFails = false;
+let indexFails = false;
 vi.mock("@/lib/llm", async (orig) => ({ ...(await orig<typeof import("../llm")>()), extractCapture: async () => { if (extractFails) throw new Error("[llm:openai] HTTP 503"); return capture; } }));
 vi.mock("@/lib/github", () => ({
   githubPut: (...a: [string, string, string, string]) => githubPut(...a),
   githubGet: async () => ({ ok: false }),
   githubDelete: vi.fn(),
   updateIndexEntry: vi.fn(),
-  appendToIndex: async () => { order.push("index"); },
+  appendToIndex: async () => { if (indexFails) throw new Error("GitHub 502"); order.push("index"); },
   readFile: async (_t: string, _r: string, path: string) => files.get(path) ?? null,
 }));
 let linked: Array<{ filename: string; reason: string }> = [];
@@ -94,6 +96,18 @@ async function post(): Promise<Response> {
 
 const capturePath = () => `inbox/${formatDate()}-llm-memory.md`;
 
+/** POST with the progress stream opted in; returns the response and its parsed lines (before any after-work runs). */
+async function postStream(content = "some notes about memory"): Promise<{ res: Response; lines: Array<Record<string, unknown>> }> {
+  const res = await POST(new NextRequest("https://xkg.test/api/capture", {
+    method: "POST",
+    headers: { accept: "application/x-ndjson" },
+    body: JSON.stringify({ content }),
+  }));
+  const text = await res.text();
+  const lines = text.split("\n").filter(Boolean).map((l) => JSON.parse(l) as Record<string, unknown>);
+  return { res, lines };
+}
+
 /** Call the MCP tool and finish the work scheduled after its answer. */
 async function mcp(): Promise<string> {
   const result = await handleCapture(user as never, { content: "notes" });
@@ -114,6 +128,8 @@ beforeEach(() => {
   extractFails = false;
   refundQuota.mockClear();
   linked = [];
+  fetchedPage = null;
+  indexFails = false;
 });
 
 describe("web capture", () => {
@@ -204,6 +220,69 @@ describe("web capture", () => {
     const body = await (await post()).json();
     expect(body.where).toBeUndefined();
     expect(files.get(capturePath())!.content).not.toContain("## Where it applies");
+  });
+});
+
+describe("web capture progress stream", () => {
+  // protects: the page can show each stage; fails_when: stages are missing, out of order, or the result isn't last; no_claim: timing
+  it("streams reading, extracting and saving, then the result, for a URL", async () => {
+    fetchedPage = "The page text about memory.";
+    matchResult = strong;
+    const { res, lines } = await postStream("https://example.com/post");
+    expect(res.headers.get("content-type")).toContain("application/x-ndjson");
+    expect(lines.slice(0, 3)).toEqual([{ stage: "reading" }, { stage: "extracting" }, { stage: "saving" }]);
+    const last = lines.at(-1)!;
+    expect((last.result as { filename: string }).filename).toBe(`${formatDate()}-llm-memory.md`);
+    expect((last.result as { where: { fit: string } }).where.fit).toBe("Strong fit");
+    expect(lines).toHaveLength(4);
+  });
+
+  // protects: notes skip the page-reading stage; fails_when: "reading" shows for pasted text; no_claim: none
+  it("skips the reading stage for pasted text", async () => {
+    const { lines } = await postStream();
+    expect(lines.map((l) => l.stage ?? "result")).toEqual(["extracting", "saving", "result"]);
+  });
+
+  // protects: links and the section are written only after the stream ends; fails_when: linking runs before the result line; no_claim: none
+  it("links and writes the section after the stream, not during it", async () => {
+    matchResult = strong;
+    await postStream();
+    expect(order).not.toContain("link");
+    await runAfterResponse();
+    expect(order).toContain("link");
+    expect(files.get(capturePath())!.content).toContain("## Where it applies");
+  });
+
+  // protects: an extraction failure reaches the page as an error line and costs no quota; fails_when: the stream ends silently or the quota is kept; no_claim: none
+  it("ends with an error line when extraction fails, and gives the quota back", async () => {
+    extractFails = true;
+    const { lines } = await postStream();
+    expect(lines.map((l) => l.stage ?? "end")).toEqual(["extracting", "end"]);
+    expect(lines.at(-1)).toEqual({ error: "[llm:openai] HTTP 503", status: 502 });
+    expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  // protects: an unexpected failure mid-stream ends the stream with an error and never hangs the after-work; fails_when: the stream throws or the after task waits forever; no_claim: none
+  it("ends with an error line when saving fails, and the after-work still finishes", async () => {
+    indexFails = true;
+    const { lines } = await postStream();
+    expect(lines.at(-1)).toEqual({ error: "[capture] GitHub 502", status: 500 });
+    await runAfterResponse();
+    expect(order).not.toContain("link");
+  });
+
+  // protects: errors before any work keep their HTTP status; fails_when: a 400 arrives as a 200 stream; no_claim: none
+  it("answers plain JSON with a status for a request it rejects up front", async () => {
+    const { res, lines } = await postStream("   ");
+    expect(res.status).toBe(400);
+    expect(lines).toEqual([{ error: "content is required" }]);
+  });
+
+  // protects: clients that don't opt in get today's single JSON answer; fails_when: the stream is sent without the Accept header; no_claim: none
+  it("keeps the single JSON answer without the opt-in", async () => {
+    const res = await post();
+    expect(res.headers.get("content-type")).toContain("application/json");
+    expect((await res.json()).filename).toBe(`${formatDate()}-llm-memory.md`);
   });
 });
 

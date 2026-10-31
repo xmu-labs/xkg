@@ -76,7 +76,7 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
-The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
+While it works, the app shows each step (reading the page, extracting, saving) and the seconds so far. The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`).
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
