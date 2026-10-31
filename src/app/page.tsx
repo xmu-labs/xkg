@@ -9,6 +9,7 @@ import PolicyNotice from "@/components/PolicyNotice";
 import HandOff from "@/components/HandOff";
 import type { WhereCard } from "@/lib/where";
 import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, readCaptureResponse, type CaptureStage } from "@/lib/capture-stream";
+import { captureStats, type CaptureUsage } from "@/lib/capture-stats";
 
 interface CaptureResult {
   capture: {
@@ -27,6 +28,8 @@ interface CaptureResult {
   where?: WhereCard;
   /** Set when a Strong fit was queued for the next coding session in this repo. */
   handoff?: { repo: string };
+  /** The model and its token counts; older servers don't send it. */
+  usage?: CaptureUsage;
 }
 
 /** Text with `backticked` names shown as code. */
@@ -75,6 +78,7 @@ export default function CapturePage() {
   const [error, setError] = useState("");
   const [stage, setStage] = useState<CaptureStage | null>(null);
   const [elapsed, setElapsed] = useState(0);
+  const [tookMs, setTookMs] = useState(0);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
   const initialBuildId = useRef<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -122,6 +126,7 @@ export default function CapturePage() {
     setElapsed(0);
     setResult(null);
     setError("");
+    const started = Date.now();
 
     try {
       const res = await fetch("/api/capture", {
@@ -134,6 +139,7 @@ export default function CapturePage() {
         return;
       }
       const data = await readCaptureResponse<CaptureResult>(res, setStage);
+      setTookMs(Date.now() - started);
       setResult(data);
       setStatus("done");
       setContent("");
@@ -258,6 +264,11 @@ export default function CapturePage() {
               <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
                 {result.capture.inferredTitle}
               </h2>
+              {captureStats(tookMs, result.usage) && (
+                <p data-testid="capture-stats" className="text-[11px] tabular-nums wrap-anywhere" style={{ color: "var(--fg-muted)" }}>
+                  {captureStats(tookMs, result.usage)}
+                </p>
+              )}
             </div>
             <span className="saved-pop text-[11px] font-medium whitespace-nowrap pt-0.5 shrink-0" style={{ color: "var(--gold)" }}>
               Saved to GitHub ✓
