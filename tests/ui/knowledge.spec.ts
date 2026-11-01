@@ -254,7 +254,7 @@ const DETAIL = {
   advice: "Add a recall check to the eval suite.",
   where: {
     fit: "Possible fit", repo: "northwind/retrieval-augmented-generation-evaluation-harness",
-    files: [{ path: "packages/retrieval-augmented-generation-evaluation-harness/src/pipelines/production/retrievalRecallAtKEvaluator.ts", why: "measures `recallAtK`", after: "recall is checked before prompts" }],
+    files: [{ path: "packages/retrieval-augmented-generation-evaluation-harness/src/pipelines/production/retrievalRecallAtKEvaluator.ts", why: "measures `recallAtK`", impact: "recall is checked before prompts" }],
     also: [], note: "From file names, not yet checked in your code",
   },
   evidence: [{ label: "Core idea", quotes: ["Retrieval failed first. (s3)"] }],
@@ -281,7 +281,9 @@ test("tapping a card opens the whole capture", async ({ page }) => {
   await expect(page).toHaveURL(new RegExp(`/knowledge/${LONG.replace(/\.md$/, "")}$`));
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Why RAG pipelines fail");
   await expect(page.getByText("Measure recall@k before tuning prompts.")).toBeVisible();
-  await expect(page.getByText("Retrieval is the bottleneck.")).toBeVisible();
+  // No Quote card: quotes stay in the file and in the evidence.
+  await expect(page.getByText("Retrieval is the bottleneck.")).toHaveCount(0);
+  await expect(page.getByText(/^Quotes?$/)).toHaveCount(0);
   await expect(page.getByTestId("apply-it")).toContainText("recall is checked before prompts");
   await expect(page.getByTestId("apply-it").getByTestId("fit")).toHaveText("Possible fit");
   await expect(page.getByText("In your code", { exact: true })).toHaveCount(0);
@@ -348,18 +350,34 @@ test("a capture that is gone says so", async ({ page }) => {
   await expect(page.getByRole("link", { name: "← Your knowledge" })).toBeVisible();
 });
 
-test("Why and how on a capture page fills in Why and After for its files", async ({ page }) => {
+test("Why and how on a capture page fills in Why and Impact for its files", async ({ page }) => {
   await openDetail(page);
   const fresh = { ...DETAIL, where: { ...DETAIL.where, files: DETAIL.where.files.map(({ path }) => ({ path })) } };
   await page.route("**/api/captures/read?*", (r) => r.fulfill({ json: { capture: fresh } }));
   const bodies: unknown[] = [];
   await page.route("**/api/captures/explain", (r) => {
     bodies.push(r.request().postDataJSON());
-    return r.fulfill({ json: { files: DETAIL.where.files.map((f) => ({ path: f.path, why: "Measures retrieval", after: "Recall is checked first" })) } });
+    return r.fulfill({ json: { files: DETAIL.where.files.map((f) => ({ path: f.path, why: "Measures retrieval", impact: "Recall is checked first" })) } });
   });
   await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
   const card = page.getByTestId("apply-it");
   await card.getByRole("button", { name: "Why and how" }).tap();
   await expect(card.getByText("Recall is checked first").first()).toBeVisible();
   expect(bodies).toEqual([{ name: LONG }]);
+});
+
+test("a capture page rewrites old After lines once, as Impact", async ({ page }) => {
+  await openDetail(page);
+  const legacy = { ...DETAIL, where: { ...DETAIL.where, files: DETAIL.where.files.map((f) => ({ ...f, legacy: true })) } };
+  await page.route("**/api/captures/read?*", (r) => r.fulfill({ json: { capture: legacy } }));
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) => {
+    calls++;
+    return r.fulfill({ json: { files: DETAIL.where.files.map((f) => ({ path: f.path, why: "Measures retrieval", impact: "Bad retrieval is caught before users see wrong answers" })) } });
+  });
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByText("Bad retrieval is caught before users see wrong answers")).toBeVisible();
+  await expect(card.getByText("Impact:", { exact: true })).toBeVisible();
+  expect(calls).toBe(1);
 });

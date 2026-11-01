@@ -1,9 +1,10 @@
 /**
- * Why and After for each file in a capture's "Where it applies": one short
- * call on the user's own model, from the capture and the files' paths and
- * exported names only (never code). The lines are written back into the
- * capture file as "- `path`: why · After: after", so each capture is paid for
- * once and every page and agent reads the same lines.
+ * Why and Impact for each file in a capture's "Where it applies": one short
+ * call on the user's own model, from the capture and the files' paths,
+ * one-line summaries and exported names only (never code). The lines are
+ * written back into the capture file as "- `path`: why · Impact: impact", so
+ * each capture is paid for once and every page and agent reads the same lines.
+ * Older captures hold "· After:" lines; those are rewritten once as Impact.
  */
 
 import { callLlm, llmSettings, type LlmUsage } from "@/lib/llm";
@@ -13,27 +14,28 @@ import type { MapFile, StoredCodeMap } from "@/lib/code-map";
 import { parseCaptureFile } from "@/lib/capture-detail";
 import { MATCH_REPOS, codeSpan, nameCheck, readCodeSpan } from "@/lib/where";
 
-/** Output cap for the call: three files × (path + two 12-word lines) fits. */
-export const EXPLAIN_MAX_TOKENS = 150;
+/** Output cap for the call: three files × (path + a 12-word why + a 20-word impact) fits. */
+export const EXPLAIN_MAX_TOKENS = 260;
 export const MAX_LINE_WORDS = 12;
+export const MAX_IMPACT_WORDS = 20;
 
-export type ExplainedFile = { path: string; why: string; after: string };
+export type ExplainedFile = { path: string; why: string; impact: string };
 
-const SYSTEM = `You explain where a saved piece of outside knowledge (a capture) applies in the user's code. You see the capture and, for each file, its path and the names it exports. You never see code.
+export const EXPLAIN_SYSTEM = `You explain where a saved piece of outside knowledge (a capture) applies in the user's code. You see the capture and, for each file, its path, a one-line summary when there is one, and the names it exports. You never see code.
 
 For each file, write:
 - why: what in the capture touches this file, in ${MAX_LINE_WORDS} words or fewer.
-- after: what would be different in this file once the capture is applied, in ${MAX_LINE_WORDS} words or fewer.
-Write after as the change itself, in the present tense: no "could", "may" or "would". If the capture doesn't touch a file, say so in why and write "No change" as after. Plain words, no filler. Put in backticks only names that file exports. Use only the paths given.
+- impact: the result once the capture is applied: what works differently for the user or the codebase, and the outcome to expect. ${MAX_IMPACT_WORDS} words or fewer, one sentence.
+Write impact for a busy reader: the outcome first, plain words, one idea. Name a behavior or a result, not only a renamed function. Present tense: no "can", "could", "may" or "would". If the capture doesn't touch a file, say so in why and write "No change" as impact. No filler. Put in backticks only names that file exports. Use only the paths given.
 
-Reply with JSON only: {"files":[{"path":"...","why":"...","after":"..."}]}`;
+Reply with JSON only: {"files":[{"path":"...","why":"...","impact":"..."}]}`;
 
 export function explainPrompt(
   capture: { title: string; coreIdea: string | null; takeaways: string[] },
   repo: string,
   files: MapFile[],
 ): string {
-  const lines = files.map((f) => `- ${f.p}${f.e?.length ? ` (exports: ${f.e.join(", ")})` : ""}`);
+  const lines = files.map((f) => `- ${f.p}${f.d ? `: ${f.d}` : ""}${f.e?.length ? ` (exports: ${f.e.join(", ")})` : ""}`);
   return `Capture: ${capture.title}
 Core idea: ${capture.coreIdea ?? ""}
 Takeaways:
@@ -58,10 +60,10 @@ function parseReply(raw: string): unknown {
 }
 
 const STRING = String.raw`"((?:[^"\\]|\\.)*)"`;
-const ITEM = new RegExp(String.raw`\{\s*"path"\s*:\s*${STRING}\s*,\s*"why"\s*:\s*${STRING}\s*,\s*"after"\s*:\s*${STRING}`, "g");
+const ITEM = new RegExp(String.raw`\{\s*"path"\s*:\s*${STRING}\s*,\s*"why"\s*:\s*${STRING}\s*,\s*"(?:impact|after)"\s*:\s*${STRING}`, "g");
 
 /** The entries of a reply that isn't valid JSON (a stray comma or field), read one by one. */
-function looseItems(raw: string): { path: string; why: string; after: string }[] {
+function looseItems(raw: string): { path: string; why: string; impact: string }[] {
   const str = (s: string) => {
     try {
       return JSON.parse(`"${s}"`) as string;
@@ -69,13 +71,13 @@ function looseItems(raw: string): { path: string; why: string; after: string }[]
       return "";
     }
   };
-  return [...raw.matchAll(ITEM)].map((m) => ({ path: str(m[1]!), why: str(m[2]!), after: str(m[3]!) }));
+  return [...raw.matchAll(ITEM)].map((m) => ({ path: str(m[1]!), why: str(m[2]!), impact: str(m[3]!) }));
 }
 
-/** One line, at most 12 words, without the " · " the file line uses as a separator. */
-function tidy(text: unknown): string {
+/** One line, at most `words` words, without the " · " the file line uses as a separator. */
+function tidy(text: unknown, words: number): string {
   if (typeof text !== "string") return "";
-  return text.replace(/\s+/g, " ").replace(/ · /g, " - ").trim().split(" ").slice(0, MAX_LINE_WORDS).join(" ");
+  return text.replace(/\s+/g, " ").replace(/ · /g, " - ").trim().split(" ").slice(0, words).join(" ");
 }
 
 /** The model's reply as lines for the asked files; an entry missing either line, or naming something its file doesn't export, is dropped. */
@@ -87,10 +89,11 @@ export function checkExplain(raw: string, files: MapFile[]): ExplainedFile[] {
     const r = item as Record<string, unknown> | null;
     const file = files.find((f) => f.p === r?.path);
     if (!file || out.some((o) => o.path === file.p)) continue;
-    const why = tidy(r?.why);
-    const after = tidy(r?.after);
-    if (!why || !after || !nameCheck(why, file) || !nameCheck(after, file)) continue;
-    out.push({ path: file.p, why, after });
+    const why = tidy(r?.why, MAX_LINE_WORDS);
+    // A model that ignores the rename may still answer with "after".
+    const impact = tidy(r?.impact ?? r?.after, MAX_IMPACT_WORDS);
+    if (!why || !impact || !nameCheck(why, file) || !nameCheck(impact, file)) continue;
+    out.push({ path: file.p, why, impact });
   }
   return out;
 }
@@ -106,7 +109,7 @@ function whereBounds(markdown: string): [number, number] | null {
 }
 
 /** The capture file with each explained file's line in its "Where it applies" section rewritten; other text unchanged. */
-export function setWhyAfter(markdown: string, files: ExplainedFile[]): string {
+export function setWhyImpact(markdown: string, files: ExplainedFile[]): string {
   const bounds = whereBounds(markdown);
   if (!bounds) return markdown;
   const [start, end] = bounds;
@@ -117,7 +120,7 @@ export function setWhyAfter(markdown: string, files: ExplainedFile[]): string {
       if (!line.startsWith("- `")) return line;
       const path = readCodeSpan(line.slice(2));
       const f = path && files.find((x) => x.path === path);
-      return f ? `- ${codeSpan(f.path)}: ${f.why} · After: ${f.after}` : line;
+      return f ? `- ${codeSpan(f.path)}: ${f.why} · Impact: ${f.impact}` : line;
     })
     .join("\n");
   return markdown.slice(0, start) + section + markdown.slice(end);
@@ -150,15 +153,17 @@ export interface Explained {
 }
 
 /**
- * Why and After for the files of a capture with a fit. Files that already have
- * an After are kept and not asked about again. Null when the capture has no
- * fit, the user has no model key, or the call failed.
+ * Why and Impact for the files of a capture with a fit. Files that already
+ * have an Impact are kept and not asked about again; files with an old
+ * "· After:" line are asked again once. Null when the capture has no fit, the
+ * user has no model key, or the call failed.
  */
 export async function explainCapture(user: ExplainUser, markdown: string, deps: ExplainDeps = {}): Promise<Explained | null> {
   const capture = parseCaptureFile(markdown);
   const where = capture.where;
   if (!where?.repo || !where.files.length) return null;
-  const done = where.files.filter((f): f is ExplainedFile => Boolean(f.why && f.after));
+  const isDone = (f: (typeof where.files)[number]): f is ExplainedFile & typeof f => Boolean(f.why && f.impact && !f.legacy);
+  const done = where.files.filter(isDone);
   if (done.length === where.files.length) return { files: done, markdown };
   if (!user.llm_api_key) return null;
   const apiKey = user.llm_api_key;
@@ -172,19 +177,19 @@ export async function explainCapture(user: ExplainUser, markdown: string, deps: 
   try {
     const map = (await listMaps(user.id).catch(() => [])).find((m) => m.repo === where.repo);
     const todo = where.files
-      .filter((f) => !(f.why && f.after))
+      .filter((f) => !isDone(f))
       .map((f) => map?.files.find((m) => m.p === f.path) ?? { p: f.path });
     let usage: LlmUsage | null = null;
-    const raw = await complete(SYSTEM, explainPrompt(capture, where.repo, todo), EXPLAIN_MAX_TOKENS, (u) => { usage = u; });
+    const raw = await complete(EXPLAIN_SYSTEM, explainPrompt(capture, where.repo, todo), EXPLAIN_MAX_TOKENS, (u) => { usage = u; });
     const fresh = checkExplain(raw, todo);
     // Nothing usable (empty, cut off or rejected): a failure the user can retry.
     if (!fresh.length) return null;
     const files = where.files.flatMap((f) => {
-      const line = f.why && f.after ? { path: f.path, why: f.why, after: f.after } : fresh.find((x) => x.path === f.path);
+      const line = isDone(f) ? { path: f.path, why: f.why, impact: f.impact } : fresh.find((x) => x.path === f.path);
       return line ? [line] : [];
     });
     const tokens = usage ? { in: (usage as LlmUsage).tokensIn, out: (usage as LlmUsage).tokensOut } : undefined;
-    return { files, markdown: fresh.length ? setWhyAfter(markdown, fresh) : markdown, ...(tokens ? { tokens } : {}) };
+    return { files, markdown: fresh.length ? setWhyImpact(markdown, fresh) : markdown, ...(tokens ? { tokens } : {}) };
   } catch (err) {
     console.error("[explain] failed:", err instanceof Error ? err.message : err);
     return null;
