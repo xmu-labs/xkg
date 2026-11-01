@@ -169,11 +169,11 @@ describe("buildCodeMap", () => {
     expect(map!.files).toEqual([
       { p: "README.md" },
       { p: "app/__init__.py" },
-      { p: "app/main.py", e: ["main"], i: ["app/util.py"] },
-      { p: "app/util.py", e: ["helper"] },
-      { p: "src/lib/db.ts", e: ["db"] },
-      { p: "src/lib/llm.ts", e: ["callModel"], i: ["src/lib/text.ts", "src/lib/db.ts"] },
-      { p: "src/lib/text.ts", e: ["segment"] },
+      { p: "app/main.py", e: ["main"], i: ["app/util.py"], g: ["def main()"] },
+      { p: "app/util.py", e: ["helper"], g: ["def helper()"] },
+      { p: "src/lib/db.ts", e: ["db"], g: ["const db"] },
+      { p: "src/lib/llm.ts", e: ["callModel"], i: ["src/lib/text.ts", "src/lib/db.ts"], g: ["function callModel()"] },
+      { p: "src/lib/text.ts", e: ["segment"], g: ["const segment = () =>"] },
       { p: "tsconfig.json" },
     ]);
   });
@@ -182,7 +182,8 @@ describe("buildCodeMap", () => {
   it("links no imports that are commented out", async () => {
     write(repo, { "src/lib/old.ts": '/*\nimport { db } from "./db";\n*/\n// import { segment } from "./text.js";\nexport const old = 1;\n' });
     const { buildCodeMap } = await import("../code-map.js");
-    expect(buildCodeMap(repo)!.files.find((f) => f.p === "src/lib/old.ts")).toEqual({ p: "src/lib/old.ts", e: ["old"] });
+    expect(buildCodeMap(repo)!.files.find((f) => f.p === "src/lib/old.ts")).toMatchObject({ p: "src/lib/old.ts", e: ["old"] });
+    expect(buildCodeMap(repo)!.files.find((f) => f.p === "src/lib/old.ts")?.i).toBeUndefined();
   });
 
   // protects: links point at source, as the TypeScript compiler resolves them; fails_when: a .ts file importing "./b.js" links the emitted b.js while b.ts is tracked, or a .js file links b.ts; no_claim: moduleResolution modes beyond extension substitution
@@ -324,13 +325,13 @@ describe("buildCodeMap", () => {
     reads = 0;
     const again = buildCodeMap(repo, { cache, readBlobs: counting });
     expect(reads).toBe(0);
-    expect(again!.files.find((f) => f.p === "src/lib/llm.ts")).toEqual({ p: "src/lib/llm.ts", e: ["callModel"], i: ["src/lib/text.ts", "src/lib/db.ts"] });
+    expect(again!.files.find((f) => f.p === "src/lib/llm.ts")).toEqual({ p: "src/lib/llm.ts", e: ["callModel"], i: ["src/lib/text.ts", "src/lib/db.ts"], g: ["function callModel()"] });
 
     write(repo, { "src/lib/text.ts": "export const segment = () => 1;\nexport function tokens() {}\n" });
     reads = 0;
     const changed = buildCodeMap(repo, { cache, readBlobs: counting });
     expect(reads).toBe(1);
-    expect(changed!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment", "tokens"] });
+    expect(changed!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment", "tokens"], g: ["const segment = () =>", "function tokens()"] });
   });
   // protects: a first sync of a large repo holds one batch of files in memory at a time; fails_when: names from a later batch are lost, or a file's names come from another file; no_claim: peak memory itself
   it("builds the same map when files arrive in many small batches", async () => {
@@ -360,7 +361,7 @@ describe("buildCodeMap", () => {
     const { buildCodeMap } = await import("../code-map.js");
     const blob = git(repo, "rev-parse", ":src/lib/text.ts");
     const cache = { repos: { "acme/widgets": { blobs: { [`${blob}:js`]: { e: ["fromAComment"] } } } } };
-    expect(buildCodeMap(repo, { cache })!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment"] });
+    expect(buildCodeMap(repo, { cache })!.files.find((f) => f.p === "src/lib/text.ts")).toEqual({ p: "src/lib/text.ts", e: ["segment"], g: ["const segment = () =>"] });
   });
 });
 
@@ -556,6 +557,264 @@ describe("syncCodeMap", () => {
     const cache = JSON.parse(readFileSync(cachePath, "utf-8")) as { repos: Record<string, { hash: string }> };
     expect(Object.keys(cache.repos)).toEqual(["acme/widgets"]);
     expect(git(repo, "status", "--porcelain", "--untracked-files=all").split("\n").filter((l) => l.startsWith("??"))).toEqual([]);
+  });
+});
+
+describe("docLine", () => {
+  // protects: a file says what it does in its author's own words, one line, never code; fails_when: a line from code, a license or lint directive, or more than one sentence is sent; no_claim: comments in the middle of a file (never read)
+  it("takes the first sentence of a TypeScript file's leading doc comment", async () => {
+    const { docLine } = await import("../code-map.js");
+    const src = '"use client";\n\n/**\n * Pre-ranker for "Where it applies": scores the files of the user\'s maps.\n * Second sentence stays home.\n * @param x nothing\n */\nexport const a = 1;\n';
+    expect(docLine("src/a.ts", src)).toBe('Pre-ranker for "Where it applies": scores the files of the user\'s maps.');
+  });
+
+  it("reads // and //! line comments at the top of TypeScript, Go and Rust files", async () => {
+    const { docLine } = await import("../code-map.js");
+    expect(docLine("run.ts", "#!/usr/bin/env node\n// XKG-58: run Jev as production does.\n// More.\nimport x from 'y';\n")).toBe("XKG-58: run Jev as production does.");
+    expect(docLine("src/budget.rs", "//! The budget governor and the pre-call spend check.\n\nuse std::fmt;\n")).toBe("The budget governor and the pre-call spend check.");
+    expect(docLine("main.go", "// Package main serves the API\npackage main\n")).toBe("Package main serves the API");
+  });
+
+  it("takes a Python module docstring", async () => {
+    const { docLine } = await import("../code-map.js");
+    expect(docLine("app/main.py", '#!/usr/bin/env python3\n"""Score each arm from cached answers. No API calls."""\nimport json\n')).toBe("Score each arm from cached answers.");
+  });
+
+  it("gives nothing when the file opens with code, a license or a lint directive", async () => {
+    const { docLine } = await import("../code-map.js");
+    expect(docLine("a.ts", "import x from 'y';\n/** Not at the top. */\nexport const a = 1;\n")).toBeNull();
+    expect(docLine("b.ts", "// Copyright 2026 Acme Inc. All rights reserved.\nexport const b = 1;\n")).toBeNull();
+    expect(docLine("c.ts", "/* eslint-disable no-console */\nexport const c = 1;\n")).toBeNull();
+    expect(docLine("d.ts", "// @ts-nocheck\nexport const d = 1;\n")).toBeNull();
+    expect(docLine("README.md", "<!-- A readme. -->\n")).toBeNull();
+  });
+
+  it("keeps the line to 200 characters on one line", async () => {
+    const { docLine } = await import("../code-map.js");
+    const line = docLine("a.ts", `/** ${"word ".repeat(80)}*/\n`)!;
+    expect(line.length).toBeLessThanOrEqual(200);
+    expect(line).not.toMatch(/\n/);
+  });
+});
+
+describe("signatures", () => {
+  // protects: signatures carry names and types, never code; fails_when: a body, a default value or a string from a default leaves the machine, or a public signature is missed; no_claim: every declaration form
+  it("reads TypeScript signatures without bodies or default values", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = [
+      "export async function extractCapture(",
+      "  apiKey: string,",
+      '  llm: LlmConfig = "anthropic",',
+      "  meta: { url?: string } = {},",
+      "): Promise<Extracted> {",
+      '  return call("secret prompt");',
+      "}",
+      "export const REASONING_TOKENS: Record<LlmEffort, number> = { low: 1024 };",
+      'export const handler = async (req: Request, n = 3): Promise<Response> => new Response("x");',
+      "export class Store<T> extends Base {",
+      "  private key = 'hidden';",
+      "}",
+      "export interface Options { a: string }",
+      'export type Mode = "a" | "b";',
+      "function internal(x: number) {}",
+    ].join("\n");
+    expect(signatures("src/llm.ts", src)).toEqual([
+      "async function extractCapture(apiKey: string, llm: LlmConfig, meta: { url?: string }): Promise<Extracted>",
+      "const REASONING_TOKENS: Record<LlmEffort, number>",
+      "const handler = async (req: Request, n): Promise<Response> =>",
+      "class Store<T> extends Base",
+      "interface Options",
+      "type Mode",
+    ]);
+  });
+
+  it("keeps a function's arrow return type and drops generic defaults cleanly", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = "export function lineRenderer(write: (t: string) => void): (e: LiveEvent) => void {\n}\nexport async function githubGet<T = unknown>(token: string): Promise<T> {}\n";
+    expect(signatures("a.ts", src)).toEqual([
+      "function lineRenderer(write: (t: string) => void): (e: LiveEvent) => void",
+      "async function githubGet<T>(token: string): Promise<T>",
+    ]);
+  });
+
+  // protects: no value from the code rides along in a signature; fails_when: a parenthesized value, an IIFE body, a default with a comparison, or a string literal reaches the map; no_claim: every expression form
+  it("sends no values: parenthesized initializers, comparison defaults and string literals stay home", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = [
+      'export const token = ("private-token");',
+      'export const run = (function () { return "secret-body"; })();',
+      'export function f(x = limit > 0 ? "private-default" : "other", y: number) {}',
+      'export function g(mode: "fast" | "slow"): void {}',
+      "export const h = async (a: Map<string, number>, b = 2): Promise<void> => {};",
+    ].join("\n");
+    const out = signatures("a.ts", src);
+    expect(out).toEqual([
+      "const token",
+      "const run",
+      "function f(x = …)",
+      'function g(mode: "…" | "…"): void',
+      "const h = async (a: Map<string, number>, b): Promise<void> =>",
+    ]);
+    expect(out.join(" ")).not.toMatch(/private|secret|other|fast/);
+  });
+
+  // protects: an expression default can't leak through punctuation it contains; fails_when: any part of a regex, a generic call or a nested expression in a default reaches the map; no_claim: which complex defaults keep their later parameters (none do)
+  it("ends the signature at a default that is an expression", async () => {
+    const { signatures } = await import("../code-map.js");
+    const src = [
+      "export function f(x = /private,pattern/, y: number) {}",
+      "export function g(a: string, x = make<A, B>(123456789)): void {}",
+      "export function h<T = Map<string, number>>(t: T) {}",
+    ].join("\n");
+    const out = signatures("a.ts", src);
+    expect(out).toEqual(["function f(x = …)", "function g(a: string, x = …)", "function h<T = …>"]);
+    expect(out.join(" ")).not.toMatch(/private|pattern|123456789|make/);
+  });
+
+  // protects: a signature never runs past its declaration into code; fails_when: a Go channel arrow or a semicolon-free TS line lets a body or the next statement into the map; no_claim: every ASI rule
+  it("stops at the end of a declaration in Go channel types and semicolon-free TypeScript", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("w.go", "func Watch() <-chan int { return make(chan int, 987654321) }\nfunc Send(c chan<- int) {\n}\n")).toEqual(["func Watch() <-chan int", "func Send(c chan<- int)"]);
+    const ts = "export let ready: boolean\ntransmit(987654321)\nexport class Store<T>\n  extends Base\n  implements Saves {\n}\nexport type Pair =\n  | A\n  | B\n";
+    const out = signatures("a.ts", ts);
+    expect(out).toEqual(["let ready: boolean", "class Store<T> extends Base implements Saves", "type Pair"]);
+    expect(out.join(" ")).not.toMatch(/987654321|transmit/);
+  });
+
+  // protects: the last net under the scanner, so a form it misreads still sends no code or value; fails_when: a computed superclass, a Rust const-generic default, a number or a callback body reaches the map; no_claim: the scanner reads every form right (it can't; this is why the net exists)
+  it("drops computed superclasses, const-generic defaults, numbers and anything that reads as code", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("a.ts", "export class Store extends mixin(() => { send(987654321); }) {}\nexport class Plain extends Base<T> implements Saves {}\n")).toEqual(["class Store extends …", "class Plain extends Base<T> implements Saves"]);
+    expect(signatures("src/b.rs", "pub struct Buffer<const N: usize = 987654321> { data: [u8; N] }\npub fn take(xs: [u8; 32]) -> u8 {\n}\n")).toEqual(["struct Buffer<const N: usize>", "fn take(xs: [u8; …]) -> u8"]);
+    const out = signatures("c.ts", "export function f(cb: (x: number) => void = () => { run(42); }) {}\n");
+    expect(out.join(" ")).not.toMatch(/run|42/);
+  });
+
+  it("drops every numeric literal form: hex, binary, octal, bigint, suffixed and leading-dot", async () => {
+    const { signatures } = await import("../code-map.js");
+    const out = signatures("a.ts", "export function f(code: 0xCAFE, mask: 0b1010, mode: 0o755, big: 123n, ratio: .75, e: 1.5e+3): void {}\n");
+    expect(out).toEqual(["function f(code: …, mask: …, mode: …, big: …, ratio: …, e: …): void"]);
+    expect(signatures("main.go", "func Read() [0xCAFE]byte {\n}\n")).toEqual(["func Read() […]byte"]);
+    expect(signatures("src/a.rs", "pub fn take(xs: [u8; 32usize], ys: [u16; 0x1F_u16]) -> u8 {\n}\n")).toEqual(["fn take(xs: [u8; …], ys: [u16; …]) -> u8"]);
+  });
+
+  it("reads Go and Rust character literals whole, and sends nothing when brackets don't add up", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("main.go", "func Read() ['(']byte { panic(secretIdentifier) }\nfunc Ok() error {\n}\n")).toEqual(["func Read() […]byte", "func Ok() error"]);
+    expect(signatures("src/a.rs", "pub fn f(xs: [u8; b'(' as usize]) -> u8 { secret_call() }\npub fn g<'a>(s: &'a str) -> &'a str {\n}\n")).toEqual([
+      "fn f(xs: [u8; …]) -> u8",
+      "fn g<'a>(s: &'a str) -> &'a str",
+    ]);
+    // Whatever confuses the scanner, a mismatched or unclosed bracket yields no signature at all.
+    expect(signatures("main.go", "func Bad() [(]byte { panic(secretIdentifier) }\n").join(" ")).not.toMatch(/secret/);
+    expect(signatures("a.ts", "export function open(a: string { secret(); }\n")).toEqual([]);
+  });
+
+  it("collapses Rust const blocks and Go braces that aren't struct or interface types", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("src/a.rs", "pub fn f(xs: [u8; { secret_call() }]) {}\npub fn g(xs: [u8; { let n = { 4 }; n }]) {}\n")).toEqual(["fn f(xs: [u8; …])", "fn g(xs: [u8; …])"]);
+    expect(signatures("main.go", "func F(x struct{ A int }, y interface{ Close() error }) error {\n}\nfunc G(xs [len(map[string]int{\"k\": 1})]byte) {\n}\n")).toEqual([
+      "func F(x struct{ A int }, y interface{ Close() error }) error",
+      "func G(xs […]byte)",
+    ]);
+  });
+
+  it("ends a signature at a Python lambda", async () => {
+    const { signatures } = await import("../code-map.js");
+    const out = signatures("app/a.py", "def f(x: Annotated[str, BeforeValidator(lambda v: send(v, privateIdentifier))]) -> int:\n    return 0\n");
+    expect(out).toEqual(["def f(x: Annotated[str, BeforeValidator(…)]) -> int"]);
+    expect(signatures("app/b.py", "def g(x: Annotated[str, lambda v: v]) -> int:\n    pass\n")).toEqual(["def g(x: Annotated[str, …"]);
+    expect(signatures("a.ts", "export function handler(lambda: LambdaClient): void {}\n")).toEqual(["function handler(lambda: LambdaClient): void"]);
+  });
+
+  it("keeps no expression in a type position: Python calls and comprehensions, Rust and Go array lengths", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("app/a.py", "def f(x: Annotated[str, Field(gt=secret_limit())], y: list[int]) -> int:\n    pass\nclass A(namedtuple(\"A\", \"x y\")):\n    pass\n")).toEqual([
+      "def f(x: Annotated[str, Field(…)], y: list[int]) -> int",
+      "class A(namedtuple(…))",
+    ]);
+    const comp = signatures("app/b.py", "def f(x: Annotated[str, [v for v in settings if v]]) -> int:\n    pass\n").join(" ");
+    expect(comp).not.toMatch(/settings|\bif\b/);
+    expect(signatures("src/a.rs", "pub fn f(a: [u8; N], b: [u8; N + secret()], c: (u8, u16)) {}\n")).toEqual(["fn f(a: [u8; N], b: [u8; …], c: (u8, u16))"]);
+    expect(signatures("main.go", "func Map[K comparable, V any](m map[K]V, a [N]int, b [...]int, c []V, d [secret(1)]int) []V {\n}\n")).toEqual([
+      "func Map[K comparable, V any](m map[K]V, a [N]int, b [...]int, c []V, d […]int) []V",
+    ]);
+  });
+
+  it("ends at Python f-strings and triple quotes, and sends nothing when a string token runs into more text", async () => {
+    const { signatures } = await import("../code-map.js");
+    const fs = signatures("app/a.py", 'def f(x: Annotated[str, f"{config["private-token"]}"]) -> int:\n    pass\n').join(" ");
+    expect(fs).not.toMatch(/private|token/);
+    expect(signatures("app/b.py", 'def g(x: Annotated[str, """doc "secret" here"""]) -> int:\n    pass\n').join(" ")).not.toMatch(/secret/);
+    expect(signatures("app/c.py", 'def h(x: Literal["a", "b"]) -> int:\n    pass\n')).toEqual(['def h(x: Literal["…", "…"]) -> int']);
+    expect(signatures("a.ts", 'export function k(x: `a${"b"}c`): void {}\n').join(" ")).not.toMatch(/\bb\b|c`/);
+  });
+
+  it("blanks computed keys in destructured parameters, keeping index signatures and tuples", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("a.ts", "export function f({ [/private-token/.source]: value, [send(privateIdentifier)]: v2 }: Input) {}\n")).toEqual(["function f({ […]: value, […]: v2 }: Input)"]);
+    expect(signatures("b.ts", "export function g(o: { [key: string]: number; [K in Keys]?: T; pair: [string, number] }) {}\n")).toEqual([
+      "function g(o: { [key: string]: number; [K in Keys]?: T; pair: [string, number] })",
+    ]);
+  });
+
+  it("reads Python, Go and Rust signatures", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("app/main.py", 'def run(path: str, retries=3) -> int:\n    return 0\nclass Store(Base):\n    pass\n')).toEqual(["def run(path: str, retries) -> int", "class Store(Base)"]);
+    expect(signatures("main.go", "func (s *Server) Start(ctx context.Context) error {\n\treturn nil\n}\ntype Config struct{}\n")).toEqual(["func (s *Server) Start(ctx context.Context) error", "type Config struct"]);
+    expect(signatures("src/env.rs", "pub fn from_vars(cwd: PathBuf, vars: impl IntoIterator<Item = (String, String)>) -> Env {\n}\n")).toEqual(["fn from_vars(cwd: PathBuf, vars: impl IntoIterator<Item = (String, String)>) -> Env"]);
+    expect(signatures("src/budget.rs", "pub fn check_call_spend(limits: &[Money], spent: &Money) -> Result<(), SpendDenied> {\n    Ok(())\n}\npub struct RunBudget { pub max: u32 }\n")).toEqual([
+      "fn check_call_spend(limits: &[Money], spent: &Money) -> Result<(), SpendDenied>",
+      "struct RunBudget",
+    ]);
+  });
+
+  it("skips signatures in comments and caps each at 160 characters and 30 per file", async () => {
+    const { signatures } = await import("../code-map.js");
+    expect(signatures("a.ts", "// export function gone(a: string) {}\nexport function kept() {}\n")).toEqual(["function kept()"]);
+    const long = `export function f(${Array.from({ length: 40 }, (_, i) => `argument${i}: string`).join(", ")}) {}\n`;
+    expect(signatures("a.ts", long)[0]!.length).toBeLessThanOrEqual(160);
+    const many = Array.from({ length: 40 }, (_, i) => `export function f${i}() {}`).join("\n");
+    expect(signatures("a.ts", many)).toHaveLength(30);
+  });
+});
+
+describe("buildCodeMap with doc lines and signatures", () => {
+  let repo: string;
+  beforeEach(() => { repo = makeRepo(FIXTURE); });
+  afterEach(() => rmSync(repo, { recursive: true, force: true }));
+
+  // protects: the map sends the doc line and signatures, and still no code; fails_when: d/g are missing, or a body string reaches the map; no_claim: summary quality
+  it("adds each file's doc line and signatures, and no file body", async () => {
+    write(repo, { "src/lib/rank.ts": '/** Ranks files against a capture. */\nexport function rankFiles(maps: RepoMap[], capture: string): RankedFile[] {\n  return run("secret body");\n}\n' });
+    const { buildCodeMap } = await import("../code-map.js");
+    const map = buildCodeMap(repo)!;
+    expect(map.files.find((f) => f.p === "src/lib/rank.ts")).toEqual({
+      p: "src/lib/rank.ts",
+      e: ["rankFiles"],
+      d: "Ranks files against a capture.",
+      g: ["function rankFiles(maps: RepoMap[], capture: string): RankedFile[]"],
+    });
+    expect(JSON.stringify(map)).not.toMatch(/secret/);
+  });
+});
+
+describe("capMap with doc lines and signatures", () => {
+  // protects: the newest detail goes first when the map is too big, so an over-cap repo keeps today's map; fails_when: imports or exports drop while signatures or doc lines stay; no_claim: which detail helps most
+  it("drops signatures, then doc lines, before imports", async () => {
+    const { capMap } = await import("../code-map.js");
+    const files = Array.from({ length: 600 }, (_, n) => ({
+      p: `src/file-${n}.ts`,
+      e: ["exportedName"],
+      i: [`src/file-${(n + 1) % 600}.ts`],
+      d: "A one-line description of what this file does in the system, written by its author.",
+      g: Array.from({ length: 4 }, (_, k) => `function exportedName${k}(argument: string, other: number): Promise<void>`),
+    }));
+    const noSigs = capMap(files).files;
+    expect(noSigs.every((f) => f.g === undefined && f.d && f.i && f.e)).toBe(true);
+    const bigger = files.map((f) => ({ ...f, d: f.d.repeat(3) }));
+    const noDocs = capMap(bigger).files;
+    expect(noDocs.every((f) => f.g === undefined && f.d === undefined && f.i && f.e)).toBe(true);
   });
 });
 

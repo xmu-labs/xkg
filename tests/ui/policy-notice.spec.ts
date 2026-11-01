@@ -10,7 +10,7 @@ test("a signed-in user sees the notice with a link to the privacy page", async (
   await signIn(page);
   await page.goto("/");
   await expect(notice(page)).toBeVisible();
-  await expect(notice(page)).toContainText("TypeSafe");
+  await expect(notice(page)).toContainText("Never your code");
   await expect(notice(page).getByRole("link", { name: "Read the privacy policy" })).toHaveAttribute("href", "/privacy");
 });
 

@@ -1,11 +1,13 @@
 /**
- * A repo's code map as the server accepts it: file paths, exported names and
- * links to other mapped files, never code. Built by the CLI (cli/code-map.ts)
+ * A repo's code map as the server accepts it: file paths, exported names, their
+ * signatures, links to other mapped files and each file's one-line doc
+ * comment, never code. Built by the CLI (cli/code-map.ts)
  * where the coding agent runs; checked again here so the names-only promise
  * holds whatever a client sends.
  */
 
-export type MapFile = { p: string; e?: string[]; i?: string[] };
+/** p path, e exported names, i mapped imports, d doc line, g signatures. */
+export type MapFile = { p: string; e?: string[]; i?: string[]; d?: string; g?: string[] };
 export interface CodeMapPayload {
   repo: string;
   head7: string;
@@ -32,6 +34,11 @@ export const CODE_MAP_QUOTA = 60;
 
 const REPO = /^[\w.-]+\/[\w.-]+$/;
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+export const MAX_DOC_LINE = 200;
+export const MAX_SIGNATURE = 160;
+export const MAX_SIGNATURES_PER_FILE = 30;
+const ONE_LINE = /^[^\u0000-\u001f\u007f]+$/;
+const line = (s: unknown, max: number): s is string => typeof s === "string" && s.length <= max && ONE_LINE.test(s);
 
 function safePath(p: unknown): p is string {
   return typeof p === "string" && p.length > 0 && p.length <= 512 && !p.startsWith("/") &&
@@ -75,6 +82,16 @@ export function parseCodeMap(body: unknown): { ok: true; map: CodeMapPayload } |
         return { ok: false, error: `Imports of ${file.p} must be paths in this map.` };
       }
       if (f.i.length) file.i = f.i as string[];
+    }
+    if (f.d !== undefined) {
+      if (!line(f.d, MAX_DOC_LINE)) return { ok: false, error: `The doc line of ${file.p} must be one line of at most ${MAX_DOC_LINE} characters.` };
+      file.d = f.d;
+    }
+    if (f.g !== undefined) {
+      if (!Array.isArray(f.g) || f.g.length > MAX_SIGNATURES_PER_FILE || !f.g.every((g) => line(g, MAX_SIGNATURE))) {
+        return { ok: false, error: `Signatures of ${file.p} must be at most ${MAX_SIGNATURES_PER_FILE} single lines of at most ${MAX_SIGNATURE} characters.` };
+      }
+      if (f.g.length) file.g = f.g as string[];
     }
     files.push(file);
   }

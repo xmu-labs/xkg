@@ -67,6 +67,26 @@ describe("POST /api/code-map", () => {
     expect(saveCodeMap.mock.calls[0]![1]).toEqual({ repo: "acme/widgets", head7: "abc1234", truncated: false, files: [{ p: "a.ts", e: ["a"] }] });
   });
 
+  // protects: the richer map is stored, and only as single lines; fails_when: a doc line or signature is dropped, or a multi-line or oversized one is stored; no_claim: whether a line is prose or code
+  it("stores each file's doc line and signatures", async () => {
+    const files = [{ p: "a.ts", e: ["a"], d: "Does a.", g: ["function a(x: string): void"] }];
+    const res = await POST(send({ ...MAP, files }));
+    expect(res.status).toBe(200);
+    expect(saveCodeMap.mock.calls[0]![1].files).toEqual(files);
+  });
+
+  it.each([
+    ["a doc line with a newline", { d: "one\ntwo" }],
+    ["a doc line over 200 characters", { d: "x".repeat(201) }],
+    ["a signature over 160 characters", { g: ["x".repeat(161)] }],
+    ["more than 30 signatures", { g: Array.from({ length: 31 }, (_, i) => `f${i}()`) }],
+    ["a signature with a newline", { g: ["function a(\n)"] }],
+  ])("refuses %s with 400", async (_label, extra) => {
+    const res = await POST(send({ ...MAP, files: [{ p: "a.ts", e: ["a"], ...extra }] }));
+    expect(res.status).toBe(400);
+    expect(saveCodeMap).not.toHaveBeenCalled();
+  });
+
   // protects: who may write a map; fails_when: a missing or wrong key is accepted; no_claim: OAuth tokens (not accepted here)
   it.each([[null], ["wrong-key"]])("rejects key %s with 401", async (key) => {
     const res = await POST(send(MAP, key));
