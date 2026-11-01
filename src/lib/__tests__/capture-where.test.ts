@@ -190,7 +190,7 @@ describe("web capture", () => {
   // protects: the card can show what the capture cost; fails_when: the result lacks the model or the token counts; no_claim: the provider's counts are right
   it("returns the model and the token counts with the result", async () => {
     const body = await (await post()).json();
-    expect(body.usage).toEqual({ model: "gpt-4o-mini", tokensIn: 2400, tokensOut: 780 });
+    expect(body.usage).toMatchObject({ model: "gpt-4o-mini", tokensIn: 2400, tokensOut: 780 });
   });
 
   // protects: a failed extraction costs no quota; fails_when: the hourly count keeps the failed try; no_claim: none
@@ -212,6 +212,25 @@ describe("web capture", () => {
     const line = JSON.parse(lines[0]!);
     expect(line).toMatchObject({ event: "capture.timing", via: "web", provider: "openai", fetched: false });
     for (const step of ["fetch", "extract", "save", "index", "match", "total", "background"]) expect(typeof line.ms[step]).toBe("number");
+  });
+
+  // protects: the result carries the server's extraction time, which decides "slow"; fails_when: extractMs is missing; no_claim: the time is accurate
+  it("returns the server's extraction time with the usage", async () => {
+    const body = await (await post()).json();
+    expect(typeof body.usage.extractMs).toBe("number");
+    expect(body.usage.effortApplied).toBe(false);
+  });
+
+  // protects: a failed web extraction leaves a timing line after the refund; fails_when: no ok:false line, or the provider text leaks; no_claim: none
+  it("logs a failure timing line when extraction fails", async () => {
+    extractFails = true;
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await post();
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("capture.timing"));
+    info.mockRestore();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ event: "capture.timing", via: "web", ok: false, error: "http_503", provider: "openai" });
+    expect(lines[0]).not.toContain("[llm");
   });
 
   // protects: AC3, users with no maps keep today's file; fails_when: the file differs from buildMarkdown or is written twice; no_claim: none
@@ -379,6 +398,18 @@ describe("MCP capture", () => {
     extractFails = true;
     await expect(handleCapture(user as never, { content: "notes" })).rejects.toThrow("HTTP 503");
     expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  // protects: a failed MCP extraction is logged like a web one; fails_when: no ok:false line, or the provider text leaks; no_claim: none
+  it("logs a failure timing line marked mcp when extraction fails", async () => {
+    extractFails = true;
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await handleCapture(user as never, { content: "notes" }).catch(() => {});
+    const lines = info.mock.calls.map((c) => String(c[0])).filter((l) => l.includes("capture.timing"));
+    info.mockRestore();
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0]!)).toMatchObject({ via: "mcp", ok: false, error: "http_503" });
+    expect(lines[0]).not.toContain("[llm");
   });
 
   // protects: MCP captures are timed like web ones; fails_when: no line, or the path isn't named; no_claim: the times are accurate

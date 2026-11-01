@@ -49,6 +49,16 @@ export interface ExtractedCapture {
   claims?: Claim[];
   /** The exact text the extraction ran on and the claims were checked against. */
   source?: SourceSnapshot;
+  /** How the quote check went; logged, never written to the capture file. */
+  stats?: CaptureStats;
+}
+
+/** Claim counts from one extraction: what the model proposed and what the quote check kept. */
+export interface CaptureStats {
+  claimsProposed: number;
+  claimsKept: number;
+  /** The core idea (when there is one) plus the takeaways kept. */
+  fieldsTotal: number;
 }
 
 /** One numbered piece of source text the model can cite. */

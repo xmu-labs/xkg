@@ -23,7 +23,7 @@ import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings, type LlmUsage } from "@/lib/llm";
-import { stepTimer, timingLine } from "@/lib/capture-timing";
+import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
@@ -59,12 +59,14 @@ export async function handleCapture(user: User, args: { content: string; title?:
   try {
     capture = await extractCapture(user.llm_api_key, args.content, args.title, llm, { onUsage: (u) => { usage = u; } });
   } catch (err) {
+    timer.mark("extract");
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
       await refundQuota(`capture:user:${user.id}`, quota.windowKey);
     } catch {
       // The refund is a courtesy; the error is what the agent needs.
     }
+    console.info(JSON.stringify(failureLine("mcp", timer, llm, usage, false, err)));
     throw err;
   }
   timer.mark("extract");
@@ -153,7 +155,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
     timer.mark("link");
     if (where) await writeWhereSection(token, repo, path, where);
     timer.mark("where");
-    console.info(JSON.stringify(timingLine("mcp", timer, llm, usage, false)));
+    console.info(JSON.stringify(timingLine("mcp", timer, llm, usage, false, capture)));
   });
 
   let result = `Captured: ${capture.inferredTitle}\nFile: ${path}\nTags: ${capture.tags.join(", ")}`;

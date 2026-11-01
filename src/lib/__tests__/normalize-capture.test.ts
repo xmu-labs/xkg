@@ -86,3 +86,39 @@ describe("buildIndexRow never throws on a degraded capture", () => {
     expect(() => buildIndexRow("2026-06-02", bad, "f.md")).not.toThrow();
   });
 });
+
+describe("normalizeCapture stats", async () => {
+  const { buildSource } = await import("../evidence");
+  const { buildMarkdown } = await import("../llm");
+  const source = buildSource("Alpha beta gamma.\n\nDelta epsilon.");
+
+  // protects: the capture records how many claims the model proposed and how many survived the quote check; fails_when: a count is off or dropped takeaways are counted; no_claim: the check itself (evidence tests)
+  it("counts proposed claims, kept claims and fields", () => {
+    const c = normalizeCapture({
+      slug: "s", coreIdea: "Main idea", takeaways: ["T one", "", "T two"],
+      claims: [
+        { outputPath: "/coreIdea", evidence: [{ segmentId: "s1", exactQuote: "Alpha beta" }] },
+        { outputPath: "/takeaways/2", evidence: [{ segmentId: "s2", exactQuote: "Delta" }] },
+        { outputPath: "/takeaways/0", evidence: [{ segmentId: "s1", exactQuote: "not in the source" }] },
+      ],
+    }, source);
+    expect(c.stats).toEqual({ claimsProposed: 3, claimsKept: 2, fieldsTotal: 3 });
+  });
+
+  // protects: a missing core idea isn't counted as a field; fails_when: fieldsTotal counts the placeholder; no_claim: none
+  it("counts only real fields and no claims when the model sent none", () => {
+    const c = normalizeCapture({ slug: "s", coreIdea: null, takeaways: ["One"] }, source);
+    expect(c.stats).toEqual({ claimsProposed: 0, claimsKept: 0, fieldsTotal: 1 });
+  });
+
+  // protects: captures without a source keep today's shape; fails_when: stats appear with nothing checked; no_claim: none
+  it("has no stats without a source", () => {
+    expect(normalizeCapture({ slug: "s", coreIdea: "x" }).stats).toBeUndefined();
+  });
+
+  // protects: the capture file never carries the counts; fails_when: buildMarkdown output changes with stats; no_claim: none
+  it("leaves the capture file unchanged", () => {
+    const c = normalizeCapture({ slug: "s", coreIdea: "Main idea", takeaways: ["T"] }, source);
+    expect(buildMarkdown("2026-01-01", c, "raw")).toBe(buildMarkdown("2026-01-01", { ...c, stats: undefined }, "raw"));
+  });
+});
