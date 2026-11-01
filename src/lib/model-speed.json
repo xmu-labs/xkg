@@ -1,0 +1,13 @@
+[
+  {
+    "provider": "openai",
+    "fastModel": "gpt-4.1",
+    "fastMeanMs": 3940,
+    "coverageFast": 0.92,
+    "slowModel": "gpt-6.1-terra",
+    "slowMeanMs": 12980,
+    "coverageSlow": 1,
+    "sources": 12,
+    "measuredOn": "2026-11-01"
+  }
+]

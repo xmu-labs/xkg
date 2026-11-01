@@ -76,7 +76,7 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 
 xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
 
-While it works, the app shows each step (reading the page, extracting, saving) and the seconds so far. The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`). Under the title, the result shows how long the capture took, the tokens it used and the model (for example `23s · 3.2k tokens · gpt-4o-mini`). Captures are fastest on a small model; Settings → AI model says so.
+While it works, the app shows each step (reading the page, extracting, saving) and the seconds so far. The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`). A fast capture shows nothing extra. When the model took 20 seconds or more, the result offers a faster model your provider serves, with its measured time, for example "This took 25 s. gpt-4.1 usually takes about 4 s." **Use** switches to it (with **Undo**), and **Keep mine** stops the offer for that model and effort. The offer only names a model that keeps the checked quotes about as well (see [How the fast model is measured](#how-the-fast-model-is-measured)).
 
 On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
 
@@ -558,6 +558,10 @@ A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, d
 | 200 captures/month | ~$1.60 | ~$0.20 |
 
 Larger models cost more. Briefing, planning, and synthesis only run when you ask for them.
+
+### How the fast model is measured
+
+`scripts/measure-model-speed.ts` runs the same set of sources (public articles and short notes) through a few fast models and one reasoning model per provider. For each model it records the mean extraction time and the share of takeaways that keep a checked quote. The fastest model whose share stays within 10 points of the reasoning model's is saved to `src/lib/model-speed.json` with the date. The capture card and Settings → AI model quote that time. A row older than 90 days, or for a model the app no longer lists, is never quoted. Providers that haven't been measured get no offer. See CONTRIBUTING.md to run it.
 
 ## Roadmap
 

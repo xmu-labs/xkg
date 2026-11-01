@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore }
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
+import { speedRow } from "@/lib/model-speed";
 import CodeRepos from "./CodeRepos";
 
 export interface Me {
@@ -20,6 +21,8 @@ export interface Me {
   llmModel?: string | null;
   llmEffort?: Effort | null;
   defaultModel?: string;
+  /** "model/effort" the faster-model hint was kept for. */
+  modelNudgeDismissedFor?: string | null;
   /** `owner/name` of the GitHub repo that holds the captures; null before onboarding. */
   knowledgeRepo?: string | null;
   version: string;
@@ -389,6 +392,7 @@ export default function SettingsDrawer({
   // Keys don't carry across providers, so a switch can't be saved without one.
   const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
   // Each provider's default is first in its list; the server's is authoritative for the saved one.
+  const fastest = speedRow(llmProvider);
   const providerDefault = providerChanged || !me?.defaultModel ? PROVIDERS[llmProvider].models[0] : me.defaultModel;
 
   // Native adapters and OpenRouter take an effort setting; the other
@@ -1050,7 +1054,14 @@ export default function SettingsDrawer({
                       )}
                     </p>
                     <p className="text-xs leading-relaxed mt-1" style={{ color: "var(--fg-muted)" }}>
-                      Captures are fastest on a small model. Reasoning models can take 30 seconds or more.
+                      {fastest ? (
+                        <>Captures are fastest on <span className="break-all">{fastest.fastModel}</span>: about {Math.max(1, Math.round(fastest.fastMeanMs / 1000))} s on our test set. Other models can take 20 seconds or more.</>
+                      ) : (
+                        <>Captures are fastest on a small model. Others can take 20 seconds or more.</>
+                      )}
+                    </p>
+                    <p className="text-xs leading-relaxed mt-1" style={{ color: "var(--fg-muted)" }}>
+                      xkg uses this model for everything it does with your key, including your coding agent&apos;s briefings.
                     </p>
                   </div>
 
