@@ -58,7 +58,8 @@ export interface WhereResult {
 export interface WhereCard {
   fit: string;
   repo: string | null;
-  files: { path: string; why?: string }[];
+  /** `after` is filled in later by the explain route. */
+  files: { path: string; why?: string; after?: string }[];
   also: { repo: string; fit: string }[];
   note: string;
 }

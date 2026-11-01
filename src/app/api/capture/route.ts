@@ -233,12 +233,15 @@ async function capturePipeline(
 
   // The user doesn't need links or the section to see the result, so they're
   // written after the answer. Both edit the capture file, so one at a time:
-  // linking first, then the section.
+  // the section first (the card asks for Why and After from it right away),
+  // then linking.
   const { github_token: token, github_repo: repo } = user;
   const savedCapture = capture;
   // The card shows what the capture cost: the model and its token counts.
   const spent = usage as LlmUsage | null;
   handOver(async () => {
+    if (where) await writeWhereSection(token, repo, path, where);
+    timer.mark("where");
     try {
       const indexFile = await readFile(token, repo, "INDEX.md");
       if (indexFile) await linkCapture(token, repo, savedCapture, filename, "inbox", indexFile.content);
@@ -246,8 +249,6 @@ async function capturePipeline(
       // Linking is best-effort
     }
     timer.mark("link");
-    if (where) await writeWhereSection(token, repo, path, where);
-    timer.mark("where");
     console.info(JSON.stringify(timingLine("web", timer, llm, usage, fetched)));
   });
 

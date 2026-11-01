@@ -179,11 +179,12 @@ describe("web capture", () => {
     expect(files.get(capturePath())!.content).toContain("## Where it applies");
   });
 
-  // protects: linking and the section write never edit the file at the same time; fails_when: the section is written before linking ends; no_claim: none
-  it("writes the section after linking", async () => {
+  // protects: the section is in the file as soon as possible (the card asks for Why and After from it), and linking never edits the file at the same time; fails_when: the section waits for linking; no_claim: none
+  it("writes the section before linking", async () => {
     matchResult = strong;
     await post();
-    expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("link"));
+    expect(order.lastIndexOf(`put:${capturePath()}`)).toBeLessThan(order.indexOf("link"));
+    expect(order.lastIndexOf(`put:${capturePath()}`)).toBeGreaterThan(order.indexOf("index"));
   });
 
   // protects: the card can show what the capture cost; fails_when: the result lacks the model or the token counts; no_claim: the provider's counts are right

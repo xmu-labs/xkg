@@ -6,7 +6,7 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
-import ApplyIt, { applyWhere } from "@/components/ApplyIt";
+import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, readCaptureResponse, type CaptureStage } from "@/lib/capture-stream";
 import { captureStats, type CaptureUsage } from "@/lib/capture-stats";
@@ -315,6 +315,15 @@ export default function CapturePage() {
               filename: `inbox/${result.filename}`,
               repos: [result.where.repo, ...result.where.also.map((a) => a.repo)],
               waitingIn: result.handoff?.repo,
+            } : undefined}
+            explain={result.where?.repo ? {
+              auto: result.where.fit === "Strong fit",
+              onRequest: async () => {
+                const { filename, where } = result;
+                if (!where) return;
+                const files = await explainFiles(filename, where.files);
+                setResult((r) => (r && r.filename === filename && r.where ? { ...r, where: { ...r.where, files } } : r));
+              },
             } : undefined}
             style={reveal(4)}
           />

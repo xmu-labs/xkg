@@ -347,3 +347,19 @@ test("a capture that is gone says so", async ({ page }) => {
   await expect(page.getByRole("main").getByRole("alert")).toHaveText("This capture isn't in your knowledge repo anymore.");
   await expect(page.getByRole("link", { name: "← Your knowledge" })).toBeVisible();
 });
+
+test("Why and how on a capture page fills in Why and After for its files", async ({ page }) => {
+  await openDetail(page);
+  const fresh = { ...DETAIL, where: { ...DETAIL.where, files: DETAIL.where.files.map(({ path }) => ({ path })) } };
+  await page.route("**/api/captures/read?*", (r) => r.fulfill({ json: { capture: fresh } }));
+  const bodies: unknown[] = [];
+  await page.route("**/api/captures/explain", (r) => {
+    bodies.push(r.request().postDataJSON());
+    return r.fulfill({ json: { files: DETAIL.where.files.map((f) => ({ path: f.path, why: "Measures retrieval", after: "Recall is checked first" })) } });
+  });
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  const card = page.getByTestId("apply-it");
+  await card.getByRole("button", { name: "Why and how" }).tap();
+  await expect(card.getByText("Recall is checked first").first()).toBeVisible();
+  expect(bodies).toEqual([{ name: LONG }]);
+});
