@@ -68,6 +68,20 @@ npm test            # vitest run
 A green Vercel preview means the app *built*. It does not mean the code is correct — that is what the
 two commands above are for.
 
+## Measuring the fast model
+
+The faster-model offer after a slow capture quotes `src/lib/model-speed.json`. To refresh it (when a provider's model list changes, or every few months; rows older than 90 days are ignored):
+
+```bash
+export OPENAI_API_KEY=...        # also ANTHROPIC_API_KEY, GEMINI_API_KEY for those providers
+npx tsx scripts/measure-model-speed.ts --sources <dir> --runs 2 --out src/lib/model-speed.json
+```
+
+- `<dir>` holds one `.txt` file per pasted text, or a `.url` file with one link (fetched at run time). Keep it outside the repo: use public articles or made-up text, never your own captures.
+- The calls are billed to your keys: about sources × runs × 3 calls per provider. It asks for `--yes` above 100 calls.
+- It never runs in CI. Exit codes: 0 done, 1 a provider failed (its old row is kept), 2 usage error. `--help` lists every option.
+- Commit the JSON with the script's summary lines in the PR description.
+
 ## What good looks like here
 
 **Comments explain why, not what.** The codebase leans on this heavily, especially around security

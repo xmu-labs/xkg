@@ -20,6 +20,8 @@ export interface User {
   llm_model?: string | null;
   /** Reasoning effort; null = the model's own default. */
   llm_effort?: LlmEffort | null;
+  /** "model/effort" the faster-model hint was kept for; it stays quiet for that setup. */
+  model_nudge_dismissed_for?: string | null;
   display_name: string | null;
   avatar_data: string | null;
   /** Bumped to revoke every outstanding session and OAuth token for this user. */
@@ -78,6 +80,7 @@ export async function initDb(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_data TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS model_nudge_dismissed_for TEXT`;
 
   // Refresh tokens are tracked so they can be single-use with reuse detection
   // (OAuth 2.1 for public clients). Only the jti is stored, never the token.
@@ -627,6 +630,7 @@ export async function ensureLlmColumns(): Promise<void> {
   if (llmColumnsReady) return;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS model_nudge_dismissed_for TEXT`;
   llmColumnsReady = true;
 }
 
@@ -637,6 +641,12 @@ export async function updateUserLlmSettings(
 ): Promise<void> {
   await ensureLlmColumns();
   await sql`UPDATE users SET llm_model = ${model}, llm_effort = ${effort} WHERE id = ${userId}`;
+}
+
+/** Save which setup the faster-model hint was answered for (null clears it). */
+export async function updateUserNudgeDismissed(userId: number, value: string | null): Promise<void> {
+  await ensureLlmColumns();
+  await sql`UPDATE users SET model_nudge_dismissed_for = ${value} WHERE id = ${userId}`;
 }
 
 export async function getUserByUsername(username: string): Promise<User | null> {
