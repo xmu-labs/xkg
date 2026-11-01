@@ -161,6 +161,27 @@ function reportUsage(opts: LlmCallOptions, tokensIn: number | undefined, tokensO
   if (opts.onUsage && typeof tokensIn === "number" && typeof tokensOut === "number") opts.onUsage({ tokensIn, tokensOut });
 }
 
+/**
+ * Whether a call with these settings sends an effort to the provider. Each
+ * adapter below drops effort for models that don't take it; this mirrors them,
+ * so nothing blames a slow capture on an effort the provider never saw.
+ */
+export function effortApplied(config: LlmConfig): boolean {
+  const llm = resolveLlm(config);
+  if (!llm.effort) return false;
+  switch (llm.provider) {
+    case "anthropic":
+    case "openrouter":
+      return true;
+    case "openai":
+      return isOpenAIReasoningModel(llm.model);
+    case "google":
+      return isGeminiThinkingModel(llm.model);
+    default:
+      return false;
+  }
+}
+
 /** Call the configured provider and return the raw text response (empty string on no content). */
 export async function callLlm(opts: LlmCallOptions): Promise<string> {
   const llm = resolveLlm(opts.llm);
@@ -650,6 +671,13 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
     source?.title ??
     (slug ? slug.charAt(0).toUpperCase() + slug.slice(1).replace(/-/g, " ") : null);
 
+  const claims = source
+    ? checkClaims(raw.claims, { coreIdea, takeaways: rawTakeaways }, source).map((c) => {
+        const m = /^\/takeaways\/(\d+)$/.exec(c.outputPath);
+        return m ? { ...c, outputPath: `/takeaways/${newIndex.get(Number(m[1]))}` } : c;
+      })
+    : [];
+
   return {
     slug: slug ?? "untitled",
     inferredTitle: inferredTitle ?? "Untitled capture",
@@ -663,13 +691,17 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
     tags: strArray(raw.tags),
     appliedTo: str(raw.appliedTo),
     lowConfidence: coreIdea === null || raw.lowConfidence === true,
-    claims: source
-      ? checkClaims(raw.claims, { coreIdea, takeaways: rawTakeaways }, source).map((c) => {
-          const m = /^\/takeaways\/(\d+)$/.exec(c.outputPath);
-          return m ? { ...c, outputPath: `/takeaways/${newIndex.get(Number(m[1]))}` } : c;
-        })
-      : [],
-    ...(source ? { source } : {}),
+    claims,
+    ...(source
+      ? {
+          source,
+          stats: {
+            claimsProposed: Array.isArray(raw.claims) ? raw.claims.length : 0,
+            claimsKept: claims.length,
+            fieldsTotal: (coreIdea === null ? 0 : 1) + takeaways.length,
+          },
+        }
+      : {}),
   };
 }
 

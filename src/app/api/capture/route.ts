@@ -2,8 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
 import { githubPut, appendToIndex, readFile } from "@/lib/github";
-import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, type LlmUsage } from "@/lib/llm";
-import { stepTimer, timingLine } from "@/lib/capture-timing";
+import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, effortApplied, type LlmUsage } from "@/lib/llm";
+import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
 import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage } from "@/lib/capture-stream";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
@@ -189,6 +189,7 @@ async function capturePipeline(
   try {
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
+    timer.mark("extract");
     const message = err instanceof Error ? err.message : "Extraction failed";
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
@@ -196,6 +197,7 @@ async function capturePipeline(
     } catch {
       // The refund is a courtesy; the error above is what the user needs.
     }
+    console.info(JSON.stringify(failureLine("web", timer, llm, usage, fetched, err)));
     return { status: 502, body: { error: message } };
   }
   timer.mark("extract");
@@ -249,7 +251,7 @@ async function capturePipeline(
       // Linking is best-effort
     }
     timer.mark("link");
-    console.info(JSON.stringify(timingLine("web", timer, llm, usage, fetched)));
+    console.info(JSON.stringify(timingLine("web", timer, llm, usage, fetched, savedCapture)));
   });
 
   return {
@@ -260,7 +262,14 @@ async function capturePipeline(
       fileUrl: captureFileUrl(user.github_repo, filename),
       ...(card ? { where: card } : {}),
       ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
-      usage: { model: resolveLlm(llm).model, tokensIn: spent?.tokensIn ?? null, tokensOut: spent?.tokensOut ?? null },
+      usage: {
+        model: resolveLlm(llm).model,
+        tokensIn: spent?.tokensIn ?? null,
+        tokensOut: spent?.tokensOut ?? null,
+        // The model's own time, without fetching or saving: what decides "slow".
+        extractMs: timer.ms.extract ?? null,
+        effortApplied: effortApplied(llm),
+      },
     },
   };
 }
