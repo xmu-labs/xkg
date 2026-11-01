@@ -33,6 +33,7 @@ vi.mock("../github", () => ({
   },
   githubDelete: vi.fn(),
   readFile: async (_t: string, _r: string, path: string) => (path in files ? { content: files[path], sha: "s" } : null),
+  readFileStrict: async (_t: string, _r: string, path: string) => (path in files ? { content: files[path], sha: "s" } : null),
   updateIndexEntry: vi.fn(),
 }));
 vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), codeMapPaths: (...a: unknown[]) => codeMapPaths(...a) }));
@@ -154,5 +155,65 @@ describe("briefing with a repo", () => {
     setup([]);
     expect(await handleBriefing(user, { repo: "Acme/App" })).toBe("No captures are waiting for acme/app.");
     expect(rankByRelevance).not.toHaveBeenCalled();
+  });
+});
+
+describe("briefing without a repo (any agent, any surface)", () => {
+  // protects: XKG-129, an agent or hook that sends only project_context still gets the offer; fails_when: "Project: app" doesn't reach acme/app's waiting row; no_claim: ranking
+  it("with project_context naming the repo, offers what waits for it before the candidates", async () => {
+    setup([row("2026-10-28-llm-memory")]);
+    const text = await handleBriefing(user, { project_context: "Project: App\n\nBranch: main\n\nRecent commits:\nabc fix" });
+    expect(text.split("\n")[0]).toBe("xkg: 1 capture fits this repo (acme/app). Want to see it and apply it?");
+    expect(text).toContain("xkg briefing:");
+    expect(recordOffers).toHaveBeenCalledWith(1, "acme/app", ["inbox/2026-10-28-llm-memory.md"]);
+  });
+
+  // protects: a shared name never guesses the owner; fails_when: one of two owners is offered, or an offer is counted; no_claim: none
+  it("with two owners sharing the project name, names both and offers neither", async () => {
+    setup([row("a"), row("b", { repo: "other/app" })]);
+    const text = await handleBriefing(user, { project_context: "Project: app" });
+    expect(text.split("\n")[0]).toBe(
+      "xkg: 2 captures are waiting for the user's coding agent: 1 in acme/app, 1 in other/app. Call briefing again with repo set to this repo's owner/name to see them.",
+    );
+    expect(text).toContain("xkg briefing:");
+    expect(recordOffers).not.toHaveBeenCalled();
+    expect(offerDays).not.toHaveBeenCalled();
+  });
+
+  // protects: AC5 holds for the old hook too; fails_when: a project with nothing waiting gets any extra text; no_claim: none
+  it("with a project name that waits for nothing, answers exactly as before", async () => {
+    setup([]);
+    const plain = await handleBriefing(user, { project_context: "Project: app" });
+    setup([row("x", { repo: "acme/web" }), row("y", { status: "applied" })]);
+    expect(await handleBriefing(user, { project_context: "Project: app" })).toBe(plain);
+  });
+
+  // protects: a chat app (no repo to apply in) still learns that handoffs wait, without burning the 3-day expiry; fails_when: nothing is mentioned, or an offer day is recorded; no_claim: the inbox list (handler test)
+  it("with no arguments, mentions what waits and where, and counts no offer", async () => {
+    setup([row("a"), row("b", { since: "2026-10-27" }), row("c", { repo: "acme/web" }), row("d", { status: "declined" })]);
+    const text = await handleBriefing(user, {});
+    expect(text.split("\n")[0]).toBe(
+      "xkg: 3 captures are waiting for the user's coding agent: 2 in acme/app, 1 in acme/web. Tell the user; a capture is applied from a coding session in its repo.",
+    );
+    expect(text).toContain("xkg inbox:");
+    expect(recordOffers).not.toHaveBeenCalled();
+    expect(offerDays).not.toHaveBeenCalled();
+    expect(rankByRelevance).not.toHaveBeenCalled();
+  });
+
+  it("with no arguments and one capture waiting, says so in the singular", async () => {
+    setup([row("a")]);
+    expect((await handleBriefing(user, {})).split("\n")[0]).toBe(
+      "xkg: 1 capture is waiting for the user's coding agent in acme/app. Tell the user; a capture is applied from a coding session in its repo.",
+    );
+  });
+
+  // protects: the chat answer from #175 is unchanged when nothing waits; fails_when: any byte differs; no_claim: none
+  it("with no arguments and nothing waiting, answers exactly as before", async () => {
+    setup([]);
+    const plain = await handleBriefing(user, {});
+    setup([row("y", { status: "applied" }), row("z", { status: "snoozed:2026-12-01" })]);
+    expect(await handleBriefing(user, {})).toBe(plain);
+    expect(plain.startsWith("xkg inbox:")).toBe(true);
   });
 });
