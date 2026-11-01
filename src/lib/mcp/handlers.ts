@@ -30,8 +30,8 @@ import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
-import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, type LinkCheck } from "@/lib/captures";
-import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
+import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, parseIndexRows, type LinkCheck } from "@/lib/captures";
+import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
@@ -540,7 +540,12 @@ export async function handleBriefing(
   const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
   const offer = repo ? await handoffOffer(user, repo) : null;
   const task = typeof args.task === "string" ? args.task.trim() : "";
-  if (!task && !args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
+  if (!task && !args.project_context?.trim()) {
+    if (repo) return offer ?? `No captures are waiting for ${repo}.`;
+    // Nothing to rank against, as in a chat app: show what's waiting in the inbox.
+    const index = await readFile(user.github_token, user.github_repo, "INDEX.md");
+    return inboxBriefing(index ? parseIndexRows(index.content) : null);
+  }
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
 
   if (!user.llm_api_key) return withOffer("API key not configured.");

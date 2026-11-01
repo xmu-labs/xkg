@@ -96,3 +96,64 @@ describe("handleBriefing", () => {
     files["INDEX.md"] = INDEX;
   });
 });
+
+describe("handleBriefing with no repo, task or project (a chat app)", () => {
+  const CHAT_INDEX = [
+    "| Date | Capture | Summary | Tags | Type |",
+    "|---|---|---|---|---|",
+    "| 2026-10-21 | [fewer-tools](inbox/2026-10-21-fewer-tools.md) | Short tool lists... | mcp | article |",
+    "| 2026-10-29 | [ship-small](inbox/2026-10-29-ship-small.md) | Ship in small slices... | process | note |",
+    "| 2026-10-25 | [old-win](applied/2026-10-25-old-win.md) | Already used... | x | note |",
+  ].join("\n");
+
+  it("says how many captures are in the inbox and lists the newest, with no LLM call", async () => {
+    files["INDEX.md"] = CHAT_INDEX;
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+
+    expect(rankByRelevance).not.toHaveBeenCalled();
+    expect(text).toBe(
+      [
+        "xkg inbox: 2 captures waiting. Newest first:",
+        "- ship-small (2026-10-29): Ship in small slices",
+        "- fewer-tools (2026-10-21): Short tool lists",
+        "",
+        "Tell the user how many captures are waiting. To open one, call read_capture with its name. To find the captures that fit what the user asks about, call briefing with task set to it.",
+      ].join("\n"),
+    );
+  });
+
+  it("lists at most five", async () => {
+    const rows = Array.from({ length: 7 }, (_, i) => `| 2026-10-1${i} | [c${i}](inbox/2026-10-1${i}-c${i}.md) | S${i}... | t | note |`);
+    files["INDEX.md"] = rows.join("\n");
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+
+    expect(text).toMatch(/^xkg inbox: 7 captures waiting\. Newest first:/);
+    expect(text.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(5);
+    expect(text).toContain("- c6 (2026-10-16): S6");
+    expect(text).not.toContain("- c1 ");
+  });
+
+  it("says the inbox is empty when nothing is waiting", async () => {
+    files["INDEX.md"] = "| 2026-10-25 | [old-win](applied/2026-10-25-old-win.md) | Already used... | x | note |";
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+
+    expect(text).toBe("xkg inbox: empty. When the user shares something worth keeping, call capture.");
+  });
+
+  it("points to capture when there is no INDEX yet", async () => {
+    const saved = files["INDEX.md"];
+    delete files["INDEX.md"];
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = saved!;
+
+    expect(text).toBe("xkg inbox: empty. When the user shares something worth keeping, call capture.");
+  });
+
+  it("keeps the repo-only answer unchanged", async () => {
+    const text = await handleBriefing(user, { repo: "o/r" });
+    expect(text).not.toContain("xkg inbox");
+  });
+});
