@@ -12,8 +12,12 @@ const row = MODEL_SPEED.find((r) => r.provider === "openai")!;
 const usual = Math.max(1, Math.round(row.fastMeanMs / 1000));
 const TERRA_ME = { ...WORST_ME, llmModel: "gpt-6.1-terra", llmEffort: null };
 const slowUsage = { model: "gpt-6.1-terra", tokensIn: 2400, tokensOut: 1817, extractMs: 25_000, effortApplied: false };
+// The browser's clock sits inside the measurement's 90-day window, so the suite
+// keeps passing as the checked-in measurement ages.
+const MEASURED_DAY = new Date(`${row.measuredOn}T12:00:00Z`);
 
 async function capture(page: Page, json: unknown, me: Record<string, unknown> = TERRA_ME) {
+  await page.clock.setSystemTime(MEASURED_DAY);
   await signIn(page, me as typeof WORST_ME);
   await page.route("**/api/capture", (r) => r.fulfill({ json }));
   await page.goto("/");
@@ -92,10 +96,39 @@ test("the hint fits a narrow phone with a long model ID", async ({ page }) => {
 });
 
 test("Settings quotes the measured time and says the model is used for everything", async ({ page }) => {
+  await page.clock.setSystemTime(MEASURED_DAY);
   await signIn(page);
   await page.goto("/");
   await openSettings(page);
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText(`Captures are fastest on ${row.fastModel}: about ${usual} s on our test set. Other models can take 20 seconds or more.`)).toBeVisible();
   await expect(dialog.getByText("xkg uses this model for everything it does with your key, including your coding agent's briefings.")).toBeVisible();
+});
+
+/** Saves a different reasoning effort in Settings, then closes it. */
+async function changeEffortInSettings(page: Page) {
+  await openSettings(page);
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "High" }).tap();
+  await dialog.getByRole("button", { name: "Save AI settings" }).tap();
+  await expect(dialog.getByRole("button", { name: "Saved" })).toBeVisible();
+  await page.keyboard.press("Escape");
+}
+
+test("changing AI settings while the offer is up withdraws it", async ({ page }) => {
+  await capture(page, { ...WORST_CAPTURE, usage: slowUsage });
+  await patchMe(page);
+  await expect(page.getByTestId("model-hint")).toBeVisible();
+  await changeEffortInSettings(page);
+  await expect(page.getByTestId("model-hint")).toHaveCount(0);
+});
+
+test("changing AI settings after a switch withdraws Undo", async ({ page }) => {
+  await capture(page, { ...WORST_CAPTURE, usage: slowUsage });
+  const bodies = await patchMe(page);
+  await page.getByTestId("model-hint").getByRole("button", { name: `Use ${row.fastModel}` }).tap();
+  await expect(page.getByTestId("model-hint")).toContainText(`Switched to ${row.fastModel}.`);
+  await changeEffortInSettings(page);
+  await expect(page.getByTestId("model-hint")).toHaveCount(0);
+  expect(bodies).toHaveLength(2);
 });

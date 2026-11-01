@@ -24,15 +24,19 @@ export default function ModelHint({ usage, me, onMe }: { usage: CaptureUsage; me
     });
   });
   // What Undo restores: the settings when the hint was shown.
-  const [previous] = useState(() => ({ llmModel: me.llmModel ?? null, llmEffort: me.llmEffort ?? null }));
+  const [previous] = useState(() => settingsOf(me));
+  // The settings the hint was decided for (then, after Use, the ones it saved).
+  // If they change elsewhere, say in Settings, the offer and Undo no longer apply.
+  const [expected, setExpected] = useState(() => settingsOf(me));
+  // Kept for the setup the offer was shown for.
+  const [key] = useState(() => nudgeKey(usage.model, me.llmEffort ?? null));
   const [phase, setPhase] = useState<"offer" | "switched" | "gone">("offer");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  if (!nudge || phase === "gone") return null;
-  const key = nudgeKey(usage.model, me.llmEffort ?? null);
+  if (!nudge || phase === "gone" || !sameSettings(settingsOf(me), expected)) return null;
 
-  async function save(body: Record<string, unknown>, failed: string): Promise<boolean> {
+  async function save(body: Record<string, unknown>, failed: string): Promise<Me | null> {
     setBusy(true);
     setError("");
     try {
@@ -43,14 +47,16 @@ export default function ModelHint({ usage, me, onMe }: { usage: CaptureUsage; me
       });
       if (res.status === 401) {
         window.location.href = "/login";
-        return false;
+        return null;
       }
       if (!res.ok) throw new Error();
-      onMe(await res.json() as Me);
-      return true;
+      const next = await res.json() as Me;
+      setExpected(settingsOf(next));
+      onMe(next);
+      return next;
     } catch {
       setError(failed);
-      return false;
+      return null;
     } finally {
       setBusy(false);
     }
@@ -58,15 +64,15 @@ export default function ModelHint({ usage, me, onMe }: { usage: CaptureUsage; me
 
   const use = async () => {
     const llmModel = nudge.model === me.defaultModel ? null : nudge.model;
-    const ok = await save({ llmModel, llmEffort: null, modelNudgeDismissedFor: key },
+    const saved = await save({ llmModel, llmEffort: null, modelNudgeDismissedFor: key },
       "Couldn't switch the model. Try again, or change it in Settings → AI model.");
-    if (ok) setPhase("switched");
+    if (saved) setPhase("switched");
   };
   const keep = async () => {
     if (await save({ modelNudgeDismissedFor: key }, "Couldn't save that. Try again.")) setPhase("gone");
   };
   const undo = async () => {
-    if (await save(previous, "Couldn't undo. Change it in Settings → AI model.")) setPhase("gone");
+    if (await save({ llmModel: previous.llmModel, llmEffort: previous.llmEffort }, "Couldn't undo. Change it in Settings → AI model.")) setPhase("gone");
   };
 
   const model = (id: string) => <span className="font-medium break-all" style={{ color: "var(--fg)" }}>{id}</span>;
@@ -102,4 +108,14 @@ export default function ModelHint({ usage, me, onMe }: { usage: CaptureUsage; me
       {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
     </div>
   );
+}
+
+type Settings = { provider: string | null; llmModel: string | null; llmEffort: string | null };
+
+function settingsOf(me: Me): Settings {
+  return { provider: me.llmProvider ?? null, llmModel: me.llmModel ?? null, llmEffort: me.llmEffort ?? null };
+}
+
+function sameSettings(a: Settings, b: Settings): boolean {
+  return a.provider === b.provider && a.llmModel === b.llmModel && a.llmEffort === b.llmEffort;
 }
