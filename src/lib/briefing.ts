@@ -97,3 +97,26 @@ To check every capture instead of these candidates, call \`search\` with no quer
 
   return `${header}\n\n## Candidates\n\n${items.join("\n\n")}${rulesSection(rules)}`;
 }
+
+const INBOX_SHOWN = 5;
+
+/**
+ * The briefing for a chat app, where there is no repo, task or project to rank
+ * against: how many captures wait in the inbox and the newest few, from the
+ * INDEX rows (newest first). No LLM call. `rows` is null when there's no INDEX.
+ * `shown` names the listed captures, for the surface events.
+ */
+export function inboxBriefing(rows: Array<{ filename: string; status: string; summary: string }> | null): { text: string; shown: string[] } {
+  const inbox = (rows ?? []).filter((r) => r.status === "inbox");
+  if (inbox.length === 0) return { text: "xkg inbox: empty. When the user shares something worth keeping, call capture.", shown: [] };
+  const listed = inbox.slice(0, INBOX_SHOWN);
+  const noun = inbox.length === 1 ? "capture" : "captures";
+  const text = [
+    `xkg inbox: ${inbox.length} ${noun} waiting. Newest first:`,
+    // The filename, not the INDEX slug: it is what read_capture opens.
+    ...listed.map((r) => `- ${r.filename}: ${r.summary}`),
+    "",
+    "Tell the user how many captures are waiting. To open one, call read_capture with its name. To find the captures that fit what the user asks about, call briefing with task set to it.",
+  ].join("\n");
+  return { text, shown: listed.map((r) => r.filename) };
+}

@@ -56,6 +56,18 @@ describe("MCP server instructions", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/Mid-task, call `briefing` with task/);
   });
 
+  // protects: XKG-124, chat apps (no repo) show what waits in the inbox; fails_when: chats are told to skip briefing; no_claim: every chat app reads instructions
+  it("has a chat app call briefing with no arguments and say what's waiting", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/In chat apps[^.]*call `briefing` with no arguments/);
+    expect(SERVER_INSTRUCTIONS).toMatch(/how many captures are waiting/);
+  });
+
+  // protects: XKG-124, an agent that never reads server instructions still learns to call briefing in a chat; fails_when: the tool says coding sessions only; no_claim: the agent calls it
+  it("says in the briefing tool itself to call it with no arguments in a chat", () => {
+    const briefing = TOOLS.find((t) => t.name === "briefing")!;
+    expect(briefing.description).toMatch(/no arguments in a chat/);
+  });
+
   it("has the agent ask the user before changing their machine", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/ask the user first/i);
   });
@@ -80,7 +92,7 @@ describe("MCP server instructions", () => {
 describe("briefing tool description", () => {
   it("says when to call it, for clients that ignore server instructions", () => {
     const briefing = TOOLS.find((t) => t.name === "briefing")!;
-    expect(briefing.description).toMatch(/start of a coding session/i);
+    expect(briefing.description).toMatch(/start of every conversation/i);
   });
 
   it("says it returns candidates the agent must check against the code", () => {

@@ -26,7 +26,7 @@ export const CORE_TOOLS = [
   },
   {
     name: "briefing",
-    description: "Call at the start of a coding session, and mid-task with task. Returns captures that may fit as candidates: xkg has not seen the code, so check each one against the code before you suggest it.",
+    description: "Call at the start of every conversation (no arguments in a chat: shows the inbox) and mid-task with task. Returns captures that may fit as candidates: check each against the code before suggesting it.",
     inputSchema: {
       type: "object" as const,
       properties: {

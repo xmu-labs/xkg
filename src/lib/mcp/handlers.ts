@@ -17,7 +17,7 @@
 import { after } from "next/server";
 import type { User } from "@/lib/db";
 import { env } from "@/lib/env";
-import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry, appendToIndex } from "@/lib/github";
+import { githubGet, githubPut, githubDelete, readFile, readFileStrict, updateIndexEntry, appendToIndex } from "@/lib/github";
 import { recordApplyEvent } from "@/lib/apply-events";
 import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
@@ -30,8 +30,8 @@ import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
 import { handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
-import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, type LinkCheck } from "@/lib/captures";
-import { briefingCandidate, formatBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
+import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, parseIndexRows, type LinkCheck } from "@/lib/captures";
+import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import type { ExtractedCapture } from "@/lib/types";
@@ -540,7 +540,18 @@ export async function handleBriefing(
   const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
   const offer = repo ? await handoffOffer(user, repo) : null;
   const task = typeof args.task === "string" ? args.task.trim() : "";
-  if (!task && !args.project_context?.trim()) return offer ?? (repo ? `No captures are waiting for ${repo}.` : "Describe the project in project_context, or pass repo.");
+  if (!task && !args.project_context?.trim()) {
+    if (repo) return offer ?? `No captures are waiting for ${repo}.`;
+    // Nothing to rank against, as in a chat app: show what's waiting in the inbox.
+    // Strict, so a GitHub outage is an error and never an "empty" inbox.
+    const index = await readFileStrict(user.github_token, user.github_repo, "INDEX.md");
+    // Rows are appended, and parseIndexRows sorts by date only (stable), so
+    // reversing first puts the latest capture of a day first.
+    const rows = index ? parseIndexRows(index.content.split("\n").reverse().join("\n")) : null;
+    const { text, shown } = inboxBriefing(rows);
+    await recordSurfaceEvents(user.id, shown, "briefing");
+    return text;
+  }
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
 
   if (!user.llm_api_key) return withOffer("API key not configured.");

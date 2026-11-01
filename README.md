@@ -112,7 +112,7 @@ npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
 
 The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). An MCP server already registered as `xmu` or `mnemos` keeps working. One set up with `mnemos-capture@latest` still runs 1.8.0, the last version under that name: switch its command to `@xmu-labs/xkg@latest`.
 
-**On the web** — paste the URL (no terminal). **In the terminal** — run the command. Finish xkg onboarding first, then ask: *list my inbox* or *brief me*.
+**On the web** — paste the URL (no terminal). **In the terminal** — run the command. Finish xkg onboarding first. In a chat app, xkg asks the AI to open a conversation with how many captures are waiting in your inbox and the newest few. You can also ask *what's in my inbox?* or *what do I have on payments?*
 
 ### On the web
 
@@ -411,7 +411,7 @@ You don't have to memorize these. Ask in plain language: "save this", "what do I
 | Tool | What it does |
 | --- | --- |
 | `capture` | Save new knowledge from pasted text or a URL |
-| `briefing` | At session start, captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting for the repo. Mid-task, with `task` (and optional `files`), the captures that fit what the agent is doing now |
+| `briefing` | In a chat app (no arguments), how many captures are waiting in your inbox and the newest few. At session start in a repo, captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting for the repo. Mid-task, with `task` (and optional `files`), the captures that fit what the agent is doing now |
 | `search` | Find captures by words, tag, status (`inbox`, `applied`, `archived`) or date, or list them all |
 | `read_capture` | Read a capture in full (or `RULES.md`) |
 | `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
