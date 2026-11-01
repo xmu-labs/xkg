@@ -13,7 +13,7 @@
  */
 
 import type { User } from "./db";
-import { codeMapPaths } from "./db";
+import { codeMapPaths, codeMapRepos } from "./db";
 import { readFile } from "./github";
 import { formatDate } from "./llm";
 import { captureName, HANDOFFS_PATH, parseHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
@@ -150,38 +150,6 @@ export function formatOffer(repo: string, total: number, items: OfferItem[]): st
 
 type OfferUser = Pick<User, "id" | "github_token" | "github_repo">;
 
-/** Waiting handoffs per repo, from HANDOFFS.md; empty when none or unreadable. Never throws. */
-export async function waitingHandoffs(user: OfferUser): Promise<Map<string, number>> {
-  try {
-    if (!user.github_repo) return new Map();
-    const file = await readFile(user.github_token, user.github_repo, HANDOFFS_PATH);
-    return file ? waitingByRepo(parseHandoffs(file.content).rows, formatDate()) : new Map();
-  } catch (err) {
-    console.error("[handoff] waiting failed:", err instanceof Error ? err.message : err);
-    return new Map();
-  }
-}
-
-/**
- * What a caller without `repo` gets about waiting handoffs. With a project
- * name (a hook's `Project:` line) that one repo carries, the offer itself;
- * with a name two owners share, or no name, one line naming where they wait.
- */
-export async function handoffMention(user: OfferUser, context: string | null): Promise<string | null> {
-  const waiting = await waitingHandoffs(user);
-  if (!waiting.size) return null;
-  const name = context ? projectName(context) : null;
-  // A context that names no project (free text from an agent) says nothing about the repo.
-  if (context && !name) return null;
-  if (name) {
-    const named = new Map([...waiting].filter(([repo]) => repo.split("/").pop()!.toLowerCase() === name.toLowerCase()));
-    if (!named.size) return null;
-    if (named.size === 1) return handoffOffer(user, [...named.keys()][0]!.toLowerCase());
-    return formatWaiting(named, "Call briefing again with repo set to this repo's owner/name to see them.");
-  }
-  return formatWaiting(waiting, "Tell the user; a capture is applied from a coding session in its repo.");
-}
-
 /** The capture's title and where it is now (inbox/ or applied/), or null when it's gone. */
 async function findCapture(user: OfferUser, capture: string): Promise<{ path: string; title: string } | null> {
   const name = captureName(capture);
@@ -190,6 +158,53 @@ async function findCapture(user: OfferUser, capture: string): Promise<{ path: st
     if (file) return { path, title: file.content.match(/^# (.+)$/m)?.[1]?.trim() || name.replace(/\.md$/, "") };
   }
   return null;
+}
+
+/** The rows of HANDOFFS.md, or none when it is missing or unreadable. Never throws. */
+async function handoffRows(user: OfferUser): Promise<HandoffRow[]> {
+  try {
+    if (!user.github_repo) return [];
+    const file = await readFile(user.github_token, user.github_repo, HANDOFFS_PATH);
+    return file ? parseHandoffs(file.content).rows : [];
+  } catch (err) {
+    console.error("[handoff] rows failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+/** Waiting handoffs per repo whose capture still exists: a deleted capture is never announced. */
+async function waitingHandoffs(user: OfferUser, rows: HandoffRow[]): Promise<Map<string, number>> {
+  const today = formatDate();
+  const waiting = rows.filter((r) => offerable([r], r.repo, today).length);
+  const present = await Promise.all(waiting.map(async (r) => ((await findCapture(user, r.capture)) ? r : null)));
+  return waitingByRepo(present.filter((r): r is HandoffRow => r !== null), today);
+}
+
+const sameName = (repo: string, name: string) => repo.split("/").pop()!.toLowerCase() === name.toLowerCase();
+
+/**
+ * What a caller without `repo` gets about waiting handoffs. With a project
+ * name (a hook's `Project:` line) that exactly one known repo carries, the
+ * offer itself; with a name two owners share, or no name at all (a chat app),
+ * one line naming where captures wait. Known repos are every repo in
+ * HANDOFFS.md, whatever its status, plus the repos with a code map: a repo
+ * with nothing waiting is still a different place to be working in.
+ */
+export async function handoffMention(user: OfferUser, context: string | null): Promise<string | null> {
+  const rows = await handoffRows(user);
+  if (!rows.length) return null;
+  const name = context ? projectName(context) : null;
+  // A context that names no project (free text from an agent) says nothing about the repo.
+  if (context && !name) return null;
+  if (!name) {
+    const waiting = await waitingHandoffs(user, rows);
+    return waiting.size ? formatWaiting(waiting, "Tell the user; a capture is applied from a coding session in its repo.") : null;
+  }
+  const mapped = await codeMapRepos(user.id).catch(() => [] as string[]);
+  const known = new Set([...rows.map((r) => r.repo), ...mapped].filter((repo) => sameName(repo, name)).map((repo) => repo.toLowerCase()));
+  if (known.size === 1) return handoffOffer(user, [...known][0]!);
+  const waiting = new Map([...(await waitingHandoffs(user, rows))].filter(([repo]) => sameName(repo, name)));
+  return waiting.size ? formatWaiting(waiting, "Call briefing again with repo set to this repo's owner/name to see them.") : null;
 }
 
 /**

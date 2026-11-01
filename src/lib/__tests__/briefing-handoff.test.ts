@@ -18,6 +18,7 @@ const offerDays = vi.fn();
 const recordOffers = vi.fn();
 const recordHandoffEvent = vi.fn();
 const codeMapPaths = vi.fn();
+const codeMapRepos = vi.fn();
 
 vi.mock("../rate-limit", () => ({ consumeQuota: vi.fn() }));
 vi.mock("../llm", async (orig) => ({
@@ -36,7 +37,7 @@ vi.mock("../github", () => ({
   readFileStrict: async (_t: string, _r: string, path: string) => (path in files ? { content: files[path], sha: "s" } : null),
   updateIndexEntry: vi.fn(),
 }));
-vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), codeMapPaths: (...a: unknown[]) => codeMapPaths(...a) }));
+vi.mock("../db", async (orig) => ({ ...(await orig<typeof import("../db")>()), codeMapPaths: (...a: unknown[]) => codeMapPaths(...a), codeMapRepos: (...a: unknown[]) => codeMapRepos(...a) }));
 vi.mock("../surface-events", () => ({ recordSurfaceEvents: (...a: unknown[]) => recordSurfaceEvents(...a), recordWhereEvent: vi.fn() }));
 vi.mock("../handoff-events", () => ({
   offerDays: (...a: unknown[]) => offerDays(...a),
@@ -74,6 +75,7 @@ beforeEach(() => {
   recordOffers.mockReset();
   recordHandoffEvent.mockReset();
   codeMapPaths.mockReset().mockResolvedValue(new Set(["src/llm.ts", "src/briefing.ts"]));
+  codeMapRepos.mockReset().mockResolvedValue([]);
 });
 
 describe("briefing with a repo", () => {
@@ -180,6 +182,21 @@ describe("briefing without a repo (any agent, any surface)", () => {
     expect(offerDays).not.toHaveBeenCalled();
   });
 
+  // protects: Codex P2 on #178, the owner is never guessed from which repo happens to have a pending row; fails_when: acme/app is offered to someone working in other/app; no_claim: none
+  it("asks for the repo when another owner with the same name is known, even with nothing waiting there", async () => {
+    setup([row("a"), row("b", { repo: "other/app", status: "applied" })]);
+    const text = await handleBriefing(user, { project_context: "Project: app" });
+    expect(text.split("\n")[0]).toBe("xkg: 1 capture is waiting for the user's coding agent in acme/app. Call briefing again with repo set to this repo's owner/name to see them.");
+    expect(recordOffers).not.toHaveBeenCalled();
+  });
+
+  it("counts a repo known only from its code map as another owner", async () => {
+    setup([row("a")]);
+    codeMapRepos.mockResolvedValue(["Other/App"]);
+    expect((await handleBriefing(user, { project_context: "Project: app" })).split("\n")[0]).toContain("Call briefing again with repo");
+    expect(recordOffers).not.toHaveBeenCalled();
+  });
+
   // protects: AC5 holds for the old hook too; fails_when: a project with nothing waiting gets any extra text; no_claim: none
   it("with a project name that waits for nothing, answers exactly as before", async () => {
     setup([]);
@@ -199,6 +216,16 @@ describe("briefing without a repo (any agent, any surface)", () => {
     expect(recordOffers).not.toHaveBeenCalled();
     expect(offerDays).not.toHaveBeenCalled();
     expect(rankByRelevance).not.toHaveBeenCalled();
+  });
+
+  // protects: Codex P2 on #178, a deleted capture is not announced forever; fails_when: the count includes a row whose file is gone; no_claim: HANDOFFS.md cleanup on delete
+  it("with no arguments, leaves out a waiting capture whose file was deleted", async () => {
+    setup([row("a"), row("gone")]);
+    delete files["inbox/gone.md"];
+    expect((await handleBriefing(user, {})).split("\n")[0]).toContain("1 capture is waiting for the user's coding agent in acme/app.");
+    setup([row("gone")]);
+    delete files["inbox/gone.md"];
+    expect((await handleBriefing(user, {})).startsWith("xkg inbox:")).toBe(true);
   });
 
   it("with no arguments and one capture waiting, says so in the singular", async () => {

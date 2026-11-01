@@ -261,6 +261,13 @@ export async function listCodeMaps(userId: number, limit: number): Promise<Store
   return rows.map((r) => ({ repo: r.repo, files: r.map, head7: r.head7, truncated: r.truncated, source: r.source, syncedAt: new Date(r.synced_at) }));
 }
 
+/** The repos (owner/name) the user has a stored map for. */
+export async function codeMapRepos(userId: number): Promise<string[]> {
+  await ensureCodeMapTable();
+  const { rows } = await sql<{ repo: string }>`SELECT repo FROM code_maps WHERE user_id = ${userId}`;
+  return rows.map((r) => r.repo);
+}
+
 /** The file paths in one repo's stored map, or null when the user has no map for it. */
 export async function codeMapPaths(userId: number, repo: string): Promise<Set<string> | null> {
   await ensureCodeMapTable();
