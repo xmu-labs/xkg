@@ -14,14 +14,16 @@
  * the two a compile error instead of a runtime "Unknown tool".
  */
 
+import { after } from "next/server";
 import type { User } from "@/lib/db";
 import { env } from "@/lib/env";
-import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry } from "@/lib/github";
+import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry, appendToIndex } from "@/lib/github";
 import { recordApplyEvent } from "@/lib/apply-events";
 import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
-import { consumeQuota } from "@/lib/rate-limit";
+import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
-import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings } from "@/lib/llm";
+import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings, type LlmUsage } from "@/lib/llm";
+import { stepTimer, timingLine } from "@/lib/capture-timing";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
@@ -49,9 +51,24 @@ export async function handleCapture(user: User, args: { content: string; title?:
     );
   }
 
+  const timer = stepTimer();
+  const llm = llmSettings(user);
+  let usage: LlmUsage | null = null;
   const sourceType = detectSourceType(args.content);
-  const capture: ExtractedCapture = await extractCapture(user.llm_api_key, args.content, args.title, llmSettings(user));
-  // Runs alongside writing and linking; never throws.
+  let capture: ExtractedCapture;
+  try {
+    capture = await extractCapture(user.llm_api_key, args.content, args.title, llm, { onUsage: (u) => { usage = u; } });
+  } catch (err) {
+    // Nothing was extracted or saved, so the try doesn't count against the hour.
+    try {
+      await refundQuota(`capture:user:${user.id}`, quota.windowKey);
+    } catch {
+      // The refund is a courtesy; the error is what the agent needs.
+    }
+    throw err;
+  }
+  timer.mark("extract");
+  // Runs alongside writing the file; never throws.
   const matching = matchCapture(user, capture);
 
   const date = formatDate();
@@ -97,44 +114,49 @@ export async function handleCapture(user: User, args: { content: string; title?:
     renderSourceSection(capture),
   ].join("\n");
 
-  await githubPut(user.github_token, user.github_repo, `inbox/${filename}`, markdown, `capture: add ${filename}`);
+  const path = `inbox/${filename}`;
+  await githubPut(user.github_token, user.github_repo, path, markdown, `capture: add ${filename}`);
+  timer.mark("save");
 
-  // Update INDEX.md
+  // Same as the web route: one retry from a fresh read, and never a second row.
   const row = buildIndexRow(date, capture, filename, sourceType);
-  const existing = await readFile(user.github_token, user.github_repo, "INDEX.md");
-  if (existing) {
-    await githubPut(user.github_token, user.github_repo, "INDEX.md", existing.content + row, "capture: update index", existing.sha);
-  }
-
-  // Auto-link to related captures
-  let linkedCount = 0;
-  if (existing) {
-    try {
-      const related = await linkCapture(user.llm_api_key!, user.github_token, user.github_repo, capture, filename, "inbox", existing.content, llmSettings(user));
-      linkedCount = related.length;
-    } catch {
-      // Linking is best-effort — don't fail the capture
-    }
-  }
+  await appendToIndex(user.github_token, user.github_repo, row, `capture: update index for ${filename}`);
+  timer.mark("index");
 
   const where = await matching;
-  const wrote = where ? await writeWhereSection(user.github_token, user.github_repo, `inbox/${filename}`, where) : false;
-  // The agent only sees the fit once the section is written.
-  const line = wrote && where ? whereLine(where) : null;
-  if (where) await recordWhereEvent(user.id, `inbox/${filename}`, where, line !== null);
+  timer.mark("match");
+  const line = where ? whereLine(where) : null;
+  if (where) await recordWhereEvent(user.id, path, where, line !== null);
   // A Strong fit the agent was told about waits for the next coding session in that repo.
-  const waitingIn = line && where ? await queueStrongFit(user, `inbox/${filename}`, where, date) : null;
+  const waitingIn = line && where ? await queueStrongFit(user, path, where, date) : null;
+  timer.mark("queue");
 
   // Append inbox count as a nudge
   const inboxRes = await githubGet<Array<{ name: string }>>(user.github_token, user.github_repo, "inbox");
   const inboxCount = inboxRes.ok && inboxRes.data
     ? inboxRes.data.filter((f) => f.name.endsWith(".md")).length
     : 0;
+  timer.mark("inbox");
+  timer.answered();
 
-  let result = `Captured: ${capture.inferredTitle}\nFile: inbox/${filename}\nTags: ${capture.tags.join(", ")}`;
-  if (linkedCount > 0) {
-    result += `\nLinked to ${linkedCount} related capture(s).`;
-  }
+  // The agent doesn't need links or the section to go on, so they're written
+  // after the answer. Both edit the capture file, so one at a time: linking
+  // first, then the section.
+  const { github_token: token, github_repo: repo } = user;
+  after(async () => {
+    try {
+      const indexFile = await readFile(token, repo, "INDEX.md");
+      if (indexFile) await linkCapture(token, repo, capture, filename, "inbox", indexFile.content);
+    } catch {
+      // Linking is best-effort
+    }
+    timer.mark("link");
+    if (where) await writeWhereSection(token, repo, path, where);
+    timer.mark("where");
+    console.info(JSON.stringify(timingLine("mcp", timer, llm, usage, false)));
+  });
+
+  let result = `Captured: ${capture.inferredTitle}\nFile: ${path}\nTags: ${capture.tags.join(", ")}`;
   if (line) result += `\n${line}`;
   if (waitingIn) result += `\nQueued for your next coding session in ${waitingIn}.`;
   if (inboxCount > 0) {

@@ -1049,6 +1049,9 @@ export default function SettingsDrawer({
                         <>Fast and low-cost: <span className="font-medium break-all" style={{ color: "var(--fg)" }}>{providerDefault}</span></>
                       )}
                     </p>
+                    <p className="text-xs leading-relaxed mt-1" style={{ color: "var(--fg-muted)" }}>
+                      Captures are fastest on a small model. Reasoning models can take 30 seconds or more.
+                    </p>
                   </div>
 
                   <div>

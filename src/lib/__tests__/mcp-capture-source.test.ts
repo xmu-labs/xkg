@@ -25,11 +25,13 @@ vi.mock("../llm", async (orig) => ({
 }));
 vi.mock("../github", () => ({
   githubGet: async () => ({ ok: false }), githubPut: (...a: unknown[]) => githubPut(...a), githubDelete: vi.fn(),
-  readFile: async () => null, updateIndexEntry: vi.fn(),
+  readFile: async () => null, updateIndexEntry: vi.fn(), appendToIndex: vi.fn(),
 }));
 vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
+// The tool links after its answer; these tests only read the saved file.
+vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: vi.fn() }));
 
 const { handleCapture } = await import("../mcp/handlers");
 const user = { id: 7, llm_api_key: "k", github_repo: "o/r", llm_provider: "openai" } as unknown as User;
