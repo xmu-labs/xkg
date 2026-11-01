@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 import type { HandoffRow } from "../handoffs";
-import { offerable, formatOffer, expiredRows, HANDOFF_GUIDE } from "../handoff-offer";
+import { offerable, formatOffer, expiredRows, HANDOFF_GUIDE, waitingByRepo, projectName, formatWaiting } from "../handoff-offer";
 
 /**
  * The session-start offer: captures waiting in HANDOFFS.md for this repo, as
@@ -89,6 +89,30 @@ describe("formatOffer", () => {
   it("labels moved and existing files separately", () => {
     const text = formatOffer("acme/app", 1, [{ ...items[0]!, files: [{ path: "src/llm.ts", moved: false }, { path: "src/old.ts", moved: true }] }]);
     expect(text).toContain("   Files: src/llm.ts (from file names, not yet checked in your code). src/old.ts moved or deleted since the capture; find where it applies now.\n");
+  });
+});
+
+describe("waitingByRepo", () => {
+  // protects: XKG-129, the per-repo count behind every mention; fails_when: finished or future-snoozed rows count, or repos merge by case the wrong way; no_claim: none
+  it("counts waiting rows per repo, keeping the first spelling", () => {
+    const rows = [row(), row({ capture: "inbox/b.md", repo: "Acme/App" }), row({ capture: "inbox/c.md", repo: "acme/web" }), row({ capture: "inbox/d.md", status: "applied" }), row({ capture: "inbox/e.md", status: "snoozed:2026-11-05" })];
+    expect([...waitingByRepo(rows, "2026-10-29")]).toEqual([["acme/app", 2], ["acme/web", 1]]);
+  });
+});
+
+describe("projectName", () => {
+  it("reads the Project line the hooks send, and nothing else", () => {
+    expect(projectName("Project: xkg\n\nBranch: main")).toBe("xkg");
+    expect(projectName("project: My-App  ")).toBe("My-App");
+    expect(projectName("repo: app")).toBeNull();
+    expect(projectName("")).toBeNull();
+  });
+});
+
+describe("formatWaiting", () => {
+  it("names each repo with its count, singular for one", () => {
+    expect(formatWaiting(new Map([["acme/app", 1]]), "Tail.")).toBe("xkg: 1 capture is waiting for the user's coding agent in acme/app. Tail.");
+    expect(formatWaiting(new Map([["acme/app", 2], ["acme/web", 1]]), "Tail.")).toBe("xkg: 3 captures are waiting for the user's coding agent: 2 in acme/app, 1 in acme/web. Tail.");
   });
 });
 
