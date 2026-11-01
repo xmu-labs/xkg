@@ -2,7 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
-import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserProfile, updateUserRepo } from "@/lib/db";
+import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserNudgeDismissed, updateUserProfile, updateUserRepo } from "@/lib/db";
 import { currentRepoName } from "@/lib/github";
 import { LLM_EFFORTS, LLM_PROVIDERS, defaultModel, validateLlmModel, verifyLlmKey } from "@/lib/llm";
 import type { LlmEffort, LlmProvider } from "@/lib/types";
@@ -31,6 +31,7 @@ function mePayload(user: {
   llm_api_key?: string | null;
   llm_model?: string | null;
   llm_effort?: LlmEffort | null;
+  model_nudge_dismissed_for?: string | null;
   github_repo?: string | null;
 }) {
   return {
@@ -46,6 +47,7 @@ function mePayload(user: {
     llmModel: user.llm_model ?? null,
     llmEffort: user.llm_effort ?? null,
     defaultModel: defaultModel(user.llm_provider),
+    modelNudgeDismissedFor: user.model_nudge_dismissed_for ?? null,
     knowledgeRepo: user.github_repo ?? null,
     version: appVersion(),
   };
@@ -87,6 +89,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       llmApiKey?: unknown;
       llmModel?: unknown;
       llmEffort?: unknown;
+      modelNudgeDismissedFor?: unknown;
     };
     try {
       body = await req.json() as typeof body;
@@ -172,7 +175,21 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange && !llmApiKey) {
+    // The faster-model hint's answer: the "model/effort" it was shown for.
+    const nudgeChange = "modelNudgeDismissedFor" in body;
+    let nudgeDismissedFor = user.model_nudge_dismissed_for ?? null;
+    if (nudgeChange) {
+      const v = body.modelNudgeDismissedFor;
+      if (v === null) {
+        nudgeDismissedFor = null;
+      } else if (typeof v === "string" && v.length <= 200 && /^[^/\s]+(\/[^/\s]+)*\/(auto|low|medium|high)$/.test(v)) {
+        nudgeDismissedFor = v;
+      } else {
+        return NextResponse.json({ error: "modelNudgeDismissedFor must be \"model/effort\" or null." }, { status: 400 });
+      }
+    }
+
+    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange && !llmApiKey && !nudgeChange) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
@@ -181,6 +198,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     }
     if (llmApiKey) await updateUserLlmKey(user.id, llmProvider, llmApiKey);
     if (llmChange) await updateUserLlmSettings(user.id, llmModel, llmEffort);
+    if (nudgeChange) await updateUserNudgeDismissed(user.id, nudgeDismissedFor);
     const next = {
       ...user,
       display_name: fields.displayName !== undefined ? fields.displayName : user.display_name,
@@ -189,6 +207,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       llm_api_key: llmApiKey ?? user.llm_api_key,
       llm_model: llmModel,
       llm_effort: llmEffort,
+      model_nudge_dismissed_for: nudgeDismissedFor,
     };
     return NextResponse.json(mePayload(next));
   } catch (err) {

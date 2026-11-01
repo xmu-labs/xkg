@@ -9,7 +9,8 @@ import PolicyNotice from "@/components/PolicyNotice";
 import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, readCaptureResponse, type CaptureStage } from "@/lib/capture-stream";
-import { captureStats, type CaptureUsage } from "@/lib/capture-stats";
+import type { CaptureUsage } from "@/lib/capture-stats";
+import ModelHint from "@/components/ModelHint";
 
 interface CaptureResult {
   capture: {
@@ -73,7 +74,6 @@ export default function CapturePage() {
   const [error, setError] = useState("");
   const [stage, setStage] = useState<CaptureStage | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [tookMs, setTookMs] = useState(0);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
   const initialBuildId = useRef<string | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -134,7 +134,6 @@ export default function CapturePage() {
         return;
       }
       const data = await readCaptureResponse<CaptureResult>(res, setStage);
-      setTookMs(Date.now() - started);
       setResult(data);
       setStatus("done");
       setContent("");
@@ -277,13 +276,6 @@ export default function CapturePage() {
             <h2 className="text-lg font-semibold leading-snug" style={{ color: "var(--fg)" }}>
               {result.capture.inferredTitle}
             </h2>
-            {result.usage && (
-              <p data-testid="capture-stats" className="text-[11px] tabular-nums" style={{ color: "var(--fg-muted)" }}>
-                {/* The model stays in one piece and moves to the next line; only an ID wider than the card breaks. */}
-                {captureStats(tookMs, result.usage)?.slice(0, -result.usage.model.length)}
-                <span className="inline-block max-w-full break-all">{result.usage.model}</span>
-              </p>
-            )}
           </div>
 
           {/* Tags */}
@@ -353,6 +345,9 @@ export default function CapturePage() {
               ))}
             </div>
           )}
+
+          {/* A faster model, only after a slow capture */}
+          {result.usage && me && <ModelHint key={result.filename} usage={result.usage} me={me} onMe={setMe} />}
 
           {/* Filename */}
           <p className="text-[10px] text-center pt-1 font-mono" style={{ color: "var(--fg-muted)" }}>
