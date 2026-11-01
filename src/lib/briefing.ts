@@ -105,10 +105,10 @@ const INBOX_SHOWN = 5;
  * against: how many captures wait in the inbox and the newest few, from the
  * INDEX rows (newest first). No LLM call. `rows` is null when there's no INDEX.
  */
-export function inboxBriefing(rows: Array<{ date: string; slug: string; status: string; summary: string }> | null): string {
+export function inboxBriefing(rows: Array<{ filename: string; status: string; summary: string }> | null): string {
   const inbox = (rows ?? []).filter((r) => r.status === "inbox");
   if (inbox.length === 0) return "xkg inbox: empty. When the user shares something worth keeping, call capture.";
-  const lines = inbox.slice(0, INBOX_SHOWN).map((r) => `- ${r.slug} (${r.date}): ${r.summary}`);
+  const lines = inbox.slice(0, INBOX_SHOWN).map((r) => `- ${r.filename}: ${r.summary}`);
   const noun = inbox.length === 1 ? "capture" : "captures";
   return [
     `xkg inbox: ${inbox.length} ${noun} waiting. Newest first:`,

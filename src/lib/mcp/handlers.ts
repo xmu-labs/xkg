@@ -17,7 +17,7 @@
 import { after } from "next/server";
 import type { User } from "@/lib/db";
 import { env } from "@/lib/env";
-import { githubGet, githubPut, githubDelete, readFile, updateIndexEntry, appendToIndex } from "@/lib/github";
+import { githubGet, githubPut, githubDelete, readFile, readFileStrict, updateIndexEntry, appendToIndex } from "@/lib/github";
 import { recordApplyEvent } from "@/lib/apply-events";
 import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
@@ -543,7 +543,8 @@ export async function handleBriefing(
   if (!task && !args.project_context?.trim()) {
     if (repo) return offer ?? `No captures are waiting for ${repo}.`;
     // Nothing to rank against, as in a chat app: show what's waiting in the inbox.
-    const index = await readFile(user.github_token, user.github_repo, "INDEX.md");
+    // Strict, so a GitHub outage is an error and never an "empty" inbox.
+    const index = await readFileStrict(user.github_token, user.github_repo, "INDEX.md");
     return inboxBriefing(index ? parseIndexRows(index.content) : null);
   }
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);

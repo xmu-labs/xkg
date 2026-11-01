@@ -12,6 +12,8 @@ import type { User } from "../db";
 const readFile = vi.fn();
 const githubGet = vi.fn();
 const rankByRelevance = vi.fn();
+// Same files as readFile; a test swaps in a failed read.
+const readFileStrict = vi.fn();
 
 vi.mock("../rate-limit", () => ({ consumeQuota: vi.fn() }));
 // Only the ranker is an LLM call here. Any other LLM export the handler
@@ -36,6 +38,8 @@ vi.mock("../github", () => ({
   githubPut: vi.fn(),
   githubDelete: vi.fn(),
   readFile: (...a: unknown[]) => readFile(...a),
+  readFileStrict: (...a: unknown[]) => readFileStrict(...a),
+  GitHubReadError: class extends Error {},
   updateIndexEntry: vi.fn(),
 }));
 vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
@@ -61,6 +65,10 @@ const files: Record<string, string> = {
 beforeEach(() => {
   readFile.mockReset();
   readFile.mockImplementation(async (_t: string, _r: string, path: string) =>
+    path in files ? { content: files[path], sha: "s" } : null,
+  );
+  readFileStrict.mockReset();
+  readFileStrict.mockImplementation(async (_t: string, _r: string, path: string) =>
     path in files ? { content: files[path], sha: "s" } : null,
   );
   githubGet.mockReset();
@@ -115,8 +123,8 @@ describe("handleBriefing with no repo, task or project (a chat app)", () => {
     expect(text).toBe(
       [
         "xkg inbox: 2 captures waiting. Newest first:",
-        "- ship-small (2026-10-29): Ship in small slices",
-        "- fewer-tools (2026-10-21): Short tool lists",
+        "- 2026-10-29-ship-small.md: Ship in small slices",
+        "- 2026-10-21-fewer-tools.md: Short tool lists",
         "",
         "Tell the user how many captures are waiting. To open one, call read_capture with its name. To find the captures that fit what the user asks about, call briefing with task set to it.",
       ].join("\n"),
@@ -131,8 +139,8 @@ describe("handleBriefing with no repo, task or project (a chat app)", () => {
 
     expect(text).toMatch(/^xkg inbox: 7 captures waiting\. Newest first:/);
     expect(text.split("\n").filter((l) => l.startsWith("- "))).toHaveLength(5);
-    expect(text).toContain("- c6 (2026-10-16): S6");
-    expect(text).not.toContain("- c1 ");
+    expect(text).toContain("- 2026-10-16-c6.md: S6");
+    expect(text).not.toContain("-c1.md");
   });
 
   it("says the inbox is empty when nothing is waiting", async () => {
@@ -150,6 +158,25 @@ describe("handleBriefing with no repo, task or project (a chat app)", () => {
     files["INDEX.md"] = saved!;
 
     expect(text).toBe("xkg inbox: empty. When the user shares something worth keeping, call capture.");
+  });
+
+  // Regression: ISSUE-001 — the list showed the INDEX slug, which read_capture can't open
+  // Found by /qa on 2026-11-01
+  // Report: /mnt/project-files/qa/2026-11-01-xkg-124-chat-briefing/qa-report-mcp-briefing-2026-11-01.md
+  it("names each capture by the filename read_capture opens", async () => {
+    files["INDEX.md"] = CHAT_INDEX;
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+    expect(text).toContain("- 2026-10-29-ship-small.md:");
+    expect(text).not.toContain("- ship-small ");
+  });
+
+  // Regression: ISSUE-002 — a failed GitHub read was shown as an empty inbox
+  // Found by /qa on 2026-11-01
+  // Report: /mnt/project-files/qa/2026-11-01-xkg-124-chat-briefing/qa-report-mcp-briefing-2026-11-01.md
+  it("lets a failed GitHub read surface as an error, not an empty inbox", async () => {
+    readFileStrict.mockRejectedValueOnce(new Error("GitHub read of INDEX.md failed (HTTP 403)"));
+    await expect(handleBriefing(user, {})).rejects.toThrow("HTTP 403");
   });
 
   it("keeps the repo-only answer unchanged", async () => {
