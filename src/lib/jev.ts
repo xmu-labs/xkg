@@ -2,9 +2,10 @@
  * Jev, TypeSafe's decision model, decides where a capture applies. One request
  * per repo asks, for each candidate file from the name ranker, whether applying
  * the capture would change that file, and whether anything in the repo fits at
- * all. Only names leave xkg: the repo name, file paths, exported names, mapped
- * import paths and the capture's extracted text, plus a note on a file that
- * earlier applies proved for one of the capture's tags. Never code.
+ * all. Only the map leaves xkg: the repo name, file paths, exported names and
+ * their signatures, mapped import paths, each file's one-line doc comment and
+ * the capture's extracted text, plus a note on a file that earlier applies
+ * proved for one of the capture's tags. Never code.
  *
  * The questions and cutoffs live here so they can be read and tuned together.
  * A failed call is an error, never a "no": the caller falls back to the model.
@@ -24,11 +25,30 @@ export const JEV_TIMEOUT_MS = 5000;
  * shift of 0.05 moves one or two captures, so re-measure before changing.
  */
 export const JEV_CUTOFFS: Cutoffs = { strong: 0.5, possible: 0.4 };
+/**
+ * When candidate files carry doc lines or signatures, Jev answers more
+ * cautiously: on the same 30 captures, files that fit scored lower. For those
+ * repos Possible starts here; Strong stays at 0.5.
+ */
+export const RICH_MAP_POSSIBLE = 0.3;
+
+/**
+ * A richer map's p moved onto the names-only scale, so one set of cutoffs
+ * serves every repo and repos compare fairly: RICH_MAP_POSSIBLE maps to
+ * Possible, Strong and above stay put, and order is kept.
+ */
+function onNamesScale(p: number): number {
+  const { possible, strong } = JEV_CUTOFFS;
+  if (p >= strong) return p;
+  if (p <= RICH_MAP_POSSIBLE) return (p * possible) / RICH_MAP_POSSIBLE;
+  return possible + ((p - RICH_MAP_POSSIBLE) * (strong - possible)) / (strong - RICH_MAP_POSSIBLE);
+}
 
 const MAX_EXPORTS = 50;
 const MAX_IMPORTS = 20;
+const MAX_SIGNATURES = 30;
 
-type FileState = { exports: string[]; imports: string[]; history?: string };
+type FileState = { exports: string[]; imports: string[]; summary?: string; signatures?: string[]; history?: string };
 /** A candidate file: its map entry, and what xkg learned about it from earlier applies, if anything. */
 export type JevFile = MapFile & { note?: string };
 
@@ -37,6 +57,8 @@ export function jevPayload(repo: string, capture: CaptureText, files: JevFile[])
     path: f.p,
     exports: (f.e ?? []).slice(0, MAX_EXPORTS),
     imports: (f.i ?? []).slice(0, MAX_IMPORTS),
+    ...(f.d ? { summary: f.d } : {}),
+    ...(f.g?.length ? { signatures: f.g.slice(0, MAX_SIGNATURES) } : {}),
     ...(f.note ? { history: f.note } : {}),
   }));
   const questions: Record<string, { type: "noul"; instructions: unknown; criteria: { true: string; false: string } }> = {};
@@ -139,7 +161,12 @@ export function jevScorer(apiKey: string, fetchImpl: Fetch = fetch): Scorer {
       const p = new Map<string, number>();
       repos.forEach((repo, r) => {
         const a = answers[r]!;
-        byRepo.get(repo)!.forEach((f, i) => p.set(`${repo}\n${f.p}`, a.fits[i]! * a.anythingFits));
+        const files = byRepo.get(repo)!;
+        const rich = files.some((f) => f.d || f.g?.length);
+        files.forEach((f, i) => {
+          const raw = a.fits[i]! * a.anythingFits;
+          p.set(`${repo}\n${f.p}`, rich ? onNamesScale(raw) : raw);
+        });
       });
       // Like the model path, usage is reported only when every count is known:
       // a missing count is unknown, not zero.

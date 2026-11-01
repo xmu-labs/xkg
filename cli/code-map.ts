@@ -5,9 +5,10 @@ import { homedir } from "os";
 import { dirname, join, posix } from "path";
 
 /**
- * The code map: for each tracked file of a repo, its path and the names it
- * exports, plus which other mapped files it imports. Never file contents,
- * comments or package names. It is built where the coding agent runs (any
+ * The code map: for each tracked file of a repo, its path, the names it
+ * exports and their signatures (no bodies, no default values), which other
+ * mapped files it imports, and the first sentence of the file's leading doc
+ * comment. Never code, other comments or package names. It is built where the coding agent runs (any
  * agent, or none: git hooks trigger it) and sent to xkg, which uses it to say
  * where a capture applies.
  *
@@ -15,7 +16,8 @@ import { dirname, join, posix } from "path";
  * only files whose content changed. The map is sent only when its hash changed.
  */
 
-export type MapFile = { p: string; e?: string[]; i?: string[] };
+/** p path, e exported names, i mapped imports, d doc line, g signatures. */
+export type MapFile = { p: string; e?: string[]; i?: string[]; d?: string; g?: string[] };
 export type CodeMap = { repo: string; head7: string; files: MapFile[]; truncated: boolean };
 
 export const MAX_FILES = 3000;
@@ -24,7 +26,7 @@ const MAP_URL = "https://xkg.xmu.sh/api/code-map";
 const SYNC_TIMEOUT_MS = 3000;
 const RESEND_AFTER_MS = 24 * 60 * 60 * 1000;
 /** Bump when what is read from a file changes, so entries cached by an older CLI are read again. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 /** Larger files are mapped by path only: they are almost always generated. */
 const MAX_SOURCE_BYTES = 1024 * 1024;
 /** Bytes of file contents read at once; each batch's names are taken before the next is read. */
@@ -38,6 +40,9 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 const MAX_EXPORTS_PER_FILE = 1000;
 const MAX_NAME_LENGTH = 200;
 const MAX_PATH_LENGTH = 512;
+export const MAX_DOC_LINE = 200;
+export const MAX_SIGNATURE = 160;
+export const MAX_SIGNATURES_PER_FILE = 30;
 
 type Lang = "js" | "py" | "go" | "rs";
 const JS_EXTS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"];
@@ -158,6 +163,275 @@ export function exportedNames(path: string, source: string): string[] {
   }
   found.sort((a, b) => a[0] - b[0]);
   return [...new Set(found.map(([, name]) => name).filter((n) => IDENTIFIER.test(n) && n.length <= MAX_NAME_LENGTH))].slice(0, MAX_EXPORTS_PER_FILE);
+}
+
+// A leading comment that is a license, a tool directive or an editor mode line
+// says nothing about what the file does.
+const NOT_A_DESCRIPTION = /^(copyright|\(c\)|©|license|licensed|spdx-|eslint|prettier|biome-|tslint|jshint|global\s|istanbul|c8\s|@ts-|@flow|-\*-|vim:)/i;
+
+/**
+ * The first sentence of the doc comment a file opens with, on one line, or
+ * null. Only a comment before any code is read: a shebang, "use client"-style
+ * directives and license or lint comments are skipped; JSDoc tags are dropped.
+ */
+export function docLine(path: string, source: string): string | null {
+  const lang = langOf(path);
+  if (!lang) return null;
+  let s = source.replace(/^\uFEFF/, "").replace(/^#![^\n]*\n/, "");
+  for (let blocks = 0; blocks < 5; blocks++) {
+    s = s.replace(/^\s+/, "");
+    const directive = /^(['"])use [a-z ]+\1;?/.exec(s);
+    if (lang === "js" && directive) {
+      s = s.slice(directive[0].length);
+      continue;
+    }
+    let text: string;
+    if (lang === "py") {
+      const hash = /^#[^\n]*/.exec(s);
+      if (hash) {
+        s = s.slice(hash[0].length);
+        continue;
+      }
+      const doc = /^[rRuU]?("""|''')([\s\S]*?)\1/.exec(s);
+      if (!doc) return null;
+      text = doc[2]!;
+      s = s.slice(doc[0].length);
+    } else {
+      const block = /^\/\*([\s\S]*?)\*\//.exec(s);
+      const lines = block ? null : /^(?:[ \t]*\/\/[^\n]*(?:\n|$))+/.exec(s);
+      if (block) text = block[1]!.replace(/^[ \t]*\*+[ \t]?/gm, "").replace(/^\*+/, "");
+      else if (lines) text = lines[0].replace(/^[ \t]*\/\/[/!]?[ \t]?/gm, "");
+      else return null;
+      s = s.slice((block ?? lines)![0].length);
+    }
+    const untagged: string[] = [];
+    for (const line of text.split("\n")) {
+      if (line.trim().startsWith("@")) break;
+      untagged.push(line);
+    }
+    const flat = untagged.join(" ").replace(/\s+/g, " ").trim();
+    if (!flat || NOT_A_DESCRIPTION.test(flat)) continue;
+    const first = flat.split(/(?<=[.!?])\s/)[0]!;
+    return first.length <= MAX_DOC_LINE ? first : first.slice(0, MAX_DOC_LINE).trimEnd();
+  }
+  return null;
+}
+
+// "= (a: T): R =>", "= async x =>": the value is an arrow function, so its
+// parameters are part of the signature. Anything else after "=" is a value.
+const ARROW_VALUE = /^=\s*(?:async\s+)?(?:<[^<>]*>\s*)?(?:\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)|[A-Za-z_$][\w$]*)\s*(?::[^=;{]+?)?\s*=>/;
+
+// A default value that is one token: a name or number, a quoted string with
+// nothing interpolated, or an empty {}, [] or (). It ends where the parameter does.
+const PLAIN_VALUE = /=\s*(?:-?[\w$.]+|"[^"\\\n]*"|'[^'\\\n]*'|`[^`$\\\n]*`|\{\s*\}|\[\s*\]|\(\s*\))\s*/.source;
+/** In a parameter list it ends at "," or ")"; in a type parameter list, at "," or ">" (so "limit > 0" is not plain). */
+const PLAIN_DEFAULT = { param: new RegExp(`^${PLAIN_VALUE}(?=[,)\\]])`), type: new RegExp(`^${PLAIN_VALUE}(?=[,>])`) };
+
+// What reads as code rather than a declaration: a function body, a return, or a
+// call after a statement break. In Python, a lambda, comprehension or other expression keyword too.
+const CODE = /=>\s*\{|\breturn\b|;\s*[\w$.]+\s*\(/;
+const PY_CODE = new RegExp(`${CODE.source}|\\b(?:lambda|for|if|await|yield)\\b`);
+// No identifier in the mapped languages starts with a digit, so a token that
+// does is a literal: hex, binary, octal, bigint and suffixed forms included.
+const CHAR_LITERAL = /^'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|[0-7]{3}|.)|[^'\\\n])'/;
+const NUMBER = /(?<![\w$.])(?:\d[\w$]*(?:\.\d[\w$]*)?|\.\d[\w$]*)(?:[+-]\d[\w$]*)?/g;
+
+/**
+ * The last net under the scanner, which can misread a form it doesn't know: a
+ * computed superclass becomes "extends …", anything that reads as code ends the
+ * signature, and numbers become "…". Names and types pass; values don't.
+ */
+function scrub(lang: Lang, sig: string): string {
+  let out = sig.replace(/\bextends\s+[\w$.]*\(.*$/, "extends …");
+  const code = (lang === "py" ? PY_CODE : CODE).exec(out);
+  if (code) out = `${out.slice(0, code.index).trimEnd()} …`;
+  return out.replace(NUMBER, "…");
+}
+
+/** Index of the bracket closing the one at `open`, skipping quoted text; -1 if none. */
+function closingAt(lang: Lang, src: string, open: number): number {
+  const o = src[open]!;
+  const close = ({ "(": ")", "[": "]", "{": "}" } as Record<string, string>)[o]!;
+  let depth = 0;
+  for (let i = open; i < src.length; i++) {
+    const c = src[i]!;
+    const char = c === "'" && (lang === "rs" || lang === "go") ? CHAR_LITERAL.exec(src.slice(i, i + 16)) : null;
+    if (char) i += char[0].length - 1;
+    else if (c === '"' || c === "`" || (c === "'" && lang !== "rs" && lang !== "go")) {
+      i++;
+      while (i < src.length && src[i] !== c) i += src[i] === "\\" ? 2 : 1;
+    } else if (c === o) depth++;
+    else if (c === close && --depth === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * A bracket inside a signature that holds an expression, not a type: its
+ * contents are code, so they're replaced. Python: any parenthesis (a call).
+ * Rust: a brace (const block). Go: a brace that isn't a struct or interface
+ * type, and an array length that isn't a plain name or "...".
+ */
+function expressionBracket(lang: Lang, c: string, out: string, src: string, i: number, end: number): boolean {
+  if (lang === "py") return c === "(";
+  if (lang === "rs") return c === "{";
+  // JS: a [ in key position inside braces is a computed key (code) unless it's
+  // an index signature or mapped type ([key: string], [K in Keys]).
+  if (lang === "js") return c === "[" && /[{,;]\s*$/.test(out) && !/^\[\s*[A-Za-z_$][\w$]*\s*(?::|in\b)/.test(src.slice(i, end + 1));
+  if (lang !== "go") return false;
+  if (c === "{") return !/\b(?:struct|interface)\s*$/.test(out);
+  // After a name, [ opens type parameters or a map key; anywhere else, an array length.
+  return c === "[" && !/\w$/.test(out) && !/^\[\s*(?:[A-Za-z_][\w.]*|\.\.\.)?\s*\]$/.test(src.slice(i, end + 1));
+}
+
+/**
+ * Whether a TypeScript declaration goes on past a line break at the top level:
+ * the line ends mid-type, or the next line goes on with one. Code without
+ * semicolons would otherwise run into the next statement.
+ */
+function continues(sofar: string, next: string): boolean {
+  return /(?:[,(:|&<=]|=>|\bextends|\bimplements)\s*$/.test(sofar) || /^\s*(?:[|&:{]|=>|extends\b|implements\b)/.test(next);
+}
+
+/**
+ * One declaration's head, from its start to where its body or value begins:
+ * name, parameters and types. Default values are left out, so no literal from
+ * the code leaves the machine with it.
+ */
+function signatureAt(lang: Lang, src: string, start: number): string {
+  const quotes = lang === "rs" || lang === "go" ? ['"'] : ['"', "'", "`"];
+  const OPEN = "([{<";
+  const CLOSE: Record<string, string> = { ")": "(", "]": "[", "}": "{", ">": "<" };
+  const CLOSER: Record<string, string> = { "(": ")", "[": "]", "{": "}", "<": ">" };
+  const stack: string[] = [];
+  const opens: number[] = []; // where each bracket on the stack opened
+  let out = "";
+  let arrowValue = false; // a const holding an arrow function: its "=>" ends the signature
+  let i = start;
+  for (; i < src.length && out.length < 600; i++) {
+    const c = src[i]!;
+    const two = src.slice(i, i + 2);
+    // A Go rune or Rust char ('(' , '\n', b'x') is read whole, so a bracket in it
+    // can't throw off the scan. A Rust lifetime ('a) has no closing quote.
+    const char = c === "'" && (lang === "rs" || lang === "go") ? CHAR_LITERAL.exec(src.slice(i, i + 16)) : null;
+    if (char) {
+      out += "'…'";
+      i += char[0].length - 1;
+      continue;
+    }
+    if (quotes.includes(c)) {
+      // A Python f-string or triple-quoted string can hold quotes of its own, and
+      // a template literal can hold code: the signature ends before them.
+      const prefixed = lang === "py" && /[A-Za-z]$/.test(out) && /\b[rRbBuUfF]{1,2}$/.test(out);
+      if (prefixed || (lang === "py" && src.startsWith(c.repeat(3), i)) || (c === "`" && /^`[^`]*\$\{/.test(src.slice(i, i + 400)))) {
+        out = `${out.replace(/\b[rRbBuUfF]{1,2}$/, "").trimEnd()} …`;
+        break;
+      }
+      // A string's contents never leave the machine, even in a type.
+      let j = i + 1;
+      while (j < src.length && src[j] !== c && src[j] !== "\n") j += src[j] === "\\" ? 2 : 1;
+      // A string token that runs straight into a name or another quote means the
+      // scan misread where it ended: send nothing.
+      if (/[\w$"'`]/.test(src[j + 1] ?? "")) return "";
+      out += `${c}…${c}`;
+      i = j;
+      continue;
+    }
+    // Go's channel arrow (<-chan, chan<-) is an operator, not a bracket.
+    if (two === "=>" || two === "->" || (two === "<-" && lang === "go")) {
+      i++;
+      out += two;
+      if (stack.length === 0 && two === "=>" && arrowValue) break;
+      continue;
+    }
+    // Only TypeScript and Rust put type parameters in < >.
+    const angle = (c === "<" || c === ">") && lang !== "js" && lang !== "rs";
+    if (OPEN.includes(c) && !angle) {
+      if (c === "{" && stack.length === 0) break;
+      const mayHoldCode = (lang === "js" && c === "[" && stack.at(-1) === "{") || (lang === "py" && c === "(") || (lang === "rs" && c === "{") || (lang === "go" && (c === "{" || c === "["));
+      if (mayHoldCode && (stack.length > 0 || lang === "go")) {
+        const end = closingAt(lang, src, i);
+        if (end < 0) return "";
+        if (expressionBracket(lang, c, out, src, i, end)) {
+          out += `${c}…${src[end]}`;
+          i = end;
+          continue;
+        }
+      }
+      stack.push(c);
+      opens.push(i);
+    } else if (CLOSE[c] && !angle) {
+      // A closer that doesn't match means the scan lost its place: send nothing.
+      if (stack.at(-1) !== CLOSE[c]) return "";
+      stack.pop();
+      opens.pop();
+    }
+    // A Rust array length ([T; N]) is an expression: anything but a plain name becomes "…".
+    if (lang === "rs" && c === ";" && stack.at(-1) === "[") {
+      const end = closingAt(lang, src, opens.at(-1)!);
+      if (end < 0) return "";
+      if (!/^\s*[A-Za-z_][\w:]*\s*$/.test(src.slice(i + 1, end))) {
+        out += "; …";
+        i = end - 1;
+        continue;
+      }
+    }
+    // In Rust, Iterator<Item = T> binds a type, not a value; <const N: usize = 4> is a default.
+    const typeBinding = lang === "rs" && stack.at(-1) === "<" && !/\bconst\s+[A-Za-z_]\w*\s*:[^,<>]*$/.test(out);
+    if (c === "=" && src[i + 1] !== "=" && !typeBinding) {
+      if (stack.length === 0) {
+        // A const holding an arrow function keeps its parameters; any other value ends the signature.
+        if (lang === "js" && ARROW_VALUE.test(src.slice(i, i + 400))) {
+          out += c;
+          arrowValue = true;
+          continue;
+        }
+        break;
+      }
+      // A default value. A plain one (a name, number, quoted string, {} or [])
+      // is skipped whole. Anything else can't be skipped safely without parsing
+      // the expression, so the signature ends at it: no part of a value is sent.
+      const plain = PLAIN_DEFAULT[stack.at(-1) === "<" ? "type" : "param"].exec(src.slice(i, i + 200));
+      if (plain) {
+        i += plain[0].length - 1;
+        continue;
+      }
+      out += ` = …${CLOSER[stack.at(-1)!]}`;
+      break;
+    }
+    if (stack.length === 0 && (c === ";" || (c === ":" && lang === "py") || (c === "\n" && (lang !== "js" || !continues(out, src.slice(i + 1, i + 200)))))) break;
+    out += c;
+  }
+  // Ran off the end of the file inside brackets: the scan lost its place, send nothing.
+  if (i >= src.length && stack.length > 0) return "";
+  const flat = out
+    .replace(/\s+/g, " ")
+    .replace(/\(\s/g, "(")
+    .replace(/\s+([,)>\]])/g, "$1")
+    .replace(/,\s*\)/g, ")")
+    .trim()
+    .replace(/^export\s+(?:default\s+)?(?:declare\s+)?/, "")
+    .replace(/^pub\s+/, "");
+  const safe = scrub(lang, flat);
+  return safe.length <= MAX_SIGNATURE ? safe : safe.slice(0, MAX_SIGNATURE).trimEnd();
+}
+
+/** Signatures of the top-level declarations a file exports, in source order, at most 30. */
+export function signatures(path: string, source: string): string[] {
+  const lang = langOf(path);
+  if (!lang) return [];
+  const masked = maskComments(lang, source);
+  const starts: number[] = [];
+  for (const re of EXPORT_PATTERNS[lang]) {
+    for (const m of masked.matchAll(re)) starts.push(m.index! + (/^[ \t]*/.exec(m[0])?.[0].length ?? 0));
+  }
+  const out: string[] = [];
+  for (const at of [...new Set(starts)].sort((a, b) => a - b)) {
+    const sig = signatureAt(lang, masked, at);
+    if (sig && !out.includes(sig)) out.push(sig);
+    if (out.length === MAX_SIGNATURES_PER_FILE) break;
+  }
+  return out;
 }
 
 /** Raw import specifiers of a file. Kept only in the local cache; only resolved paths are ever sent. */
@@ -297,7 +571,7 @@ function resolvePy(from: string, spec: string, files: Set<string>): string | nul
   return null;
 }
 
-type BlobEntry = { e?: string[]; s?: string[]; r?: Resolver };
+type BlobEntry = { e?: string[]; s?: string[]; r?: Resolver; d?: string | null; g?: string[] };
 export type MapCache = { repos?: Record<string, { hash?: string; sentAt?: number; blobs?: Record<string, BlobEntry> }> };
 
 /**
@@ -384,7 +658,7 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
   };
   for (const p of paths) {
     const lang = langOf(p);
-    if (lang) need(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src) }));
+    if (lang) need(p, lang, (src) => ({ e: exportedNames(p, src), s: importSpecifiers(lang, src), d: docLine(p, src), g: signatures(p, src) }));
   }
   if (configPath) need(configPath, "config", (src) => ({ r: parseTsconfig(src) }));
   const fresh: Record<string, BlobEntry> = {};
@@ -414,6 +688,8 @@ export function buildCodeMap(cwd: string, opts: BuildOptions = {}): CodeMap | nu
       if (hit && hit !== p) imports.add(hit);
     }
     if (imports.size) file.i = [...imports];
+    if (entry.d) file.d = entry.d;
+    if (entry.g?.length) file.g = entry.g;
     return file;
   });
 
@@ -433,12 +709,17 @@ const size = (files: MapFile[]) => Buffer.byteLength(JSON.stringify(files));
 const depth = (p: string) => p.split("/").length;
 
 /**
- * Fits a map in 3,000 files and 120 KB: drop imports, then exports; still
- * over, keep the shallowest paths (in their original order) and mark it truncated.
+ * Fits a map in 3,000 files and 120 KB: drop signatures, then doc lines, then
+ * imports, then exports; still over, keep the shallowest paths (in their
+ * original order) and mark it truncated.
  */
 export function capMap(files: MapFile[]): { files: MapFile[]; truncated: boolean } {
   if (files.length <= MAX_FILES && size(files) <= MAX_BYTES) return { files, truncated: false };
-  const noImports = files.map(({ i: _i, ...rest }) => rest);
+  const noSignatures = files.map(({ g: _g, ...rest }) => rest);
+  if (files.length <= MAX_FILES && size(noSignatures) <= MAX_BYTES) return { files: noSignatures, truncated: false };
+  const noDocs = noSignatures.map(({ d: _d, ...rest }) => rest);
+  if (files.length <= MAX_FILES && size(noDocs) <= MAX_BYTES) return { files: noDocs, truncated: false };
+  const noImports = noDocs.map(({ i: _i, ...rest }) => rest);
   if (files.length <= MAX_FILES && size(noImports) <= MAX_BYTES) return { files: noImports, truncated: false };
   const pathsOnly = files.map(({ p }) => ({ p }));
   if (files.length <= MAX_FILES && size(pathsOnly) <= MAX_BYTES) return { files: pathsOnly, truncated: false };

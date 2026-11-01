@@ -75,7 +75,7 @@ async function main(): Promise<void> {
       const paths = installGitHooks();
       console.log(`xkg git hooks installed: ${paths.join(", ")}`);
       console.log("Commits with an `xkg-capture: <filename>` trailer are now recorded as applied.");
-      console.log("Commits, pulls and branch switches keep this repo's code map (file and function names, never code) up to date.");
+      console.log("Commits, pulls and branch switches keep this repo's code map (file and function names, signatures and each file's opening comment line, never code) up to date.");
     } catch (err) {
       console.error(err instanceof Error && err.message.includes("not a shell script")
         ? err.message
@@ -217,7 +217,7 @@ function printHelp(): void {
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
     xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent);
                                                                keeps .xkg/ (handoff specs) out of git
-    xkg map [--key KEY]                                        Send this repo's code map now (file paths and exported names, never code)
+    xkg map [--key KEY]                                        Send this repo's code map now (paths, exported names, signatures, opening comment lines; never code)
     xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else new ones
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
