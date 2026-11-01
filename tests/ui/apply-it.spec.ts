@@ -85,6 +85,12 @@ test("an older server without where still shows the advice", async ({ page }) =>
   await expect(page.getByTestId("apply-it").getByTestId("fit")).toHaveCount(0);
 });
 
+test("the capture result has no Quote card", async ({ page }) => {
+  await capture(page, WORST_CAPTURE);
+  await expect(page.getByText("Quote", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Quotes", { exact: true })).toHaveCount(0);
+});
+
 test("the card has no sideways scroll at 320 px", async ({ page }) => {
   await capture(page, WORST_CAPTURE);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
@@ -103,12 +109,12 @@ function contrast(a: string, b: string): number {
   return (hi! + 0.05) / (lo! + 0.05);
 }
 
-// XKG-95: Why and After for each file, on the user's own model.
+// XKG-95: Why and Impact for each file, on the user's own model.
 const EXPLAINED = {
-  files: WORST_CAPTURE.where.files.map((f, i) => ({ path: f.path, why: `Why line ${i}`, after: `After line ${i}` })),
+  files: WORST_CAPTURE.where.files.map((f, i) => ({ path: f.path, why: `Why line ${i}`, impact: `Impact line ${i}` })),
 };
 
-test("a Strong fit asks for Why and After by itself and shows them per file", async ({ page }) => {
+test("a Strong fit asks for Why and Impact by itself and shows them per file", async ({ page }) => {
   const bodies: unknown[] = [];
   await page.route("**/api/captures/explain", (r) => {
     bodies.push(r.request().postDataJSON());
@@ -116,9 +122,11 @@ test("a Strong fit asks for Why and After by itself and shows them per file", as
   });
   await capture(page, WORST_CAPTURE);
   const card = page.getByTestId("apply-it");
-  await expect(card.getByText("After line 1")).toBeVisible();
+  await expect(card.getByText("Impact line 1")).toBeVisible();
   await expect(card.getByText("Why line 0")).toBeVisible();
   await expect(card.getByText("Why:", { exact: true }).first()).toBeVisible();
+  await expect(card.getByText("Impact:", { exact: true }).first()).toBeVisible();
+  await expect(card).not.toContainText("After:");
   await expect(card.getByRole("button", { name: "Why and how" })).toHaveCount(0);
   expect(bodies).toEqual([{ name: WORST_CAPTURE.filename }]);
 });
@@ -136,7 +144,7 @@ test("a Possible fit asks only when you tap Why and how", async ({ page }) => {
   expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   expect(calls).toBe(0);
   await button.tap();
-  await expect(card.getByText("After line 0")).toBeVisible();
+  await expect(card.getByText("Impact line 0")).toBeVisible();
   await expect(button).toHaveCount(0);
   expect(calls).toBe(1);
 });
@@ -153,11 +161,11 @@ test("a failed Why and how says so and can be tried again", async ({ page }) => 
   for (const f of WORST_CAPTURE.where.files) await expect(card.getByText(f.path)).toBeVisible();
   fail = false;
   await card.getByRole("button", { name: "Try again" }).tap();
-  await expect(card.getByText("After line 0")).toBeVisible();
+  await expect(card.getByText("Impact line 0")).toBeVisible();
   await expect(card.getByRole("alert")).toHaveCount(0);
 });
 
-test("files that already have After are not asked about again", async ({ page }) => {
+test("files that already have Impact are not asked about again", async ({ page }) => {
   let calls = 0;
   await page.route("**/api/captures/explain", (r) => {
     calls++;
@@ -165,7 +173,7 @@ test("files that already have After are not asked about again", async ({ page })
   });
   const done = { ...WORST_CAPTURE, where: { ...WORST_CAPTURE.where, files: EXPLAINED.files } };
   await capture(page, done);
-  await expect(page.getByTestId("apply-it").getByText("After line 1")).toBeVisible();
+  await expect(page.getByTestId("apply-it").getByText("Impact line 1")).toBeVisible();
   await expect(page.getByTestId("apply-it").getByRole("button", { name: "Why and how" })).toHaveCount(0);
   expect(calls).toBe(0);
 });
@@ -176,7 +184,7 @@ test("a Strong fit waits while its match is still being saved", async ({ page })
     ++calls < 3 ? r.fulfill({ status: 409, json: { error: "This capture's match is still being saved." } }) : r.fulfill({ json: EXPLAINED }),
   );
   await capture(page, WORST_CAPTURE);
-  await expect(page.getByTestId("apply-it").getByText("After line 1")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId("apply-it").getByText("Impact line 1")).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId("apply-it").getByRole("alert")).toHaveCount(0);
   expect(calls).toBe(3);
 });
@@ -188,8 +196,23 @@ test("after a partial answer, Why and how asks again for the rest", async ({ pag
   );
   await capture(page, WORST_CAPTURE);
   const card = page.getByTestId("apply-it");
-  await expect(card.getByText("After line 0")).toBeVisible();
+  await expect(card.getByText("Impact line 0")).toBeVisible();
   await card.getByRole("button", { name: "Why and how" }).tap();
-  await expect(card.getByText("After line 1")).toBeVisible();
+  await expect(card.getByText("Impact line 1")).toBeVisible();
   expect(calls).toBe(2);
+});
+
+test("old After lines are rewritten once by themselves, even on a Possible fit", async ({ page }) => {
+  let calls = 0;
+  await page.route("**/api/captures/explain", (r) => {
+    calls++;
+    return r.fulfill({ json: EXPLAINED });
+  });
+  const legacy = { ...possible, where: { ...possible.where, files: possible.where.files.map((f, i) => ({ path: f.path, why: `Why line ${i}`, impact: `Old edit ${i}`, legacy: true })) } };
+  await capture(page, legacy);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByText("Impact line 0")).toBeVisible();
+  await expect(card.getByText("Old edit 0")).toHaveCount(0);
+  await expect(card.getByRole("button", { name: "Why and how" })).toHaveCount(0);
+  expect(calls).toBe(1);
 });

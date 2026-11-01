@@ -154,18 +154,6 @@ function CaptureView({ capture: c, onCapture }: { capture: CaptureDetail; onCapt
         </Card>
       )}
 
-      {c.quotes.length > 0 && (
-        <Card label={c.quotes.length > 1 ? "Quotes" : "Quote"}>
-          {c.quotes.map((q, i) => (
-            <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
-              style={{ color: "var(--fg-muted)", borderLeft: "2px solid var(--gold-quote)" }}>
-              &ldquo;{q}&rdquo;
-            </blockquote>
-          ))}
-        </Card>
-      )}
-
-
       {c.applications.length > 0 && (
         <Card label={c.applications.length > 1 ? `Applied ${c.applications.length} times` : "Applied"} testId="applied">
           <ul className="stack-2">

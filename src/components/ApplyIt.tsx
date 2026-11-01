@@ -8,7 +8,8 @@ export type Fit = "Strong fit" | "Possible fit";
 export interface ApplyItWhere {
   fit: Fit;
   repo: string;
-  files: { path: string; why?: string; after?: string }[];
+  /** `legacy`: an old "After" edit line, shown as Impact until it is rewritten. */
+  files: { path: string; why?: string; impact?: string; legacy?: boolean }[];
   also?: { repo: string; fit: string }[];
   /** Where the match came from, e.g. "From file names, not yet checked in your code · map from …". */
   note?: string;
@@ -22,9 +23,10 @@ export interface ApplyItProps {
   /** The hand-off button; left out on read-only pages. */
   handoff?: { filename: string; repos: string[]; waitingIn?: string };
   /**
-   * Fills in Why and After for files that lack them: asked for by itself when
-   * `auto` (Strong fit), else behind a "Why and how" button. `onRequest`
-   * updates `where` and throws on failure.
+   * Fills in Why and Impact for files that lack them: asked for by itself when
+   * `auto` (Strong fit), else behind a "Why and how" button. Old "After"
+   * lines are always rewritten by themselves. `onRequest` updates `where` and
+   * throws on failure.
    */
   explain?: { auto: boolean; onRequest: () => Promise<void> };
   style?: React.CSSProperties;
@@ -44,10 +46,10 @@ const NOT_READY_TRIES = 6;
 const NOT_READY_WAIT_MS = 1500;
 
 /**
- * Asks the server for Why and After on a capture's files and returns them
+ * Asks the server for Why and Impact on a capture's files and returns them
  * merged into `files`; throws when it fails.
  */
-export async function explainFiles<F extends { path: string; why?: string; after?: string }>(name: string, files: F[]): Promise<F[]> {
+export async function explainFiles<F extends { path: string; why?: string; impact?: string; legacy?: boolean }>(name: string, files: F[]): Promise<F[]> {
   let res: Response;
   // 409: a new capture's match is still being saved, a second or two after the result shows.
   for (let attempt = 1; ; attempt++) {
@@ -60,10 +62,10 @@ export async function explainFiles<F extends { path: string; why?: string; after
     await new Promise((resolve) => setTimeout(resolve, NOT_READY_WAIT_MS));
   }
   if (!res.ok) throw new Error(`explain ${res.status}`);
-  const data = (await res.json()) as { files?: { path: string; why: string; after: string }[] };
+  const data = (await res.json()) as { files?: { path: string; why: string; impact: string }[] };
   return files.map((f) => {
     const line = data.files?.find((x) => x.path === f.path);
-    return line ? { ...f, why: line.why, after: line.after } : f;
+    return line ? { ...f, why: line.why, impact: line.impact, legacy: false } : f;
   });
 }
 
@@ -83,9 +85,11 @@ const NOTE = "Matched by file names. Your coding agent checks the code.";
  * there is neither.
  */
 export default function ApplyIt({ where, advice, handoff, explain, style }: ApplyItProps) {
-  const needs = Boolean(explain && where?.files.some((f) => !f.after));
+  const needs = Boolean(explain && where?.files.some((f) => !f.impact || f.legacy));
+  // Old "After" lines were already paid for once: rewrite them without a tap.
+  const stale = Boolean(where?.files.some((f) => f.legacy));
   const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
-  // After one answer, files still without After get the button even on a Strong fit.
+  // After one answer, files still without Impact get the button even on a Strong fit.
   const [answered, setAnswered] = useState(false);
   const asked = useRef(false);
   const run = () => {
@@ -103,7 +107,7 @@ export default function ApplyIt({ where, advice, handoff, explain, style }: Appl
   useEffect(() => {
     latest.current = run;
   });
-  const auto = needs && explain?.auto;
+  const auto = needs && (explain?.auto || stale);
   useEffect(() => {
     if (auto && !asked.current) {
       asked.current = true;
@@ -132,13 +136,13 @@ export default function ApplyIt({ where, advice, handoff, explain, style }: Appl
             {where.files.map((f) => (
               <li key={f.path} className="stack-1 text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
                 <code className="block font-mono text-[12px] break-all" style={{ color: "var(--fg)" }}>{f.path}</code>
-                {f.why && <p>{f.after ? <><b className="font-medium" style={{ color: "var(--fg)" }}>Why:</b> </> : null}{withCode(f.why)}</p>}
-                {f.after && <p><b className="font-medium" style={{ color: "var(--fg)" }}>After:</b> {withCode(f.after)}</p>}
+                {f.why && <p>{f.impact ? <><b className="font-medium" style={{ color: "var(--fg)" }}>Why:</b> </> : null}{withCode(f.why)}</p>}
+                {f.impact && <p><b className="font-medium" style={{ color: "var(--fg)" }}>Impact:</b> {withCode(f.impact)}</p>}
               </li>
             ))}
           </ul>
           {needs && state === "loading" && (
-            <p role="status" className="text-sm" style={{ color: "var(--fg-muted)" }}>Writing why and after…</p>
+            <p role="status" className="text-sm" style={{ color: "var(--fg-muted)" }}>Writing why and impact…</p>
           )}
           {needs && state === "failed" && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -148,7 +152,7 @@ export default function ApplyIt({ where, advice, handoff, explain, style }: Appl
               </button>
             </div>
           )}
-          {needs && state === "idle" && (!explain?.auto || answered) && (
+          {needs && state === "idle" && (!(explain?.auto || stale) || answered) && (
             <button type="button" onClick={run} className="inline-flex items-center min-h-11 px-4 rounded-full text-sm font-medium"
               style={{ color: "var(--gold)", border: "1px solid var(--gold-low)" }}>
               Why and how
