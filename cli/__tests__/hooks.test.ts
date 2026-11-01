@@ -264,6 +264,52 @@ describe("inboxCheck — briefing mode", () => {
     }
   });
 
+  // protects: the old session-start hook gets the handoff offer; fails_when: briefing is called without repo; no_claim: offer wording
+  it("sends the origin's owner/name as repo so waiting handoffs are offered", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "xkg-repo-"));
+    const originalCwd = process.cwd();
+    try {
+      execFileSync("git", ["init", "--quiet", projectDir]);
+      execFileSync("git", ["-C", projectDir, "remote", "add", "origin", "git@github.com:acme/widgets.git"]);
+      process.chdir(projectDir);
+      fetchSpy.mockReturnValue(makeMcpResponse("xkg: 1 capture fits this repo (acme/widgets). Want to see it and apply it?"));
+
+      const { inboxCheck } = await import("../hooks.js");
+      const output = await captureStdout(() => inboxCheck("key", { briefing: true }));
+
+      const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as {
+        params: { arguments: { repo?: string; project_context: string } };
+      };
+      expect(request.params.arguments.repo).toBe("acme/widgets");
+      expect(request.params.arguments.project_context).toContain("Project:");
+      expect(output).toContain("1 capture fits this repo");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends no repo outside a repo with an origin", async () => {
+    const projectDir = mkdtempSync(join(tmpdir(), "xkg-norepo-"));
+    const originalCwd = process.cwd();
+    try {
+      execFileSync("git", ["init", "--quiet", projectDir]);
+      process.chdir(projectDir);
+      fetchSpy.mockReturnValue(makeMcpResponse(""));
+
+      const { inboxCheck } = await import("../hooks.js");
+      await inboxCheck("key", { briefing: true });
+
+      const request = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body)) as {
+        params: { arguments: Record<string, unknown> };
+      };
+      expect(request.params.arguments).not.toHaveProperty("repo");
+    } finally {
+      process.chdir(originalCwd);
+      rmSync(projectDir, { recursive: true, force: true });
+    }
+  });
+
   it("strips the JSON block from display output", async () => {
     fetchSpy.mockReturnValue(makeMcpResponse(`\`\`\`json
 [{"filename":"inbox/a.md","why":"x","benefit":"y","where":"z.ts","applyNow":true}]

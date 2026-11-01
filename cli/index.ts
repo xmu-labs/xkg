@@ -212,7 +212,8 @@ function printHelp(): void {
                                                                with the command that fixes each problem. Changes nothing
     xkg serve-mcp [--key KEY]                                  Start the MCP server for your AI worker (key from ~/.xkg/config.json)
     xkg setup-hooks --key KEY                                  Install inbox count hook (fast)
-    xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM)
+    xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM; puts
+                                                               handoffs waiting for this repo first)
     xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
     xkg setup-hooks --key KEY --briefing --vault               Install both hooks
     xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent);

@@ -2,6 +2,7 @@ import { homedir, tmpdir } from "os";
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { execSync } from "child_process";
+import { repoFromRemote } from "./code-map.js";
 
 const HOSTED_URL = "https://xkg.xmu.sh/api/mcp";
 const CLAUDE_SETTINGS_PATH = join(homedir(), ".claude", "settings.json");
@@ -244,6 +245,15 @@ function run(cmd: string): string {
   return execSync(cmd, { timeout: 2000, stdio: ["pipe", "pipe", "pipe"] }).toString().trim();
 }
 
+/** `owner/name` of the origin remote, or null outside a repo or without an origin. */
+function originRepo(): string | null {
+  try {
+    return repoFromRemote(run("git remote get-url origin"));
+  } catch {
+    return null;
+  }
+}
+
 function detectProjectContext(): string {
   const parts: string[] = [];
 
@@ -378,7 +388,9 @@ export async function inboxCheck(
   try {
     if (opts.briefing) {
       const projectContext = detectProjectContext();
-      const text = await callMcp(apiKey, "briefing", { project_context: projectContext });
+      // With the repo, briefing puts captures waiting for it (the handoff offer) first.
+      const repo = originRepo();
+      const text = await callMcp(apiKey, "briefing", { project_context: projectContext, ...(repo ? { repo } : {}) });
       if (!text?.trim()) return;
 
       // Parse JSON suggestions block (captured before the Markdown narrative)
