@@ -46,7 +46,8 @@ vi.mock("../fetch-source", () => ({ safeFetch: vi.fn() }));
 vi.mock("../linking", () => ({ linkCapture: vi.fn() }));
 vi.mock("../synthesis", () => ({ synthesizeTopic: vi.fn() }));
 vi.mock("../apply-events", () => ({ recordApplyEvent: vi.fn() }));
-vi.mock("../surface-events", () => ({ recordSurfaceEvents: vi.fn(), recordWhereEvent: vi.fn() }));
+const recordSurfaceEvents = vi.fn();
+vi.mock("../surface-events", () => ({ recordSurfaceEvents: (...a: unknown[]) => recordSurfaceEvents(...a), recordWhereEvent: vi.fn() }));
 
 const { handleBriefing } = await import("../mcp/handlers");
 const { briefingCandidate, formatBriefing } = await import("../briefing");
@@ -72,6 +73,7 @@ beforeEach(() => {
     path in files ? { content: files[path], sha: "s" } : null,
   );
   githubGet.mockReset();
+  recordSurfaceEvents.mockReset();
   rankByRelevance.mockReset();
   rankByRelevance.mockResolvedValue([{ filename: "inbox/2026-10-21-fewer-tools.md", score: 0.8, reason: "MCP repo" }]);
 });
@@ -177,6 +179,25 @@ describe("handleBriefing with no repo, task or project (a chat app)", () => {
   it("lets a failed GitHub read surface as an error, not an empty inbox", async () => {
     readFileStrict.mockRejectedValueOnce(new Error("GitHub read of INDEX.md failed (HTTP 403)"));
     await expect(handleBriefing(user, {})).rejects.toThrow("HTTP 403");
+  });
+
+  // protects: a capture saved today shows before an earlier one from the same day; fails_when: same-date rows keep INDEX (oldest-first) order; no_claim: INDEX order on other writers
+  it("puts the later row first among captures from the same day", async () => {
+    files["INDEX.md"] = [
+      "| 2026-10-29 | [first](inbox/2026-10-29-first.md) | Saved first... | t | note |",
+      "| 2026-10-29 | [second](inbox/2026-10-29-second.md) | Saved second... | t | note |",
+    ].join("\n");
+    const text = await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+    expect(text.indexOf("2026-10-29-second.md")).toBeLessThan(text.indexOf("2026-10-29-first.md"));
+  });
+
+  // protects: applies found through the chat briefing are credited to briefing; fails_when: the inbox branch skips recordSurfaceEvents; no_claim: the database write (mocked)
+  it("records a briefing surface event for exactly the captures it lists", async () => {
+    files["INDEX.md"] = CHAT_INDEX;
+    await handleBriefing(user, {});
+    files["INDEX.md"] = INDEX;
+    expect(recordSurfaceEvents).toHaveBeenCalledWith(1, ["2026-10-29-ship-small.md", "2026-10-21-fewer-tools.md"], "briefing");
   });
 
   it("keeps the repo-only answer unchanged", async () => {

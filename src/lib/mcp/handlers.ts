@@ -545,7 +545,12 @@ export async function handleBriefing(
     // Nothing to rank against, as in a chat app: show what's waiting in the inbox.
     // Strict, so a GitHub outage is an error and never an "empty" inbox.
     const index = await readFileStrict(user.github_token, user.github_repo, "INDEX.md");
-    return inboxBriefing(index ? parseIndexRows(index.content) : null);
+    // Rows are appended, and parseIndexRows sorts by date only (stable), so
+    // reversing first puts the latest capture of a day first.
+    const rows = index ? parseIndexRows(index.content.split("\n").reverse().join("\n")) : null;
+    const { text, shown } = inboxBriefing(rows);
+    await recordSurfaceEvents(user.id, shown, "briefing");
+    return text;
   }
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
 
