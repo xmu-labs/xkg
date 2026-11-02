@@ -72,10 +72,11 @@ describe("explainPrompt", () => {
 });
 
 describe("EXPLAIN_SYSTEM", () => {
-  it("asks for the impact: the result once applied, outcome first, 20 words or fewer", () => {
+  it("asks for the likely change in the codebase, then its result, in 32 words or fewer", () => {
     expect(EXPLAIN_SYSTEM).toContain('"impact"');
-    expect(EXPLAIN_SYSTEM).toMatch(/impact: the result once the capture is applied/);
-    expect(EXPLAIN_SYSTEM).toContain("20 words or fewer");
+    expect(EXPLAIN_SYSTEM).toMatch(/impact: what likely changes in the codebase/);
+    expect(EXPLAIN_SYSTEM).toMatch(/, so /);
+    expect(EXPLAIN_SYSTEM).toContain("32 words or fewer");
     expect(EXPLAIN_SYSTEM).not.toMatch(/"after"/);
   });
 });
@@ -99,11 +100,11 @@ describe("checkExplain", () => {
     expect(out).toEqual([]);
   });
 
-  it("cuts why to 12 words and impact to 20", () => {
-    const long = Array.from({ length: 25 }, (_, i) => `w${i}`).join(" ");
+  it("cuts why to 12 words and impact to 32", () => {
+    const long = Array.from({ length: 40 }, (_, i) => `w${i}`).join(" ");
     const [f] = checkExplain(reply([{ path: "src/rerank.ts", why: long, impact: long }]), files);
     expect(f!.why.split(" ")).toHaveLength(12);
-    expect(f!.impact.split(" ")).toHaveLength(20);
+    expect(f!.impact.split(" ")).toHaveLength(32);
   });
 
   it("accepts a reply that still uses the old after key", () => {
@@ -164,7 +165,7 @@ describe("explainCapture", () => {
     });
     const out = await explainCapture(user, FILE, { complete, listMaps: async () => [MAP] });
     expect(complete).toHaveBeenCalledTimes(1);
-    expect(EXPLAIN_MAX_TOKENS).toBeLessThanOrEqual(260);
+    expect(EXPLAIN_MAX_TOKENS).toBeLessThanOrEqual(400);
     expect(out!.files.map((f) => f.impact)).toEqual(["Recall is checked first", "Better chunks reach the prompt"]);
     expect(out!.tokens).toEqual({ in: 420, out: 61 });
     expect(out!.markdown).toContain("- `src/rerank.ts`: Orders retrieved chunks · Impact: Better chunks reach the prompt");
