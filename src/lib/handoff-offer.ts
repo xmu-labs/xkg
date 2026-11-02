@@ -13,7 +13,7 @@
  */
 
 import type { User } from "./db";
-import { codeMapPaths } from "./db";
+import { codeMapPaths, codeMapRepos } from "./db";
 import { readFile } from "./github";
 import { formatDate } from "./llm";
 import { captureName, HANDOFFS_PATH, parseHandoffs, setHandoffStatus, type HandoffRow } from "./handoffs";
@@ -57,6 +57,40 @@ export function expiredRows(rows: HandoffRow[], days: Map<string, string[]>, tod
     const from = snoozedUntil > r.since ? snoozedUntil : r.since;
     return (days.get(captureName(r.capture)) ?? []).filter((d) => d >= from && d < today).length >= EXPIRE_AFTER_DAYS;
   });
+}
+
+/** Waiting rows per repo (owner/name as first written), for any repo. */
+export function waitingByRepo(rows: HandoffRow[], today: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  const spelling = new Map<string, string>();
+  for (const r of rows) {
+    if (!offerable([r], r.repo, today).length) continue;
+    const key = r.repo.toLowerCase();
+    const name = spelling.get(key) ?? r.repo;
+    spelling.set(key, name);
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/** The repo name from the `Project: <name>` line a session-start hook sends, or null. */
+export function projectName(context: string): string | null {
+  const name = context.match(/^\s*project:\s*(\S+)\s*$/im)?.[1];
+  return name || null;
+}
+
+/**
+ * One line naming what waits and where, for a caller that can't be offered a
+ * handoff (a chat app, or a project name shared by two owners). `tail` says
+ * what to do about it. Never records an offer, so it never counts toward expiry.
+ */
+export function formatWaiting(counts: Map<string, number>, tail: string): string {
+  const total = [...counts.values()].reduce((a, b) => a + b, 0);
+  const parts = [...counts].map(([repo, n]) => `${n} in ${repo}`);
+  const head = total === 1
+    ? `xkg: 1 capture is waiting for the user's coding agent in ${[...counts.keys()][0]}.`
+    : `xkg: ${total} captures are waiting for the user's coding agent: ${parts.join(", ")}.`;
+  return `${head} ${tail}`;
 }
 
 export const HANDOFF_GUIDE = `If the user says yes, list these, let them pick one, then follow "How to hand off" below.
@@ -124,6 +158,53 @@ async function findCapture(user: OfferUser, capture: string): Promise<{ path: st
     if (file) return { path, title: file.content.match(/^# (.+)$/m)?.[1]?.trim() || name.replace(/\.md$/, "") };
   }
   return null;
+}
+
+/** The rows of HANDOFFS.md, or none when it is missing or unreadable. Never throws. */
+async function handoffRows(user: OfferUser): Promise<HandoffRow[]> {
+  try {
+    if (!user.github_repo) return [];
+    const file = await readFile(user.github_token, user.github_repo, HANDOFFS_PATH);
+    return file ? parseHandoffs(file.content).rows : [];
+  } catch (err) {
+    console.error("[handoff] rows failed:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+/** Waiting handoffs per repo whose capture still exists: a deleted capture is never announced. */
+async function waitingHandoffs(user: OfferUser, rows: HandoffRow[]): Promise<Map<string, number>> {
+  const today = formatDate();
+  const waiting = rows.filter((r) => offerable([r], r.repo, today).length);
+  const present = await Promise.all(waiting.map(async (r) => ((await findCapture(user, r.capture)) ? r : null)));
+  return waitingByRepo(present.filter((r): r is HandoffRow => r !== null), today);
+}
+
+const sameName = (repo: string, name: string) => repo.split("/").pop()!.toLowerCase() === name.toLowerCase();
+
+/**
+ * What a caller without `repo` gets about waiting handoffs. With a project
+ * name (a hook's `Project:` line) that exactly one known repo carries, the
+ * offer itself; with a name two owners share, or no name at all (a chat app),
+ * one line naming where captures wait. Known repos are every repo in
+ * HANDOFFS.md, whatever its status, plus the repos with a code map: a repo
+ * with nothing waiting is still a different place to be working in.
+ */
+export async function handoffMention(user: OfferUser, context: string | null): Promise<string | null> {
+  const rows = await handoffRows(user);
+  if (!rows.length) return null;
+  const name = context ? projectName(context) : null;
+  // A context that names no project (free text from an agent) says nothing about the repo.
+  if (context && !name) return null;
+  if (!name) {
+    const waiting = await waitingHandoffs(user, rows);
+    return waiting.size ? formatWaiting(waiting, "Tell the user; a capture is applied from a coding session in its repo.") : null;
+  }
+  const mapped = await codeMapRepos(user.id).catch(() => [] as string[]);
+  const known = new Set([...rows.map((r) => r.repo), ...mapped].filter((repo) => sameName(repo, name)).map((repo) => repo.toLowerCase()));
+  if (known.size === 1) return handoffOffer(user, [...known][0]!);
+  const waiting = new Map([...(await waitingHandoffs(user, rows))].filter(([repo]) => sameName(repo, name)));
+  return waiting.size ? formatWaiting(waiting, "Call briefing again with repo set to this repo's owner/name to see them.") : null;
 }
 
 /**

@@ -28,7 +28,7 @@ import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
-import { handoffOffer } from "@/lib/handoff-offer";
+import { handoffMention, handoffOffer } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, parseIndexRows, type LinkCheck } from "@/lib/captures";
 import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
@@ -538,9 +538,12 @@ export async function handleBriefing(
   // Captures waiting for this repo come first. With only a repo (a session-start
   // hook), that offer is all: no ranking, so no LLM call and no wait.
   const repo = typeof args.repo === "string" ? repoName(args.repo) : null;
-  const offer = repo ? await handoffOffer(user, repo) : null;
   const task = typeof args.task === "string" ? args.task.trim() : "";
-  if (!task && !args.project_context?.trim()) {
+  const context = args.project_context?.trim() ?? "";
+  // Without a repo the caller still hears about waiting handoffs: an old hook
+  // or an agent names the project, a chat app gets a mention (XKG-129).
+  const offer = repo ? await handoffOffer(user, repo) : task ? null : await handoffMention(user, context || null);
+  if (!task && !context) {
     if (repo) return offer ?? `No captures are waiting for ${repo}.`;
     // Nothing to rank against, as in a chat app: show what's waiting in the inbox.
     // Strict, so a GitHub outage is an error and never an "empty" inbox.
@@ -550,7 +553,7 @@ export async function handleBriefing(
     const rows = index ? parseIndexRows(index.content.split("\n").reverse().join("\n")) : null;
     const { text, shown } = inboxBriefing(rows);
     await recordSurfaceEvents(user.id, shown, "briefing");
-    return text;
+    return offer ? `${offer}\n\n${text}` : text;
   }
   const withOffer = (text: string) => (offer ? `${offer}\n\n${text}` : text);
 
