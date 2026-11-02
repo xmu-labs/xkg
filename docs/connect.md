@@ -83,7 +83,7 @@ It changes nothing. `--json` prints the result for scripts, and it exits with 1 
 
 When your agent connects, xkg tells it how to use your knowledge:
 
-- Get a briefing at the start of a coding session.
+- Get a briefing at the start of a coding session, and again when the session moves to another repo, so each repo's waiting captures show up there.
 - Capture what you share.
 - Record the commits that apply a capture.
 - Offer to install the git hook in your repo, after asking you.
@@ -161,7 +161,7 @@ Codex CLI doesn't read the instructions xkg sends when it connects. Add these li
 
 ```markdown
 ## xkg
-- At the start of a coding session, call the xkg `briefing` tool with the repo name, branch, and last few commit messages. Check each capture it returns against the code before naming a file.
+- At the start of a coding session, call the xkg `briefing` tool with repo set to the origin's owner/name, and the repo name, branch, and last few commit messages. When the session moves to a different repo (the user opens or adds one), call `briefing` again with that repo's owner/name. Check each capture it returns against the code before naming a file.
 - When the user shares something worth keeping, call `capture`.
 - When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, the repo, and one line on why. If the user turns a capture down, call it with outcome `declined`, or `later` for not now.
 ```

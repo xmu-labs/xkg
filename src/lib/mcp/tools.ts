@@ -26,14 +26,14 @@ export const CORE_TOOLS = [
   },
   {
     name: "briefing",
-    description: "Call at the start of every conversation (no arguments in a chat: shows the inbox) and mid-task with task. Returns captures that may fit as candidates: check each against the code before suggesting it.",
+    description: "Call at the start of every conversation (no arguments in a chat: shows the inbox), again in a new repo, and mid-task with task. Returns candidates that may fit: check each against the code before suggesting it.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        repo: { type: "string", description: "owner/name of the origin remote. Captures waiting for it come first, with the question to ask the user." },
-        project_context: { type: "string", description: "At session start: repo name, branch, last few commit messages" },
-        task: { type: "string", description: "Mid-task: what you are doing now. Returns the best fits with scores." },
-        files: { type: "array" as const, items: { type: "string" }, description: "Paths you are working on (names only, never code)" },
+        repo: { type: "string", description: "owner/name of the origin remote. Captures waiting for it come first, with a question for the user." },
+        project_context: { type: "string", description: "At session start: repo name, branch, last commit messages" },
+        task: { type: "string", description: "Mid-task: what you're doing now. Returns the best fits with scores." },
+        files: { type: "array" as const, items: { type: "string" }, description: "Paths you're working on (names only, never code)" },
         exclude: { type: "array" as const, items: { type: "string" }, description: "Captures already shown this session" },
         limit: { type: "number", description: "With task: max captures (default 5, max 10)" },
         min_score: { type: "number", description: "With task: drop fits under this (0-1)" },
