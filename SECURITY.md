@@ -34,8 +34,7 @@ storage, the MCP tool surface, and server-side request handling.
 
 ## What xkg already does
 
-Documented in the README under
-[What xkg stores, and where](README.md#what-xkg-stores-and-where): captures are never
+Documented in [Privacy and data](docs/privacy-and-data.md#what-xkg-stores): captures are never
 stored server-side, GitHub and LLM credentials are encrypted at rest, the MCP key is stored
 hashed, PINs use salted scrypt, PIN unlock is bound to a device that has completed GitHub
 sign-in, and server-side URL fetching is guarded against SSRF across redirects.

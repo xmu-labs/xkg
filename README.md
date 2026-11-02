@@ -1,7 +1,7 @@
 <div align="center">
   <br>
   <a href="https://xkg.xmu.sh">
-    <img src="public/brand/xkg-icon-dark.png" width="160" height="160" alt="xkg">
+    <img src="https://raw.githubusercontent.com/xmu-labs/xkg/main/public/brand/xkg-icon-dark.png" width="160" height="160" alt="xkg">
   </a>
   <br>
   <br>
@@ -14,580 +14,97 @@
 
 ## xkg
 
-Humans are constantly exposed to useful knowledge, domain expertise, and external input. But there is no bridge between what humans know and what their AI workers know and do.
+**Learn it once. Your AI applies it.**
 
-xkg is the knowledge graph for AI workers that bridges human knowledge into context they can use.
+You read useful things all the time: articles, docs, talks, notes. Your AI coding agent never sees them. xkg saves that knowledge and hands it to your agent where it fits in your code.
 
-## Table of Contents
-
-- [xkg](#xkg)
-- [How it works](#how-it-works)
-- [Start here](#start-here)
-- [Connect your AI workers](#connect-your-ai-workers)
-  - [On the web](#on-the-web)
-    - [Claude](#claude)
-    - [ChatGPT](#chatgpt)
-    - [Grok](#grok)
-  - [In the terminal](#in-the-terminal)
-    - [Cursor](#cursor)
-    - [VS Code](#vs-code)
-    - [Codex](#codex)
-    - [Gemini CLI](#gemini-cli)
-    - [Claude Code](#claude-code)
-    - [Claude Desktop](#claude-desktop)
-    - [Anything MCP](#anything-mcp)
-- [Workflow](#workflow)
-- [What's inside](#whats-inside)
-- [CLI](#cli)
-- [Your context stays in GitHub](#your-context-stays-in-github)
-- [Cost](#cost)
-- [Roadmap](#roadmap)
-- [License](#license)
+For developers and builders who use AI agents like Claude Code, Codex, Cursor, or Gemini CLI. **[Get started](#get-started)**
 
 ## How it works
 
-You find useful stuff, you capture through the web app, then xkg connects it into a knowledge graph, and makes it available to the AI workers you already use.
+1. **Capture.** Paste a link, a doc, a transcript, or a note into xkg. It saves the main idea and key takeaways, each backed by a quote from the source, to a private GitHub repo you own.
+2. **Match.** xkg suggests the repo and files where it may change something.
+3. **Apply.** At your next coding session, your agent offers it, reads the code, writes a plan, and asks you before changing anything.
 
-xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/xmu-labs/xkg/main/public/flow-workflow.svg" width="720" alt="Docs and notes → Capture → GitHub Markdown → Brief → Plan → Execute → Mark applied" />
+</p>
 
-## Start here
+More detail: [How xkg works](https://github.com/xmu-labs/xkg/blob/main/docs/how-it-works.md).
 
-You do not need a terminal to start.
+## Get started
 
-### 1. Create your account
+**Choose:** start in the web app to try it in 2 minutes. Add the terminal step when you want your coding agent to use it.
 
-Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub.
+### 1. Web app (no terminal)
 
-xkg will:
+1. Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub. xkg creates a private repo for your knowledge, named `xkg-knowledge` unless you pick another name.
+2. Pick your AI provider and paste your API key: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral, or Groq.
+3. Paste something and hit **Capture**.
 
-1. Create a **private** GitHub repo for your knowledge on your account, named `xkg-knowledge` unless you pick another name (you can opt to make it public)
-2. Ask for your LLM provider and API key: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral or Groq. Your key, your cost. Change the provider, model or reasoning effort any time in Settings → AI model.
-3. Let you set a PIN (6+ characters) for quick unlock on this device
-4. Show your **xkg API key** once — save it if you want to connect an AI worker
+Optional: set a PIN for quick unlock on this device. On a phone, use **Share → Add to Home Screen**.
 
-That's the whole setup. No repo to clone. No database. No CLI required.
+### 2. Coding agents (one command)
 
-### 2. Capture something
-
-In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then hit **Capture**.
-
-xkg extracts the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. It backs each claim with an exact quote from the source and checks the quote is really there, then commits Markdown to your GitHub repo with the source text attached.
-
-While it works, the app shows each step (reading the page, extracting, saving) and the seconds so far. The result shows as soon as the file is saved, in the app and in the `capture` tool your coding agent calls. Links to related captures and the **Where it applies** section are added to the file a few seconds later. Links come from shared tags and words, with no extra AI call, and each one says what the two captures share (for example `shared: reliability, retries`). A fast capture shows nothing extra. When the model took 20 seconds or more, the result offers a faster model your provider serves, with its measured time, for example "This took 25 s. gpt-4.1 usually takes about 4 s." **Use** switches to it (with **Undo**), and **Keep mine** stops the offer for that model and effort. The offer only names a model that keeps the checked quotes about as well (see [How the fast model is measured](#how-the-fast-model-is-measured)).
-
-On a phone: open the app → **Share → Add to Home Screen**. It runs like a native app.
-
-After a capture, the app says **Added to your knowledge** and shows an **Apply it** card right after the core idea: the fit (**Strong fit** in green, **Possible fit** in amber), the repo and the files where it may change something, with the hand-off button. With no fit, the card shows the capture's general advice instead. Each file gets two short lines, **Why** (what in the capture touches it, up to 12 words) and **Impact** (what likely changes in your code once it is applied, then what that gets you, written as "change, so result", up to 32 words), written by your own model from the capture and the file's path, one-line summary and exported names, never its code. A Strong fit gets them right away; a Possible fit has a **Why and how** button. The lines are saved in the capture's "Where it applies" section as `` - `path`: why · Impact: impact ``, so each capture is explained once. Captures from before this change hold `· After:` lines; the first time one is opened, its lines are rewritten once as Impact. The call is capped at 400 output tokens and runs at low effort on your model.
-
-The **☰ menu** (top right on every page) holds your account, **Capture**, **Your knowledge** and **Settings**, and shows the GitHub repo your captures are stored in.
-
-**Your knowledge** (in the ☰ menu) lists what you saved, by folder: inbox, applied and archived. From there you can:
-
-- **Open** a capture to read it again in full: the core idea, takeaways, its source, where it applies in your code, when it was applied, and its links to related captures (tap one to open it).
-- **Archive** a capture you've read but won't act on now, or **Delete** it for good (it asks first).
-- **Source check**: when the page opens, xkg quietly checks each inbox capture's source URL. If the page is offline (404 or 410), the capture says so and reminds you that what you learned is saved in your repo. A capture the AI marked low confidence gets a short note too. Nothing is archived for you.
-- **Make rules** from every capture with a tag. The rules go in `RULES.md`, and your agent gets them with the session-start briefing. This runs on your own AI model and key.
-- See how many captures were applied each week, and how many came with a commit (from `APPLIED.md`).
-
-### 3. Connect a worker (optional)
-
-Skip this if you only want the app today. When you're ready, pick your tool under [Connect your AI workers](#connect-your-ai-workers). Capture now, connect later — the knowledge is already in your repo.
-
-## Connect your AI workers
-
-xkg is LLM-agnostic. Any worker that speaks MCP can use the same knowledge.
-
-Two primitives:
-
-```text
-https://xkg.xmu.sh/api/mcp
-```
-
-```bash
-npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
-```
-
-The CLI binary is **`xkg`** (also `xmu` and `mnemos-capture`). An MCP server already registered as `xmu` or `mnemos` keeps working. One set up with `mnemos-capture@latest` still runs 1.8.0, the last version under that name: switch its command to `@xmu-labs/xkg@latest`.
-
-**On the web** — paste the URL (no terminal). **In the terminal** — run the command. Finish xkg onboarding first. In a chat app, xkg asks the AI to open a conversation with how many captures are waiting in your inbox and the newest few. You can also ask *what's in my inbox?* or *what do I have on payments?*
-
-### On the web
-
-Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, sign in with GitHub when asked.
-
-#### Claude
-
-1. Settings → Connectors → Add custom connector
-
-#### ChatGPT
-
-1. Settings → Security and login → turn on **Developer mode** (on Business, Enterprise and Edu plans an admin may have to allow it)
-2. Settings → Plugins → Browse plugins → **+** (top right)
-3. Name it xkg, choose **Server URL**, paste `https://xkg.xmu.sh/api/mcp`, and pick **OAuth**
-4. Tick the risk box, click **Create**, then sign in with GitHub when asked
-
-#### Grok
-
-1. Open [grok.com/connectors](https://grok.com/connectors) → New Connector → Custom
-
-### In the terminal
-
-One command sets up every coding agent on your machine:
+Run this once on each computer:
 
 ```bash
 npx -y @xmu-labs/xkg@latest init
 ```
 
-With no key on the machine yet, it signs you in through the browser: it opens a page on xkg.xmu.sh that shows this computer's name and a code, you check the code matches the one in your terminal and approve, and the CLI receives a key for this computer. Each computer gets its own key, so signing in on a new one never cuts off another; rotating your key in Settings removes them all. On a machine without a browser (a server, CI), pass a key from Settings instead: `init --key YOUR_API_KEY`.
+It signs you in through the browser and sets up every coding agent it finds: Claude Code, Codex, Gemini CLI, GitHub Copilot, and Cursor. It backs up each file it changes and ends with a health check. Check again any time with `npx -y @xmu-labs/xkg@latest doctor`.
 
-It checks the key and saves it in `~/.xkg/config.json`, finds Claude Code, Codex, Gemini CLI, GitHub Copilot and Cursor, lists what it will change, and asks once (`--yes` skips the question, `--agents codex,cursor` limits it). For each agent it adds three things, all without a key:
+## Connect a chat app
 
-| Agent | MCP server | Session-start hook | Rules block |
-| --- | --- | --- | --- |
-| Claude Code | `claude mcp add-json -s user xkg` | `~/.claude/settings.json` | `~/.claude/CLAUDE.md` |
-| Codex | `~/.codex/config.toml` | `~/.codex/hooks.json` (trust it once in `/hooks`) | `~/.codex/AGENTS.md` |
-| Gemini CLI | `~/.gemini/settings.json` | `~/.gemini/settings.json` | `~/.gemini/GEMINI.md` |
-| GitHub Copilot | `~/.copilot/mcp-config.json` | `~/.copilot/hooks/xkg.json` | `~/.copilot/copilot-instructions.md` |
-| Cursor | `~/.cursor/mcp.json` | `~/.cursor/hooks.json` | none (Cursor keeps User Rules in the app) |
-
-The hook is the one in [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts). The rules block is the same text in every file, between `<!-- xkg -->` and `<!-- /xkg -->`. Inside a git repo, `init` also installs the [git hooks](#workflow) and sends the code map. It keeps your other settings, leaves anything xkg already set up as it is (a hand-written `## xkg` section too), replaces the older `inbox-check` hook in Claude Code so a session doesn't get two offers, backs up each file to `~/.xkg/backups/` first, and prints how to undo each change. Then it runs `xkg doctor`.
-
-`xkg doctor` checks the key, the server, your knowledge repo, each agent's three pieces, this repo's git hooks (and the version they run) and code map, then shows what your agent would see at session start. Each problem comes with the command that fixes it. It changes nothing; `--json` prints the result for scripts, and it exits 1 when a check fails.
-
-To set up an agent by hand instead, the same command works in every CLI — Cursor, Codex, Gemini CLI, VS Code, Claude Code, or anything that can launch a local MCP server:
-
-```bash
-npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
-```
-
-Register that command in the tool you use.
-
-When your agent connects, xkg tells it how to work with your knowledge: get a briefing at the start of a coding session, capture what you share, and record the commits that apply a capture. It also offers to install the git hook in your repo, after asking you. Most agents read this on their own. Codex CLI doesn't read it yet, so `init` writes the same lines into `~/.codex/AGENTS.md`; if you set Codex up by hand, see [Codex](#codex) for the lines to add.
-
-#### Offer new captures when a session starts
-
-`xkg session-start` first checks `HANDOFFS.md` for captures waiting for the repo you're in (its `origin`). When some wait, it prints the same text a `briefing` call with that repo returns: your agent asks you "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?", lists up to 3, and knows how to hand one off (see [Workflow](#workflow)). Otherwise it counts the captures in your inbox and, when there are some, tells your agent to ask you "You have 3 new xkg captures. Want to see them and apply one here?" before your task. It prints nothing when nothing waits or xkg can't be reached, and gives up after 3 seconds. It speaks once per session: when your agent compacts or forks the chat and runs the hook again (it says so in the `source` it sends), it prints nothing. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files carry no key.
-
-Add it as a session-start hook in your agent. `--agent` picks the output shape that agent reads:
-
-| Agent | File | Hook |
-| --- | --- | --- |
-| Claude Code | `~/.claude/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent claude" }] }] }` |
-| Codex | `~/.codex/hooks.json` | `{ "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent codex" }] }] } }`, then trust it once in `/hooks` |
-| Gemini CLI | `~/.gemini/settings.json` | `"hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "npx -y @xmu-labs/xkg@latest session-start --agent gemini" }] }] }` |
-| GitHub Copilot CLI | `~/.copilot/hooks/xkg.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "type": "command", "bash": "npx -y @xmu-labs/xkg@latest session-start --agent copilot" }] } }` |
-| Cursor | `~/.cursor/hooks.json` | `{ "version": 1, "hooks": { "sessionStart": [{ "command": "npx -y @xmu-labs/xkg@latest session-start --agent cursor" }] } }` |
-
-Merge the hook into the file if it already has other settings. Without `--agent`, the command prints plain text.
-
-#### Cursor
-
-Add this to `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (all projects):
-
-```json
-{
-  "mcpServers": {
-    "xkg": {
-      "command": "npx",
-      "args": ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
-    }
-  }
-}
-```
-
-Or Cursor Settings → MCP → Add new MCP server, same command.
-
-#### VS Code
-
-Add this to `.vscode/mcp.json`:
-
-```json
-{
-  "servers": {
-    "xkg": {
-      "command": "npx",
-      "args": ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
-    }
-  }
-}
-```
-
-GitHub Copilot Chat in VS Code uses the same file.
-
-#### Codex
-
-Codex CLI — add this to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.xkg]
-command = "npx"
-args = ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
-```
-
-Codex App: Settings → MCP → add the same `npx` command.
-
-Codex CLI doesn't read the instructions xkg sends when it connects. `init` adds these lines for you; by hand, add them to `~/.codex/AGENTS.md` (all projects) or the repo's `AGENTS.md`:
-
-```markdown
-## xkg
-- At the start of a coding session, call the xkg `briefing` tool with the repo name, branch, and last few commit messages. Check each capture it returns against the code before naming a file.
-- When the user shares something worth keeping, call `capture`.
-- When a commit uses a capture, add a line `xkg-capture: <filename>` to the commit message, then call `apply_capture` with the filename, the commit sha, the repo, and one line on why. If the user turns a capture down, call it with outcome `declined`, or `later` for not now.
-```
-
-#### Gemini CLI
-
-```bash
-gemini mcp add xkg npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
-```
-
-#### Claude Code
-
-```bash
-claude mcp add xkg -- npx -y @xmu-labs/xkg@latest serve-mcp --key YOUR_API_KEY
-```
-
-Or the URL, no API key:
-
-```bash
-claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
-```
-
-`serve-mcp --key` installs a light session hook the first time it runs, unless a `session-start` hook is already there (a server set up by `init` has no key in its entry and installs nothing). More hooks, all optional (MCP works without them):
-
-```bash
-npx -y @xmu-labs/xkg@latest setup-hooks --key YOUR_API_KEY --briefing --vault
-```
-
-Hooks are local files — they run in the CLI and editor extensions, not in the browser.
-
-#### Claude Desktop
-
-Settings → Developer → Edit Config. Add the same `npx` block to `claude_desktop_config.json`, then fully restart:
-
-```json
-{
-  "mcpServers": {
-    "xkg": {
-      "command": "npx",
-      "args": ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
-    }
-  }
-}
-```
-
-#### Anything MCP
-
-If the tool can launch a local process, register the same `npx` command. If it has **custom connectors** instead, paste the URL (that's the [web](#on-the-web) path).
-
-```json
-{
-  "mcpServers": {
-    "xkg": {
-      "command": "npx",
-      "args": ["-y", "@xmu-labs/xkg@latest", "serve-mcp", "--key", "YOUR_API_KEY"]
-    }
-  }
-}
-```
-
-No MCP support yet? Capture in the [xkg app](https://xkg.xmu.sh) and connect later.
-
-## Workflow
-
-<p align="center">
-  <img src="public/flow-workflow.svg" width="720" alt="Docs and notes → Capture → GitHub Markdown → Brief → Plan → Execute → Mark applied" />
-</p>
-
-1. **Capture** — Paste anything text-based: papers, docs, posts, GitHub repos, notes, decisions, ideas, transcripts. xkg detects a URL, a short note, or longer text. No manual tagging.
-
-   From a connected worker:
-
-   ```text
-   capture "The Mom Test: don't ask if your idea is good. Ask about the person's real behavior, current workflow, and past spending."
-   ```
-
-   If you sync a **code map** (see step 5), the capture also gets a **Where it applies** section: the repo and up to 3 files where it may change something, from file and function names, signatures and each file's opening comment line, labeled as not yet checked in your code. xkg ranks your mapped files by the names they share with the capture, then [TypeSafe](https://typesafe.ai)'s decision model Jev rates the top 15 files of each repo: would applying the capture change this file, and does anything in the repo fit at all. Jev answers more cautiously when files come with signatures and comment lines, so for those repos a file is Possible from 0.30 instead of 0.40 (Strong stays at 0.50). Files rated Possible or better are shown (Strong when Jev is fairly sure), each with the exported names it shares with the capture. Your LLM is used only to extract the capture; if TypeSafe can't answer, your LLM picks the files instead, every path is checked against your map, a reason that names a function the file doesn't export is dropped, and the fit comes from how well the names match, never from the model rating itself. When nothing fits, it says why in one line. With no map, the capture is saved exactly as before.
-
-   A **Strong fit** is also queued for your coding agent: xkg adds a row to `HANDOFFS.md` in your knowledge repo with the capture, the repo and the suggested files. Any other fit waits for you: tap **Hand off to your coding agent** on the capture card, and pick an "also fits" repo first if you want it there instead (that row has no files; your agent finds them). The row holds names only, never code, and you can edit or delete the file at any time.
-
-   In your next coding session in that repo, your agent offers what's waiting (any `briefing` call: with `repo`, or with a `project_context` whose `Project:` line names the repo, as the `xkg session-start` and `inbox-check --briefing` hooks send; in a chat app, with no arguments, your AI is told how many wait and in which repo instead): "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?" If you say yes and pick one, your agent reads the capture and the files, writes a spec to `.xkg/handoffs/<capture>.md` in that repo (claim, evidence quoted from the capture, why here, the files it opened and the change, checks, and its confidence as High, Medium or Low), and asks "Apply this now?" The spec stays on your machine: `.xkg/` is kept out of git (`setup-git-hook` adds it to `.git/info/exclude`), and it never goes to xkg. If you say yes, your agent makes the change in its normal way, with the `xkg-capture:` trailer in the commit. A file xkg suggested that's no longer in your current map is marked "moved or deleted since the capture", so your agent looks for where it applies now. A capture offered on 3 days without an answer stops being offered (its row says `expired`).
-
-   Your agent records your answer with `apply_capture`, so xkg knows what happened. **Not now** (`outcome: later`) offers it again in 7 days. **No** (`declined`) takes a reason: `wrong-files` (it fits, but not in those files), `doesnt-fit` (not in this repo) or `other`. **Already done** is `done`. None of these counts as an apply, moves the capture or adds an `APPLIED.md` row. A commit with the trailer marks the row `applied`, and a plain `git revert` of that commit is recorded as `reverted` (see step 5). Every answer adds a line to the capture's `## Handoff log`: the date, the repo, the answer and its reason, and for an apply the commit and the files it changed (only files in your code map). When your agent and the git hook both report one commit, the apply is logged once, and the later report fills in the changed files or your agent's confidence if the first left them out. No answer carries the spec, code or a diff. Rows that are done (`applied`, `declined`, `done`, `expired`) leave `HANDOFFS.md` 90 days after their last change; the capture's Handoff log keeps the history.
-
-   xkg learns from these answers, with no model. An apply counts +1 for each file it changed and for the repo, a `wrong-files` no counts -1 for each suggested file, a `doesnt-fit` no counts -1 for the repo, and a revert takes back the apply's +1 and counts -1; `later`, `done` and `expired` count nothing. A count halves every 30 days. Two nos (or reverts) on a file make it a dead end for that capture: tapping **Hand off** again leaves it out. Two on a repo mark the capture's row `dead`, so it's never offered there again. A file changed by applies of two captures that share a tag is proven for that tag: for a new capture with the tag, Jev also rates that file, with a note that it was applied before for the tag, and the card gives that as its reason. Jev still decides the fit.
-
-   To apply a spec in an isolated worktree instead of your current session, run `xkg agent --spec .xkg/handoffs/<capture>.md` (see step 4). It reads the spec from your disk and needs no key.
-
-2. **Brief** — At the start of a work session, your agent asks for a briefing. xkg uses your project name, branch, and recent commit messages to pick up to 5 captures that may fit, with **why** each may fit and its key points. xkg never sees your code (at most file and function names from a code map), so a briefing gives candidates: your agent reads the code, keeps only real matches, names the file and the change, and asks you before changing anything. Local agent instruction files are not read or uploaded by the CLI hooks. You decide what to apply.
-
-3. **Plan** — The handoff spec from step 1 is the plan: your agent writes it after reading the files. Plans that older versions saved to `plans/` in your knowledge repo still run with `xkg agent --plan FILE`.
-
-4. **Execute** — Hand the plan to your worker in the current session, or run it in an isolated git worktree:
-
-   ```bash
-   npx -y @xmu-labs/xkg@latest config set agent "claude -p"
-   npx -y @xmu-labs/xkg@latest agent --spec .xkg/handoffs/<capture>.md
-   ```
-
-   `xkg agent` creates a worktree, loads the plan as the contract, launches the assistant you configured, and prints the verification checklist when it finishes.
-
-   ```bash
-   npx -y @xmu-labs/xkg@latest config set agent "codex exec"
-   ```
-
-5. **Mark applied** — After committing a change that applies a capture, the worker calls `apply_capture` with the commit sha and one line on why. xkg moves the capture to `applied/`, adds an entry to its application log and to `APPLIED.md`, and counts it once per capture and commit.
-
-   Any coding agent, or you by hand, can also add a trailer to the commit message:
-
-   ```text
-   xkg-capture: 2026-10-28-alert-ownership.md
-   ```
-
-   With the git hook installed in that repo, xkg records it after each commit, with the repo and the files the commit changed. If you later undo that commit with `git revert`, the hook reports the capture as reverted: its `APPLIED.md` row is marked "reverted" with the date, and it still counts as an apply that week. Your agent offers to set it up the first time it connects, or run:
-
-   ```bash
-   npx -y @xmu-labs/xkg@latest setup-git-hook --key YOUR_API_KEY
-   ```
-
-   The same setup keeps a **code map** of the repo: file paths, exported function and class names with their signatures (no bodies, no default values), which files import which, and the first sentence of the doc comment each file opens with. Never code, other comments or package names. It is sent after a commit, a pull or a branch switch when a name changed, and at most once a day otherwise, so xkg can tell where a capture applies in your code. This works through git alone, so it's the same with every coding agent, or none. Run `xkg map` to send it by hand. In a cloud container, which starts with no hooks, add the setup line to the environment's setup script.
-
-   **Settings → Code repos** lists every repo xkg matches captures to, with where its map came from and when. For a repo you haven't opened with the hook, type `owner/name` under *Add a repo from GitHub*: xkg reads its file names with your GitHub sign-in (file paths only, no exported names, never a file's contents) and reads them again when they are a week old. A map from your machine replaces it the next time the hook runs there. *Remove* deletes a repo's map; captures stop matching it until it is synced or added again.
-
-   Ask *apply stats* to see how many captures you applied each week.
-
-### Example capture
+For Claude, ChatGPT, or Grok, add a custom connector named `xkg` with this URL, then sign in with GitHub:
 
 ```text
-Note to self after the incident review: our alerts fired, but nobody owned them. Alerts without a named owner get ignored. Every alert needs one person on the hook, not a channel.
+https://xkg.xmu.sh/api/mcp
 ```
 
-```markdown
----
-date: 2026-10-28
-source: Alert ownership importance
-type: notes
-source_type: note
-tags: incident-management, alerting, responsibility
-status: inbox
-source_sha256: 21275782a8bf…
----
+Step-by-step for each app, manual setup for any agent, and how to remove xkg: [Connect your AI](https://github.com/xmu-labs/xkg/blob/main/docs/connect.md).
 
-# Alert ownership importance
+## What your agent can do
 
-## Core idea
-Alerts in incident reviews must have a designated owner to ensure
-they are acted upon, as unowned alerts tend to be ignored.
-
-## Key takeaways
-- Every alert needs one person responsible for it to prevent neglect.
-- Alerts without a named owner are typically ignored.
-
-## Evidence
-**Core idea** · `c-ac3270c3bbc8`
-> "Alerts without a named owner get ignored." (s1)
-
-**Takeaway 1** · `c-59d033daf0e2`
-> "Every alert needs one person on the hook, not a channel." (s1)
-
-<details>
-<summary>Source text (sha256: 21275782a8bf…)</summary>
-
-[s1] Note to self after the incident review: our alerts fired, …
-</details>
-```
-
-Shortened from a real capture. Every claim points to a quote that appears word for word in the source text below it, so you can check it.
-
-Plain Markdown in a repo you own. Readable, editable, versioned, portable.
-
-## What's inside
-
-You don't have to memorize these. Ask in plain language: "save this", "what do I have on payments?", "brief me for this repo".
+You don't need to learn these. Ask in plain words: "save this", "what do I have on payments?", "brief me for this repo".
 
 | Tool | What it does |
 | --- | --- |
-| `capture` | Save new knowledge from pasted text or a URL |
-| `briefing` | In a chat app (no arguments), how many captures are waiting in your inbox and the newest few, plus which repos have handoffs waiting for your coding agent. At session start in a repo, captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting for the repo (found from `repo`, or from the `Project:` line of `project_context`). Mid-task, with `task` (and optional `files`), the captures that fit what the agent is doing now |
-| `search` | Find captures by words, tag, status (`inbox`, `applied`, `archived`) or date, or list them all |
-| `read_capture` | Read a capture in full (or `RULES.md`) |
-| `apply_capture` | Mark a capture as applied, with the commit that applied it and why, or record your answer to a handoff (`declined` with a reason, `done`, `later`, `reverted`) |
+| `capture` | Saves knowledge from text or a URL |
+| `briefing` | Shows captures that may fit your repo or current task |
+| `search` | Finds captures by words, tag, status, or date |
+| `read_capture` | Reads one capture in full |
+| `apply_capture` | Records that a commit applied a capture, or your answer to an offer |
 
-Archiving, deleting, the source check, making rules and weekly applies are your own decisions and reports, not agent work, so they are in the app under **Your knowledge** and no longer listed. Their old tool names (`archive_capture`, `delete_capture`, `curate`, `synthesize`, `apply_stats`) still answer.
+All commands: [CLI and tools](https://github.com/xmu-labs/xkg/blob/main/docs/cli.md).
 
-Older names still answer, so published CLIs and hooks keep working, but they are no longer listed: `search_captures` and `list_inbox` are now `search`; `recall`, `vault_scan`, `apply_to_context` and `get_rules` are now `briefing` (`get_rules` is `read_capture` with `RULES.md`); `generate_plan` and `list_plans` gave way to handoffs. They will be removed two CLI releases after the CLI stopped calling them.
+## Your data stays yours
 
-## CLI
+- **Your captures live in your GitHub repo** as plain Markdown, private by default. Delete xkg and keep everything.
+- **xkg never sees your code.** For matching, it gets at most file names, function names, and signatures.
+- **Your AI key, your cost.** Captures go only to the AI provider you chose. If you sync code maps, a summary also goes to TypeSafe for matching. Nothing is used for training.
+- **Keys are encrypted or hashed.** xkg's database holds account plumbing only, with no captures.
+- **Cut access any time.** A new key in Settings revokes every connection.
 
-No global install required. The binary is **`xkg`** (also `xmu` and `mnemos-capture`). Via npx:
-
-```bash
-npx -y @xmu-labs/xkg@latest <command>
-```
-
-| Command | What it does |
-| --- | --- |
-| `npx -y @xmu-labs/xkg@latest` | Open the hosted app |
-| `init [--key YOUR_API_KEY] [--yes] [--agents NAMES]` | Sign in through the browser (or use `--key`), then set up xkg in every coding agent found (MCP server, session-start hook, rules block) and the git hooks in this repo. See [In the terminal](#in-the-terminal) |
-| `doctor [--json]` | Check the key, server, knowledge repo, each agent and this repo, with the fix for each problem. Changes nothing |
-| `serve-mcp [--key YOUR_API_KEY]` | Run the local MCP proxy. Without `--key` it uses the key in `~/.xkg/config.json` |
-| `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Install Claude Code hooks |
-| `setup-git-hook --key YOUR_API_KEY` | In a repo: record commits whose message has an `xkg-capture: <filename>` trailer, and keep the repo's code map up to date after commits, pulls and branch switches (works with any coding agent). The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once; the hooks run the CLI version that installed them (run setup again to update) |
-| `map [--key YOUR_API_KEY]` | In a repo: send its code map now (file paths, exported names and signatures, opening comment lines; never code) |
-| `session-start [--agent NAME]` | For an agent's session-start hook: ask whether to see and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot` or `cursor`; without it the output is plain text. See [Offer new captures when a session starts](#offer-new-captures-when-a-session-starts) |
-| `config set key YOUR_API_KEY` | Store the key that `serve-mcp`, `session-start`, the git hooks, `map` and `agent` use |
-| `config set agent "claude -p"` | Set which assistant `xkg agent` should drive |
-| `agent --key YOUR_API_KEY --plan FILE` | Implement a plan saved in `plans/` (by versions before handoffs) in an isolated worktree with your own coding agent |
-| `agent --spec PATH` | Apply a handoff spec your agent wrote (`.xkg/handoffs/<capture>.md`) in an isolated worktree. Reads it from disk; no key needed |
-| `inbox-check --key YOUR_API_KEY [--briefing]` | Debug the session hook |
-| `vault-check --key YOUR_API_KEY` | Debug the vault hook |
-| `help` | Show help |
-
-What changed in each version: [GitHub Releases](https://github.com/xmu-labs/xkg/releases).
-
-## Your context stays in GitHub
-
-Captures live as structured Markdown in **your** GitHub repository. Private by default.
-
-- **No lock-in** — clone it, move it, delete xkg, keep the files
-- **No proprietary format** — every capture is a readable `.md` file
-- **No training on your data** — captures are sent only to the LLM provider you chose, with the key you supplied, to extract the insight you asked for. If you sync code maps, the extracted title, core idea and takeaways also go to TypeSafe, which says where the capture applies and doesn't train on what it receives
-- **Any tool can read it** — anything that reads Git or speaks MCP
-- **BYOK** — your provider, your key, your cost
-- **Never commit your xkg API key** to source control
-
-### Find your repo
-
-Settings → Account shows the repo your captures are saved in, with a link to it on GitHub. Inside it:
-
-| Path | What it holds |
-| --- | --- |
-| `inbox/YYYY-MM-DD-<slug>.md` | one Markdown file per capture |
-| `applied/` | captures that have been applied in a commit |
-| `archived/` | captures you archived |
-| `plans/` | plans saved by versions before handoffs (`xkg agent --plan FILE` still runs them) |
-| `INDEX.md` | a table of every capture: date, title, keywords, tags |
-| `APPLIED.md` | which capture went into which commit |
-| `HANDOFFS.md` | captures waiting for your coding agent: one row per capture and repo, with the suggested files, the fit, a status (`pending`, `snoozed:<date>`, `applied`, `declined`, `done`, `expired`, `dead`), the date of its last change, and whether it was queued automatically or by you. Done rows leave after 90 days |
-
-**Renaming it.** Rename the repo on GitHub as usual, then open xkg once. xkg reads the new name from GitHub in the background and saves it; Settings shows it from the next time you open the app. Until then, GitHub's redirect from the old name keeps captures working. Don't create a new repo with the old name before you've opened xkg, because GitHub drops the redirect when you do. You don't need to onboard again, and doing so would replace your PIN and keys.
-
-### What xkg stores, and where
-
-The whole point of this repo being public is that you can check these claims rather than trust them.
-
-**Your captures are never stored by xkg.** They are written straight to your own GitHub repo as Markdown (`src/lib/github.ts`). There is no captures table. Delete the app and your knowledge is untouched.
-
-**The database holds only account plumbing** (`src/lib/db.ts`):
-
-| Stored | What it is |
-| --- | --- |
-| `github_id`, `github_username` | who you are |
-| `github_token` | encrypted (`src/lib/crypto.ts`) |
-| `github_repo` | the *name* of your hub, not its contents |
-| `pin_hash` | salted scrypt (`src/lib/pin.ts`) |
-| `api_key` | hashed — not recoverable |
-| computer keys (`cli_keys`) | one per computer you signed in from with `xkg init`: a hash of its key (not recoverable), the computer's name, and when it was made and last used. Generating a new MCP key in Settings deletes them all |
-| sign-ins in progress (`cli_logins`) | a browser sign-in, which expires after 10 minutes: a hash of the CLI's secret code, the code you check, the computer's name, and, once you approve, the new key encrypted until the CLI picks it up. The row is deleted when the CLI picks up the key or the sign-in is denied; an expired one is unusable and is deleted at the next sign-in (`src/lib/cli-login.ts`) |
-| `llm_provider`, `llm_model`, `llm_effort`, `llm_api_key` | the key is encrypted; the provider, model and effort are plain text |
-| `display_name`, `avatar_data` | optional in-app name and photo; never written back to GitHub |
-| `token_version` | bumped to revoke everything |
-| apply counts (`apply_events`) | one row per applied capture and commit: a keyed hash of the capture's file name, the first 7 characters of the commit, the AI client's name, whether a reason was given, and the time. Never the capture's name, content or the reason |
-| code maps (`code_maps`) | per repo you sync with the git hooks or add in Settings (at most 20): file paths, exported function and class names with their signatures, which mapped files import which, and each file's opening doc-comment line; for a repo added from GitHub, file paths only (`source = 'github'`). Never code, other comments or package names (`cli/code-map.ts` builds it, `src/lib/code-map.ts` checks it, `src/lib/code-repos.ts` reads GitHub's file list) |
-| surface counts (`surface_events`) | one row each time xkg shows you a capture (capture card, briefing, recall, vault scan, session-start handoff offer): a keyed hash of the capture's file name, which of these showed it, and the time. For the capture card's match, also the tokens it used, the model's own confidence (never shown), the scorer (`jev` or `evidence`), the fit, and whether it was shown to you. Never the capture's name or content |
-| handoff counts (`handoff_events`) | one row each time something happens to a handoff (queued, offered in a session at most once a day, expired, and your answer: applied, declined, done, later, reverted): a keyed hash of the capture's file name, the repo (`owner/name`), what happened, whether it was queued automatically or by you, the reason for a no, your agent's confidence, whether an apply came with a commit, and the time. Never the capture's name or content, and never the spec your agent writes; `HANDOFFS.md` and each capture's Handoff log in your repo are the record |
-| handoff learning (`handoff_scores`) | what xkg learned from your answers: per capture and file, and per capture and repo, a weight, the number of nos and the number of answers in the log it came from, with a keyed hash of the capture's file name, keyed hashes of its tags, the repo (`owner/name`), the file path and the date. Never the capture's name, content or tags in plain text. A cache of the Handoff logs in your repo: `POST /api/admin/rebuild-handoff-index?user=<id>` makes it again from git for every capture in `HANDOFFS.md`. Deleting a capture (in the app or with `delete_capture`) deletes its rows |
-| login attempts, OAuth clients/codes, refresh-token ids | auth plumbing |
-
-When you capture, the server talks to exactly four kinds of destination:
-
-1. **GitHub** — to write the capture into your repo, and to read the file list of a code repo you add in Settings, or refresh it when it is a week old
-2. **Your LLM provider**, with *your* key: the one you picked in Settings, to extract the capture
-3. **TypeSafe**, with xkg's key, only if you sync code maps: the extracted title, core idea and takeaways, and the map entries (paths, exported names and signatures, opening comment lines, imported paths) of up to 15 files per repo, plus any file proven for one of the capture's tags with a note naming that tag, so its model Jev can say where the capture applies. If TypeSafe can't answer, the maps of your 5 most recently synced repos (names only) go to your LLM provider instead
-4. **The page you captured** — if you paste a bare URL, so the model reads real content. Only http/https, never an internal address
-
-No third-party analytics, telemetry or tracking. The only usage xkg records is the apply counts above, so it can see whether captures get applied in code.
-
-Each capture, from the app or from the `capture` tool, also writes one line to the server log (`capture.timing`): which of the two it came from, the provider, model and effort, whether the page was fetched, the token counts and how long each step took. Never the capture's name, content or URL.
-
-### How your credentials are stored
-
-| Secret | How it's stored |
-| --- | --- |
-| GitHub token | Encrypted at rest (AES-256-GCM). Uses the `repo` scope, required to read and write a **private** knowledge hub |
-| Your LLM API key | Encrypted at rest (AES-256-GCM) |
-| Your MCP API key | Hashed — never recoverable, not even by xkg |
-| Each computer's key from browser sign-in | Hashed, like the MCP key |
-| Your PIN | Salted scrypt hash |
-
-Your MCP key is shown exactly once. If you lose it, generate a new one.
-
-**PIN unlock is device-bound.** It only works on a device that has already signed in with GitHub. A PIN on its own is not enough to reach your account.
-
-**Revoking access.** Generating a new MCP key invalidates the old key, every computer's key from browser sign-in, every other signed-in session, and every connected MCP client. Sessions also expire after 30 days.
-
-**Removing xkg from a computer.** Your account and captures are not touched:
-
-1. Remove the `xkg` MCP server from each agent: `claude mcp remove xkg` for Claude Code, and delete the `xkg` entry from the agent's MCP file in the [table above](#in-the-terminal) (or your editor's MCP config). Remove web connectors in each app's Connectors settings.
-2. Delete the xkg session-start hook from each agent's hook file in the same table, and any older xkg hooks (`inbox-check`, `vault-check`) under `hooks` in `~/.claude/settings.json`.
-3. Delete the lines from `<!-- xkg -->` to `<!-- /xkg -->` in each rules file (`~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.copilot/copilot-instructions.md`).
-4. In each repo with the git hook, delete the lines ending in `# xkg` from `.git/hooks/post-commit`, `post-merge` and `post-checkout`.
-5. `rm -rf ~/.xkg` (your key and the backups `init` made)
-
-Generate a new MCP key afterwards to cut off any connection you missed.
-
-**Deleting your account.** Settings → Delete account removes your account row and every record keyed to it, and asks GitHub to revoke xkg's access (`src/lib/account.ts`). Your captures stay in your repo.
-
-The hosted service's [Privacy Policy](https://xkg.xmu.sh/privacy) and [Terms of Service](https://xkg.xmu.sh/terms) say the same in legal form.
+Every claim, with the code that backs it: [Privacy and data](https://github.com/xmu-labs/xkg/blob/main/docs/privacy-and-data.md).
 
 ## Cost
 
-xkg is BYOK. You bring your own API key. xkg never charges you for inference.
-
-Each provider starts on a low-cost model, which you can change in Settings → AI model. For example, Anthropic starts on Claude Haiku 4.5, OpenAI on GPT-4o mini and Google on Gemini 2.0 Flash.
-
-A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on how long the source is (measured October 2026 with the current extraction prompt, on a reasoning model). Each claim cites one short quote, and the answer is capped at 2,000 tokens. Linking to related captures uses no model. The only other call a capture can make is for **Where it applies**, and only when you sync a code map: it goes to TypeSafe's Jev on xkg's key, or to your model when Jev can't answer. At list prices:
-
-| Usage | Claude Haiku 4.5 | GPT-4o mini |
-| --- | --- | --- |
-| 50 captures/month | ~$0.40 | ~$0.05 |
-| 100 captures/month | ~$0.80 | ~$0.10 |
-| 200 captures/month | ~$1.60 | ~$0.20 |
-
-Larger models cost more. Briefing, planning, and synthesis only run when you ask for them.
-
-### How the fast model is measured
-
-`scripts/measure-model-speed.ts` runs the same set of sources (public articles and short notes) through a few fast models and one reasoning model per provider. For each model it records the mean extraction time and the share of takeaways that keep a checked quote. The fastest model whose share stays within 10 points of the reasoning model's is saved to `src/lib/model-speed.json` with the date. The capture card and Settings → AI model quote that time. A row older than 90 days, or for a model the app no longer lists, is never quoted. Providers that haven't been measured get no offer. See CONTRIBUTING.md to run it.
+xkg doesn't charge for AI; you pay your provider directly. 100 captures a month cost about $0.80 on Claude Haiku 4.5, or about $0.10 on GPT-4o mini. Details: [Cost](https://github.com/xmu-labs/xkg/blob/main/docs/how-it-works.md#cost).
 
 ## Roadmap
 
-- **Learning Graph** — Applied work feeds the next brief. The graph compounds.
-- **Knowledge Graph for Teams** — One graph the team and their AI workers share and compound.
-- **Chrome extension** — Capture from the page you are on, without leaving the browser.
-- **Voice memo** — Speak it. xkg turns it into a capture.
+- **Learning graph:** what you applied feeds the next briefing.
+- **Team graph:** one knowledge graph for a team and its AI agents.
+- **Chrome extension:** capture from the page you're on.
+- **Voice memo:** speak it, and xkg turns it into a capture.
 
-Working on the code? See [CONTRIBUTING.md](CONTRIBUTING.md).
+## More
+
+- Docs: [How xkg works](https://github.com/xmu-labs/xkg/blob/main/docs/how-it-works.md) · [Connect your AI](https://github.com/xmu-labs/xkg/blob/main/docs/connect.md) · [CLI and tools](https://github.com/xmu-labs/xkg/blob/main/docs/cli.md) · [Privacy and data](https://github.com/xmu-labs/xkg/blob/main/docs/privacy-and-data.md)
+- What changed: [Releases](https://github.com/xmu-labs/xkg/releases)
+- Contributing: [CONTRIBUTING.md](https://github.com/xmu-labs/xkg/blob/main/CONTRIBUTING.md) · [Code of Conduct](https://github.com/xmu-labs/xkg/blob/main/CODE_OF_CONDUCT.md) · [Security](https://github.com/xmu-labs/xkg/blob/main/SECURITY.md)
 
 ## License
 
-[MIT License](./LICENSE). Contributions are welcome under the same licence; see
-[CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md).
-
-**Trademarks.** The MIT licence covers the code, not names or logos: the xkg name and logo are not
-licensed for use as your own brand. Claude, ChatGPT, Codex, Gemini, Grok, Cursor and VS Code are
-trademarks of their respective owners, named here only to say which tools xkg works with; no
-endorsement is implied.
-
-If you use xkg in published work:
-
-```bibtex
-@misc{2026xkg,
-  title        = {xkg: A Knowledge Graph for AI workers},
-  author       = {Sofia Padron Valdez},
-  year         = 2026,
-  journal      = {GitHub repository},
-  publisher    = {GitHub},
-  howpublished = {\url{https://github.com/xmu-labs/xkg}}
-}
-```
+[MIT](https://github.com/xmu-labs/xkg/blob/main/LICENSE). The license covers the code, not the xkg name or logo. Other product names are trademarks of their owners and only show which tools xkg works with.

@@ -65,7 +65,7 @@ const MCP_ARGS = ["-y", `${PACKAGE}@latest`, "serve-mcp"];
 const SERVER_NAMES = ["xkg", "xmu", "mnemos"];
 const INIT = `npx -y ${PACKAGE}@latest init`;
 
-/** The command each agent's session-start hook runs, exactly as the README documents it. */
+/** The command each agent's session-start hook runs, exactly as docs/connect.md documents it. */
 export function hookCommand(agent: AgentId): string {
   return `npx -y ${PACKAGE}@latest session-start --agent ${agent}`;
 }
