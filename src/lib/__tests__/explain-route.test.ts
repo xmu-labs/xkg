@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { NextRequest } from "next/server";
 
-/** POST /api/captures/explain: Why and After for a capture's files, written into its file once. */
+/** POST /api/captures/explain: Why and Impact for a capture's files, written into its file once. */
 
 const user = { id: 7, github_token: "gho_user", github_repo: "o/knowledge", llm_api_key: "sk", llm_provider: "openai", llm_model: "m", llm_effort: null };
 let session: Record<string, unknown> | null = user;
@@ -16,7 +16,7 @@ const explainCalls: string[] = [];
 vi.mock("@/lib/session", () => ({ getSession: async () => session }));
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: quotaAllowed, limit: 60, resetIn: 30, windowKey: "w" }) }));
 vi.mock("@/lib/explain", async () => ({
-  setWhyAfter: (await vi.importActual<typeof import("@/lib/explain")>("@/lib/explain")).setWhyAfter,
+  setWhyImpact: (await vi.importActual<typeof import("@/lib/explain")>("@/lib/explain")).setWhyImpact,
   explainCapture: async (_u: unknown, markdown: string) => {
     explainCalls.push(markdown);
     return explained;
@@ -60,22 +60,22 @@ beforeEach(() => {
 
 describe("POST /api/captures/explain", () => {
   it("returns the lines and writes the updated file with its sha", async () => {
-    explained = { files: [{ path: "src/a.ts", why: "w", after: "a" }], markdown: "NEW", tokens: { in: 400, out: 50 } };
+    explained = { files: [{ path: "src/a.ts", why: "w", impact: "a" }], markdown: "NEW", tokens: { in: 400, out: 50 } };
     const res = await post({ name: NAME });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ files: [{ path: "src/a.ts", why: "w", after: "a" }] });
+    expect(await res.json()).toEqual({ files: [{ path: "src/a.ts", why: "w", impact: "a" }] });
     expect(explainCalls).toEqual([OLD]);
     expect(puts).toEqual([{ path: `inbox/${NAME}`, content: "NEW", sha: "s1" }]);
   });
 
   it("doesn't write when nothing changed", async () => {
-    explained = { files: [{ path: "src/a.ts", why: "w", after: "a" }], markdown: OLD };
+    explained = { files: [{ path: "src/a.ts", why: "w", impact: "a" }], markdown: OLD };
     expect((await post({ name: NAME })).status).toBe(200);
     expect(puts).toEqual([]);
   });
 
   it("writes the lines into the newer file when the file changed meanwhile", async () => {
-    explained = { files: [{ path: "src/a.ts", why: "w", after: "a" }], markdown: "NEW" };
+    explained = { files: [{ path: "src/a.ts", why: "w", impact: "a" }], markdown: "NEW" };
     putFails = 1;
     const linked = OLD.replace("## Takeaways", "## Links to memory\n- [x](x.md)\n\n## Takeaways");
     files.set(`inbox/${NAME}`, { content: OLD, sha: "s1" });
@@ -84,7 +84,7 @@ describe("POST /api/captures/explain", () => {
     expect(res.status).toBe(200);
     expect(puts).toHaveLength(1);
     expect(puts[0]!.sha).toBe("s2");
-    expect(puts[0]!.content).toContain("- `src/a.ts`: w · After: a");
+    expect(puts[0]!.content).toContain("- `src/a.ts`: w · Impact: a");
     expect(puts[0]!.content).toContain("## Links to memory");
   });
 
