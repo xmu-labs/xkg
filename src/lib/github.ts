@@ -101,7 +101,10 @@ export async function githubPut(
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`GitHub PUT ${filePath}: HTTP ${res.status} — ${errText}`);
+    // A create (no sha) on a path that already exists comes back as 422
+    // "sha wasn't supplied". Flagged so a caller can pick another name.
+    const fileExists = res.status === 422 && !sha && /"?sha"? wasn't supplied/.test(errText.replace(/\\"/g, '"'));
+    throw Object.assign(new Error(`GitHub PUT ${filePath}: HTTP ${res.status} — ${errText}`), { status: res.status, fileExists });
   }
 }
 

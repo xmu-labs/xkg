@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
-import { githubPut, appendToIndex, readFile } from "@/lib/github";
+import { appendToIndex, readFile } from "@/lib/github";
+import { saveNewCapture } from "@/lib/capture-file";
+import { githubSaveMessage, llmErrorMessage } from "@/lib/friendly-error";
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, effortApplied, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
 import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage } from "@/lib/capture-stream";
@@ -190,7 +192,7 @@ async function capturePipeline(
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
     timer.mark("extract");
-    const message = err instanceof Error ? err.message : "Extraction failed";
+    const message = err instanceof Error ? llmErrorMessage(err, resolveLlm(llm).provider) : "Extraction failed";
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
       await refundQuota(`capture:user:${user.id}`, quotaWindow);
@@ -209,11 +211,18 @@ async function capturePipeline(
   // Build Markdown and commit to user's repo
   emit("saving");
   const date = formatDate();
-  const filename = `${date}-${capture.slug}.md`;
-  const path = `inbox/${filename}`;
   const markdown = buildMarkdown(date, capture, content, sourceType);
 
-  await githubPut(user.github_token, user.github_repo, path, markdown, `capture: add ${filename}`);
+  // A taken name (same source twice in a day, or a shared short name) gets -2, -3, ….
+  let filename: string;
+  try {
+    filename = await saveNewCapture(user.github_token, user.github_repo, `${date}-${capture.slug}`, markdown);
+  } catch (err) {
+    timer.mark("save");
+    console.error("[capture] save failed:", err);
+    return { status: 502, body: { error: githubSaveMessage(err, user.github_repo) } };
+  }
+  const path = `inbox/${filename}`;
   timer.mark("save");
 
   // Update INDEX.md
