@@ -298,6 +298,12 @@ describe("rules block", () => {
     expect(steps.find((s) => s.part === "rules")?.result).toBe("unchanged");
   });
 
+  // protects: XKG-137, agents that read only the rules file (Codex) get the repo's handoffs, also for a repo opened mid-session; fails_when: the block omits owner/name or the repo switch; no_claim: agents follow it
+  it("has every agent pass the repo and brief again in another repo", () => {
+    expect(RULES_BLOCK).toMatch(/`briefing`[^\n]*owner\/name/);
+    expect(RULES_BLOCK).toMatch(/moves to a different repo[^\n]*`briefing` again with that repo's owner\/name/);
+  });
+
   it("names the tools every agent should use", () => {
     expect(RULES_BLOCK).toMatch(/^<!-- xkg -->\n## xkg\n/);
     expect(RULES_BLOCK).toContain("`briefing`");

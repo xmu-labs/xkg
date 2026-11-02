@@ -78,6 +78,11 @@ describe("MCP server instructions", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/starts with captures waiting, ask the user the question it gives/i);
   });
 
+  // protects: XKG-137, a repo opened or added mid-session gets its own offer; fails_when: the instructions brief only at session start; no_claim: agents notice the switch
+  it("has the agent brief again with the new repo when the session moves to another repo", () => {
+    expect(SERVER_INSTRUCTIONS).toMatch(/moves to a different repo[^.]*call `briefing` again with that repo's owner\/name/i);
+  });
+
   // protects: answers reach xkg from agents that only read the instructions; fails_when: a refusal isn't recorded, or reads as an apply; no_claim: agents follow it
   it("has the agent record a turned-down capture as declined or later", () => {
     expect(SERVER_INSTRUCTIONS).toMatch(/call `apply_capture` with the filename, the commit sha, the repo, and one line on why/);
@@ -93,6 +98,12 @@ describe("briefing tool description", () => {
   it("says when to call it, for clients that ignore server instructions", () => {
     const briefing = TOOLS.find((t) => t.name === "briefing")!;
     expect(briefing.description).toMatch(/start of every conversation/i);
+  });
+
+  // protects: XKG-137, agents that ignore server instructions still brief a repo opened mid-session; fails_when: the description names only the session start; no_claim: agents follow it
+  it("says to call it again when the session moves to another repo", () => {
+    const briefing = TOOLS.find((t) => t.name === "briefing")!;
+    expect(briefing.description).toMatch(/again in a new repo/i);
   });
 
   it("says it returns candidates the agent must check against the code", () => {

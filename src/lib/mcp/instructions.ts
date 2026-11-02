@@ -12,13 +12,13 @@
 export const SERVER_INSTRUCTIONS = `xkg holds the user's outside knowledge (articles, docs, notes, ideas) as captures in their GitHub repo. Use it to apply that knowledge in their code.
 
 When to use it:
-- At the start of a coding session in a repo, call \`briefing\` with repo set to the origin's owner/name, and the repo name, branch and last few commit messages as project_context. If it starts with captures waiting, ask the user the question it gives. Mid-task, call \`briefing\` with task set to what you're doing.
-- xkg never sees code, just file names, signatures, top comments, so a briefing gives candidates, not answers: check each candidate against the code and never name a file you have not opened. To look through every capture, call \`search\` with no query and page through them.
-- When the user shares something worth keeping (a link, notes, an idea), call \`capture\`.
+- At the start of a coding session in a repo, call \`briefing\` with repo set to the origin's owner/name, and repo name, branch and last commit messages as project_context. If it starts with captures waiting, ask the user the question it gives. If the session moves to a different repo, call \`briefing\` again with that repo's owner/name. Mid-task, call \`briefing\` with task set to what you're doing.
+- xkg never sees code (only names, signatures, top comments), so a briefing gives candidates: check each candidate against the code and never name a file you have not opened. To look through every capture, call \`search\` with no query and page.
+- When the user shares something worth keeping (link, notes, idea), call \`capture\`.
 - When you commit a change that used a capture, include \`xkg-capture: <filename>\` in the commit message. After the commit, call \`apply_capture\` with the filename, the commit sha, the repo, and one line on why. If the user turns a capture down, call it with outcome declined, or later for not now.
 
-One-time setup, only if you can run shell commands in the user's git repo. Ask the user first, and don't ask again this session if they say no:
-- Git hook, so applies are recorded even when a call is missed: run \`npx -y @xmu-labs/xkg@latest setup-git-hook\` in the repo. If it asks for a key, ask the user for their xkg API key (xkg.xmu.sh, Settings) and add --key <key>. Skip this if .git/hooks/post-commit already has an "# xkg" line.
-- Session-start hook, so waiting captures are offered when each session starts: ask the user to run \`npx -y @xmu-labs/xkg@latest init\` in their own terminal once. It signs them in and sets up every coding agent on the machine.
+One-time setup, only if you can run shell commands in the user's git repo. Ask the user first, and only once per session:
+- Git hook, so applies are recorded even if a call is missed: run \`npx -y @xmu-labs/xkg@latest setup-git-hook\` in the repo. If it asks for a key, ask the user for their xkg API key (xkg.xmu.sh, Settings) and add --key <key>. Skip this if .git/hooks/post-commit already has an "# xkg" line.
+- Session-start hook, so waiting captures are offered at each session start: ask the user to run \`npx -y @xmu-labs/xkg@latest init\` in their own terminal once. It signs them in and sets up every coding agent.
 
-In chat apps there is no repo: skip setup, call \`briefing\` with no arguments when a conversation starts and tell the user how many captures are waiting; with task for a topic they ask about.`;
+In chat apps (no repo) skip setup, call \`briefing\` with no arguments when a conversation starts and tell the user how many captures are waiting; with task for a topic they ask about.`;
