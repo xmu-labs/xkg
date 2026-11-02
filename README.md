@@ -50,9 +50,6 @@ You find useful stuff, you capture through the web app, then xkg connects it int
 
 xkg will continuously compound that knowledge over time — keeping AI workers' context up to date as human knowledge evolves.
 
-> [!IMPORTANT]
-> We are migrating from **mnemos** / **Xmu** to **xkg**. The app now lives at [xkg.xmu.sh](https://xkg.xmu.sh) and the code at [xmu-labs/xkg](https://github.com/xmu-labs/xkg). The npm package is now `@xmu-labs/xkg`. Connectors set up with `mnemos-capture.vercel.app` keep working. The `mnemos-capture` npm package stopped at 1.8.0 and is deprecated: change commands that run `npx mnemos-capture@latest` to `npx -y @xmu-labs/xkg@latest` to get `init`, `doctor` and later fixes. Sorry for the inconvenience.
-
 ## Start here
 
 You do not need a terminal to start.
