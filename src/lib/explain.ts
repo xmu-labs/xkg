@@ -14,10 +14,10 @@ import type { MapFile, StoredCodeMap } from "@/lib/code-map";
 import { parseCaptureFile } from "@/lib/capture-detail";
 import { MATCH_REPOS, codeSpan, nameCheck, readCodeSpan } from "@/lib/where";
 
-/** Output cap for the call: three files × (path + a 12-word why + a 20-word impact) fits. */
-export const EXPLAIN_MAX_TOKENS = 260;
+/** Output cap for the call: three files × (path + a 12-word why + a 32-word impact) fits. */
+export const EXPLAIN_MAX_TOKENS = 400;
 export const MAX_LINE_WORDS = 12;
-export const MAX_IMPACT_WORDS = 20;
+export const MAX_IMPACT_WORDS = 32;
 
 export type ExplainedFile = { path: string; why: string; impact: string };
 
@@ -25,8 +25,9 @@ export const EXPLAIN_SYSTEM = `You explain where a saved piece of outside knowle
 
 For each file, write:
 - why: what in the capture touches this file, in ${MAX_LINE_WORDS} words or fewer.
-- impact: the result once the capture is applied: what works differently for the user or the codebase, and the outcome to expect. ${MAX_IMPACT_WORDS} words or fewer, one sentence.
-Write impact for a busy reader: the outcome first, plain words, one idea. Name a behavior or a result, not only a renamed function. Present tense: no "can", "could", "may" or "would". If the capture doesn't touch a file, say so in why and write "No change" as impact. No filler. Put in backticks only names that file exports. Use only the paths given.
+- impact: what likely changes in the codebase once the capture is applied, then the result it brings. ${MAX_IMPACT_WORDS} words or fewer, one sentence shaped "<what changes in the code>, so <result>".
+Example: "The rules block shrinks to pointers to your canonical components and a local check fails off-system code, so agents reuse those components first."
+Write impact for a busy reader: plain words, concrete. The change names what is added, removed or reshaped in this file; the result names what works differently for the user or the codebase. Present tense: no "can", "could", "may" or "would". If the capture doesn't touch a file, say so in why and write "No change" as impact. No filler. Put in backticks only names that file exports. Use only the paths given.
 
 Reply with JSON only: {"files":[{"path":"...","why":"...","impact":"..."}]}`;
 
