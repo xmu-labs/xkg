@@ -39,10 +39,10 @@ More detail: [How xkg works](https://github.com/xmu-labs/xkg/blob/main/docs/how-
 ### 1. Web app (no terminal)
 
 1. Open **[xkg.xmu.sh](https://xkg.xmu.sh)** and sign in with GitHub. xkg creates a private repo for your knowledge, named `xkg-knowledge` unless you pick another name.
-2. Pick your AI provider and paste your API key: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral, or Groq.
+2. Pick your AI provider, paste your API key, and set a PIN (6+ characters) for quick unlock. Providers: Anthropic, OpenAI, Google Gemini, OpenRouter, xAI Grok, DeepSeek, Mistral, or Groq.
 3. Paste something and hit **Capture**.
 
-Optional: set a PIN for quick unlock on this device. On a phone, use **Share → Add to Home Screen**.
+On a phone, use **Share → Add to Home Screen**.
 
 ### 2. Coding agents (one command)
 
