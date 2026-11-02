@@ -100,16 +100,25 @@ describe("parseCaptureFile", () => {
     expect(d.advice).toBe("Add an expected customer behavior to each eval.");
   });
 
-  it("reads where it applies, with an optional After per file", () => {
+  it("reads where it applies, with an optional Impact per file; an old After line is read as a legacy Impact", () => {
     expect(d.where).toEqual({
       fit: "Possible fit",
       repo: "xmu-labs/xmu-monorepo",
       files: [
         { path: "packages/eval/scenarios/core.json" },
-        { path: "packages/eval/src/config.ts", why: "shares names with the capture: `EvalPlanEntry`", after: "evals name the outcome they move" },
+        { path: "packages/eval/src/config.ts", why: "shares names with the capture: `EvalPlanEntry`", impact: "evals name the outcome they move", legacy: true },
       ],
       also: [{ repo: "xmu-labs/xkg", fit: "Possible fit" }],
       note: "From file names, not yet checked in your code · map from 2026-10-30 (7ca84b0)",
+    });
+  });
+
+  it("reads an Impact line as current, not legacy", () => {
+    const file = FULL.replace("· After: evals name the outcome they move", "· Impact: each eval names the customer outcome it moves");
+    expect(parseCaptureFile(file).where!.files[1]).toEqual({
+      path: "packages/eval/src/config.ts",
+      why: "shares names with the capture: `EvalPlanEntry`",
+      impact: "each eval names the customer outcome it moves",
     });
   });
 

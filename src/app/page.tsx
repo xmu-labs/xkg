@@ -333,19 +333,6 @@ export default function CapturePage() {
             </ul>
           </div>
 
-          {/* Quotes */}
-          {result.capture.quotes.length > 0 && (
-            <div data-reveal className="rounded-2xl p-4 stack-3" style={{ ...CARD_STYLE, ...reveal(6) }}>
-              <p className="eyebrow" style={{ color: "var(--gold)" }}>Quote</p>
-              {result.capture.quotes.map((q, i) => (
-                <blockquote key={i} className="text-sm italic pl-3 leading-relaxed"
-                  style={{ color: "var(--fg-muted)", borderLeft: "2px solid var(--gold-quote)" }}>
-                  &ldquo;{q}&rdquo;
-                </blockquote>
-              ))}
-            </div>
-          )}
-
           {/* A faster model, only after a slow capture */}
           {result.usage && me && <ModelHint key={result.filename} usage={result.usage} me={me} onMe={setMe} />}
 

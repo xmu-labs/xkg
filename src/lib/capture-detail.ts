@@ -11,7 +11,8 @@ import { readCodeSpan } from "@/lib/where";
 export type CaptureWhere = {
   fit: string;
   repo: string | null;
-  files: Array<{ path: string; why?: string; after?: string }>;
+  /** `legacy`: the line is an old "· After:" edit description, shown as Impact until it is rewritten. */
+  files: Array<{ path: string; why?: string; impact?: string; legacy?: boolean }>;
   also: Array<{ repo: string; fit: string }>;
   note: string;
 };
@@ -140,8 +141,15 @@ function whereOf(text: string | undefined): CaptureWhere | null {
     if (!path) continue;
     const span = /^(`+)(?!`).*?[^`]\1(?!`)/.exec(line.slice(2))![0];
     const rest = line.slice(2 + span.length).replace(/^:\s*/, "");
-    const [why, after] = rest.split(/\s·\sAfter:\s*/);
-    files.push({ path, ...(why?.trim() ? { why: why.trim() } : {}), ...(after?.trim() ? { after: after.trim() } : {}) });
+    const [why, impact, marker] = (() => {
+      const m = /\s·\s(Impact|After):\s*/.exec(rest);
+      return m ? [rest.slice(0, m.index), rest.slice(m.index + m[0].length), m[1]] : [rest, undefined, undefined];
+    })();
+    files.push({
+      path,
+      ...(why?.trim() ? { why: why.trim() } : {}),
+      ...(impact?.trim() ? { impact: impact.trim(), ...(marker === "After" ? { legacy: true as const } : {}) } : {}),
+    });
   }
   const alsoLine = lines.find((l) => l.startsWith("Also fits: "))?.slice("Also fits: ".length) ?? "";
   const also = alsoLine.split(", ").flatMap((part) => {
