@@ -20,8 +20,18 @@ const files = new Map<string, { content: string; sha: string }>();
 const order: string[] = [];
 let shaN = 0;
 let failWhereWrite = false;
-const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string) => {
+/** When true, a write without a sha to a path that exists is refused, as GitHub does. */
+let realCreate = false;
+/** When set, the capture file write fails with this HTTP status. */
+let saveFailStatus: number | null = null;
+const githubPut = vi.fn(async (_t: string, _r: string, path: string, content: string, _m?: string, sha?: string) => {
   if (failWhereWrite && content.includes("## Where it applies")) throw new Error("GitHub 409");
+  if (saveFailStatus && path.startsWith("inbox/") && !sha) {
+    throw Object.assign(new Error(`GitHub PUT ${path}: HTTP ${saveFailStatus} — {"message":"Server Error"}`), { status: saveFailStatus, fileExists: false });
+  }
+  if (realCreate && !sha && files.has(path)) {
+    throw Object.assign(new Error(`GitHub PUT ${path}: HTTP 422 — {"message":"Invalid request.\\n\\n\\"sha\\" wasn't supplied."}`), { status: 422, fileExists: true });
+  }
   order.push(`put:${path}`);
   files.set(path, { content, sha: `sha${++shaN}` });
   return { ok: true };
@@ -64,7 +74,7 @@ vi.mock("@/lib/llm", async (orig) => ({
   },
 }));
 vi.mock("@/lib/github", () => ({
-  githubPut: (...a: [string, string, string, string]) => githubPut(...a),
+  githubPut: (...a: [string, string, string, string, string?, string?]) => githubPut(...a),
   githubGet: async () => ({ ok: false }),
   githubDelete: vi.fn(),
   updateIndexEntry: vi.fn(),
@@ -141,6 +151,89 @@ beforeEach(() => {
   linked = [];
   fetchedPage = null;
   indexFails = false;
+  realCreate = false;
+  saveFailStatus = null;
+});
+
+describe("capture file name already taken (XKG-139)", () => {
+  const taken = (n: number) => `inbox/${formatDate()}-llm-memory-${n}.md`;
+
+  // protects: a same-day re-capture is saved, never refused or overwritten; fails_when: the 422 reaches the user or the first file changes; no_claim: none
+  it("web: saves as -2 when the name is taken and returns that name", async () => {
+    realCreate = true;
+    files.set(capturePath(), { content: "earlier capture", sha: "old" });
+    const res = await post();
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(files.get(capturePath())!.content).toBe("earlier capture");
+    expect(files.get(taken(2))!.content).toContain("# LLM Memory");
+    expect(body.filename).toBe(`${formatDate()}-llm-memory-2.md`);
+    expect(body.fileUrl).toContain("llm-memory-2.md");
+  });
+
+  // protects: everything after the save points at the new file; fails_when: the match or index uses the taken name; no_claim: none
+  it("web: logs the match against the -2 file", async () => {
+    realCreate = true;
+    matchResult = strong;
+    files.set(capturePath(), { content: "earlier capture", sha: "old" });
+    await post();
+    expect(recordWhereEvent).toHaveBeenCalledWith(7, taken(2), strong, true);
+    expect(files.get(taken(2))!.content).toContain("## Where it applies");
+  });
+
+  // protects: the suffix keeps counting; fails_when: a second clash fails or overwrites -2; no_claim: none
+  it("web: uses -3 when -2 is taken too", async () => {
+    realCreate = true;
+    files.set(capturePath(), { content: "first", sha: "a" });
+    files.set(taken(2), { content: "second", sha: "b" });
+    const body = await (await post()).json();
+    expect(body.filename).toBe(`${formatDate()}-llm-memory-3.md`);
+    expect(files.get(taken(2))!.content).toBe("second");
+  });
+
+  // protects: a GitHub failure reads as a sentence; fails_when: raw JSON or the API path reaches the page; no_claim: none
+  it("web: a failed save shows a plain sentence, not GitHub's JSON", async () => {
+    saveFailStatus = 503;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post();
+    const body = await res.json();
+    error.mockRestore();
+    expect(res.status).toBe(502);
+    expect(body.error).not.toMatch(/[{}]|PUT|inbox\//);
+    expect(body.error).toMatch(/GitHub/);
+    expect(body.error).toMatch(/try again/i);
+  });
+
+  // protects: the repo access case tells the user what to do; fails_when: a 403 reads like a retryable outage; no_claim: none
+  it("web: a refused write names the repo and says to sign in again", async () => {
+    saveFailStatus = 403;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = await (await post()).json();
+    error.mockRestore();
+    expect(body.error).toContain("o/r");
+    expect(body.error).toMatch(/sign in again/i);
+  });
+
+  // protects: the stream path gets the same sentence; fails_when: the stream ends with raw JSON; no_claim: none
+  it("web stream: a failed save ends with the plain sentence", async () => {
+    saveFailStatus = 500;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { lines } = await postStream();
+    error.mockRestore();
+    const last = lines.at(-1) as { error: string; status: number };
+    expect(last.status).toBe(502);
+    expect(last.error).not.toMatch(/[{}]/);
+  });
+
+  // protects: agents hit the same clash; fails_when: the MCP tool throws on a taken name; no_claim: none
+  it("MCP: saves as -2 when the name is taken and names that file", async () => {
+    realCreate = true;
+    files.set(capturePath(), { content: "earlier capture", sha: "old" });
+    const result = await mcp();
+    expect(files.get(capturePath())!.content).toBe("earlier capture");
+    expect(files.get(taken(2))).toBeDefined();
+    expect(result).toContain("llm-memory-2.md");
+  });
 });
 
 describe("web capture", () => {
@@ -313,7 +406,7 @@ describe("web capture progress stream", () => {
     extractFails = true;
     const { lines } = await postStream();
     expect(lines.map((l) => l.stage ?? "end")).toEqual(["extracting", "end"]);
-    expect(lines.at(-1)).toEqual({ error: "[llm:openai] HTTP 503", status: 502 });
+    expect(lines.at(-1)).toEqual({ error: "OpenAI is having trouble right now. Try again in a minute, or pick another model in Settings → AI model.", status: 502 });
     expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
   });
 

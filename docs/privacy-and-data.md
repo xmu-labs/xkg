@@ -22,7 +22,7 @@ Settings → Account shows your captures' repo, with a link to it on GitHub. Ins
 
 | Path | What it holds |
 | --- | --- |
-| `inbox/YYYY-MM-DD-<slug>.md` | One Markdown file per capture |
+| `inbox/YYYY-MM-DD-<slug>.md` | One Markdown file per capture. A second capture with the same name that day gets `-2`, `-3`, … |
 | `applied/` | Captures applied in a commit |
 | `archived/` | Captures you archived |
 | `plans/` | Plans saved by older versions (`xkg agent --plan FILE` still runs them) |

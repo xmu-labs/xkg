@@ -50,3 +50,25 @@ describe("appendToIndex", () => {
     expect(fetchSpy.mock.calls.filter((c: unknown[]) => (c[1] as RequestInit)?.method === "PUT")).toHaveLength(2);
   });
 });
+
+describe("githubPut tells a taken name apart (XKG-139)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  // protects: a create on a taken path is recognisable; fails_when: the 422 has no fileExists flag; no_claim: none
+  it("marks a 422 'sha wasn't supplied' as fileExists", async () => {
+    const { githubPut } = await import("../github");
+    fetchSpy.mockResolvedValueOnce(new Response(`{"message":"Invalid request.\\n\\n\\"sha\\" wasn't supplied.","status":"422"}`, { status: 422 }));
+    const err = await githubPut("t", "o/r", "inbox/a.md", "x", "m").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 422, fileExists: true });
+  });
+
+  // protects: other errors are not mistaken for a taken name; fails_when: any 422 sets fileExists; no_claim: none
+  it("does not mark other errors as fileExists", async () => {
+    const { githubPut } = await import("../github");
+    fetchSpy.mockResolvedValueOnce(new Response(`{"message":"Invalid request.\\n\\nFor 'properties/content', nil is not a string."}`, { status: 422 }));
+    const err = await githubPut("t", "o/r", "inbox/a.md", "x", "m").catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 422, fileExists: false });
+  });
+});

@@ -163,6 +163,8 @@ In the app, paste a URL, a note, a doc excerpt, a transcript, or an idea, then h
 - The result shows as soon as the file is saved, in the app and in the `capture` tool.
 - Links to related captures and the **Where it applies** section are added a few seconds later. Links come from shared tags and words, with no extra AI call, and each says what the two captures share (for example `shared: reliability, retries`).
 - **Slow capture?** When the model took 20 seconds or more, the result offers a faster model your provider serves, with its measured time: "This took 25 s. gpt-4.1 usually takes about 4 s." **Use** switches to it (with **Undo**). **Keep mine** stops the offer for that model and effort. It only suggests a model that keeps the checked quotes about as well. See [how the fast model is measured](#how-the-fast-model-is-measured).
+- **Captured the same thing twice?** Each capture is saved as `inbox/<date>-<short-name>.md`. If that name is already taken that day, the new capture is saved as `…-2.md` (then `-3`, and so on). Nothing is overwritten.
+- **When a capture fails**, the app says why in one sentence and what to do next. For example: "Your OpenAI key has no credits left. Add credits with OpenAI, or pick another model in Settings → AI model." This covers a key with no credits, a key the provider refused, a rate limit, a model the provider doesn't offer, a provider outage, and GitHub refusing the save. It works the same for every provider.
 
 On a phone, open the app → **Share → Add to Home Screen**. It runs like a native app.
 

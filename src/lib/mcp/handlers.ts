@@ -34,6 +34,7 @@ import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, in
 import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
+import { saveNewCapture } from "@/lib/capture-file";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
 
@@ -74,7 +75,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
   const matching = matchCapture(user, capture);
 
   const date = formatDate();
-  const filename = `${date}-${capture.slug}.md`;
+  const stem = `${date}-${capture.slug}`;
 
   // Compact Markdown for MCP: no raw capture section, but the checked source
   // text is kept so the evidence quotes can be re-checked later.
@@ -116,8 +117,9 @@ export async function handleCapture(user: User, args: { content: string; title?:
     renderSourceSection(capture),
   ].join("\n");
 
+  // A taken name (same source twice in a day, or a shared short name) gets -2, -3, ….
+  const filename = await saveNewCapture(user.github_token, user.github_repo, stem, markdown);
   const path = `inbox/${filename}`;
-  await githubPut(user.github_token, user.github_repo, path, markdown, `capture: add ${filename}`);
   timer.mark("save");
 
   // Same as the web route: one retry from a fresh read, and never a second row.
