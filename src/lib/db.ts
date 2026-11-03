@@ -603,8 +603,6 @@ async function createCliKeyTables(): Promise<void> {
 
 /** Remove every machine key of a user: part of rotating the key, which is the revoke lever. */
 export async function deleteCliKeys(userId: number): Promise<void> {
-  await ensureSpendTable();
-  await sql`DELETE FROM llm_spend WHERE user_id = ${userId}`;
   await ensureCliKeyTable();
   await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
 }
