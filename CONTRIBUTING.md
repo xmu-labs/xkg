@@ -36,7 +36,8 @@ cp .env.example .env.local
 | `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | your GitHub OAuth app |
 | `POSTGRES_URL` | your Postgres connection string |
 | `SESSION_SECRET` | `openssl rand -hex 32` — also derives the credential-encryption key |
-| `ADMIN_SECRET` | any random string; guards `/api/init-db` |
+| `ADMIN_SECRET` | any random string; guards `/api/init-db` and `/api/admin/*` |
+| `ADMIN_GITHUB_LOGIN` | optional: your GitHub login, to open the `/admin` stats page; unset, `/admin` is a 404 for everyone |
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` |
 
 ```bash
@@ -53,7 +54,7 @@ XKG_API_URL=http://localhost:3000/api/mcp node dist/cli/index.js serve-mcp --key
 
 **After any schema change**, `init-db` must run again. From GitHub: **Actions → Initialize database → Run workflow**.
 
-**Operator read of the numbers** (counts and dates only, no content):
+**Operator read of the numbers** (counts and dates only, no content). On a phone: sign in as `ADMIN_GITHUB_LOGIN` and open `/admin` (`?weeks=1`, `4` or `12`; any other account gets a 404). It adds up the same numbers as:
 
 ```bash
 curl "https://xkg.xmu.sh/api/admin/apply-stats?weeks=4" -H "x-admin-secret: $ADMIN_SECRET"
