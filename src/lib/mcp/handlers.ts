@@ -24,6 +24,7 @@ import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
 import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
+import { llmErrorLink, llmErrorMessage } from "@/lib/friendly-error";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
@@ -68,6 +69,9 @@ export async function handleCapture(user: User, args: { content: string; title?:
       // The refund is a courtesy; the error is what the agent needs.
     }
     console.info(JSON.stringify(failureLine("mcp", timer, llm, usage, false, err)));
+    // An agent can't show a link, so a key with no credits gets the billing URL in the sentence.
+    const link = llmErrorLink(err, llm.provider);
+    if (link) throw new Error(`${llmErrorMessage(err, llm.provider)} Billing page: ${link.url}`);
     throw err;
   }
   timer.mark("extract");

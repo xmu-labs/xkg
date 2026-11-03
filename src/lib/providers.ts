@@ -22,6 +22,8 @@ export interface ProviderInfo {
   /** What a key looks like, for the input placeholder. */
   placeholder: string;
   keysUrl: string;
+  /** Where the user adds credits; linked from the "no credits left" message. */
+  billingUrl: string;
   /** The picker's list; the first is xkg's default (fast and cheap). */
   models: readonly [string, ...string[]];
   /** OpenAI-compatible chat-completions base URL; absent for native adapters. */
@@ -35,24 +37,28 @@ export const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
     label: "Anthropic",
     placeholder: "sk-ant-...",
     keysUrl: "https://console.anthropic.com/settings/keys",
+    billingUrl: "https://console.anthropic.com/settings/billing",
     models: ["claude-haiku-4-5", "claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"],
   },
   openai: {
     label: "OpenAI",
     placeholder: "sk-...",
     keysUrl: "https://platform.openai.com/api-keys",
+    billingUrl: "https://platform.openai.com/settings/organization/billing/overview",
     models: ["gpt-4o-mini", "gpt-4.1", "gpt-5-mini", "gpt-5", "o4-mini"],
   },
   google: {
     label: "Google Gemini",
     placeholder: "AIza...",
     keysUrl: "https://aistudio.google.com/app/apikey",
+    billingUrl: "https://console.cloud.google.com/billing",
     models: ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"],
   },
   openrouter: {
     label: "OpenRouter",
     placeholder: "sk-or-...",
     keysUrl: "https://openrouter.ai/settings/keys",
+    billingUrl: "https://openrouter.ai/settings/credits",
     models: [
       "openai/gpt-4o-mini",
       "anthropic/claude-sonnet-4.5",
@@ -69,6 +75,7 @@ export const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
     label: "xAI Grok",
     placeholder: "xai-...",
     keysUrl: "https://console.x.ai",
+    billingUrl: "https://console.x.ai",
     models: ["grok-3-mini", "grok-4"],
     baseUrl: "https://api.x.ai/v1",
   },
@@ -76,6 +83,7 @@ export const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
     label: "DeepSeek",
     placeholder: "sk-...",
     keysUrl: "https://platform.deepseek.com/api_keys",
+    billingUrl: "https://platform.deepseek.com/top_up",
     models: ["deepseek-chat", "deepseek-reasoner"],
     baseUrl: "https://api.deepseek.com",
   },
@@ -83,6 +91,7 @@ export const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
     label: "Mistral",
     placeholder: "Your Mistral key",
     keysUrl: "https://console.mistral.ai/api-keys",
+    billingUrl: "https://console.mistral.ai/billing",
     models: ["mistral-small-latest", "mistral-medium-latest", "mistral-large-latest"],
     baseUrl: "https://api.mistral.ai/v1",
   },
@@ -90,6 +99,7 @@ export const PROVIDERS: Record<LlmProvider, ProviderInfo> = {
     label: "Groq",
     placeholder: "gsk_...",
     keysUrl: "https://console.groq.com/keys",
+    billingUrl: "https://console.groq.com/settings/billing",
     models: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "qwen/qwen3-32b"],
     baseUrl: "https://api.groq.com/openai/v1",
   },
