@@ -30,7 +30,7 @@ If you sync a [code map](#code-map), each capture also gets a **Where it applies
 How xkg picks the files:
 
 1. It ranks your mapped files by the names they share with the capture.
-2. [TypeSafe](https://typesafe.ai)'s decision model, Jev, rates the top 15 files of each repo. It asks two questions: would applying the capture change this file, and does anything in the repo fit at all?
+2. [TypeSafe](https://typesafe.ai)'s decision model, Jev, rates the top 15 files of each repo. It asks two questions: would applying the capture change this file, and does anything in the repo fit at all? A word the capture shares with the repo doesn't count when it means something else there (a capture about agents handing off context between sessions isn't about a repo feature that is also called handoff).
 3. A file rated 0.50 or more is a **Strong fit**. A file rated 0.40 or more is a **Possible fit** (0.30 or more when the map has signatures and comment lines, because Jev answers more cautiously then).
 4. Each file shown lists the exported names it shares with the capture.
 

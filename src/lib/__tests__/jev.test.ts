@@ -53,6 +53,16 @@ describe("jevPayload", () => {
     expect(p.questions.anything_fits.type).toBe("noul");
   });
 
+  // protects: XKG-183, a capture's "handoff" (agent sessions) matched the repo's own handoff feature;
+  // fails_when: the criteria stop telling Jev that a word naming something else in the repo isn't a fit;
+  // no_claim: how much Jev's scores move (measured on the pinned set, see the PR)
+  it("tells Jev that a shared word meaning something else in the repo is not a fit", () => {
+    const p = jevPayload("acme/app", capture, files);
+    expect(p.questions.fit_0!.criteria.true).toContain("in the sense the capture means it");
+    expect(p.questions.fit_0!.criteria.false).toContain("a word that names something else in this repo than in the capture");
+    expect(p.questions.anything_fits!.criteria.false).toContain("even where a word in it also names a feature of acme/app");
+  });
+
   // protects: spec M2d, Jev is told a file was applied before for the capture's tag; fails_when: the note is lost, or a file without one gets a history field; no_claim: how Jev weighs it
   it("sends a file's history note when it has one", () => {
     const p = jevPayload("acme/app", capture, [{ ...files[0]!, note: "applied twice before for llm" }, files[1]!]);
