@@ -6,11 +6,13 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
+import BudgetBanner from "@/components/BudgetBanner";
 import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, errorLink, readCaptureResponse, type CaptureStage, type ErrorLink } from "@/lib/capture-stream";
 import type { CaptureUsage } from "@/lib/capture-stats";
 import ModelHint from "@/components/ModelHint";
+import { SPEND_CHANGED_EVENT } from "@/lib/spend-format";
 
 interface CaptureResult {
   capture: {
@@ -145,6 +147,8 @@ export default function CapturePage() {
       setErrorAction(errorLink(err));
       setStatus("error");
     }
+    // A capture spends with the user's key whether or not it succeeds.
+    window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -193,6 +197,7 @@ export default function CapturePage() {
       </div>
 
       <PolicyNotice />
+      <BudgetBanner user={me?.githubUsername} provider={me?.llmProvider} />
 
       {/* Capture form */}
       {status !== "done" && (

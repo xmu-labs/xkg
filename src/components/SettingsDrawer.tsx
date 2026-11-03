@@ -8,6 +8,9 @@ import { speedRow } from "@/lib/model-speed";
 import CodeRepos from "./CodeRepos";
 import AiSpend from "./AiSpend";
 
+/** Dispatch on window to open the drawer on Settings. */
+export const OPEN_SETTINGS_EVENT = "xkg:open-settings";
+
 export interface Me {
   githubUsername: string;
   displayName: string;
@@ -289,6 +292,16 @@ export default function SettingsDrawer({
     openedFromPop.current = true;
     window.history.pushState({ xkgDrawer: true }, "");
   }, [me, fillForm]);
+
+  // Other parts of the page (the budget banner) can open Settings directly.
+  useEffect(() => {
+    function onOpenSettings() {
+      if (!open) openDrawer();
+      setView("settings");
+    }
+    window.addEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, onOpenSettings);
+  }, [open, openDrawer]);
 
   useEffect(() => {
     if (!open) return;
@@ -1097,7 +1110,7 @@ export default function SettingsDrawer({
                     </p>
                   </div>
 
-                  <AiSpend />
+                  <AiSpend inputClass={INPUT_CLASS} />
 
                   {(llmStatus !== "idle" || llmDirty) && (
                   <div>

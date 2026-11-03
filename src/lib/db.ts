@@ -331,6 +331,14 @@ async function createSpendTable(): Promise<void> {
     )
   `;
   await sql`CREATE INDEX IF NOT EXISTS llm_spend_user_created ON llm_spend (user_id, created_at)`;
+  // An optional monthly budget per user (a warning only; see llm-spend.ts).
+  await sql`
+    CREATE TABLE IF NOT EXISTS llm_budgets (
+      user_id INTEGER PRIMARY KEY,
+      monthly_usd DOUBLE PRECISION NOT NULL,
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
 }
 
 // ── Surface events (counts only; see lib/surface-events.ts) ──
@@ -781,6 +789,7 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM handoff_scores WHERE user_id = ${userId}`;
   await ensureSpendTable();
   await sql`DELETE FROM llm_spend WHERE user_id = ${userId}`;
+  await sql`DELETE FROM llm_budgets WHERE user_id = ${userId}`;
   await ensureCliKeyTable();
   await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
   await sql`DELETE FROM cli_logins WHERE user_id = ${userId}`;
