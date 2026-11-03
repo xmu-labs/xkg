@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { fetchSourceContent } from "../../src/lib/fetch-source";
+import { MAX_INPUT_CHARS } from "../../src/lib/llm";
 
 /**
  * Live-network integration tests for the capture URL-fetch feature.
@@ -28,8 +29,9 @@ test.describe("fetchSourceContent — live network", () => {
     expect(content).not.toMatch(/<\s*script/i);
     expect(content).not.toMatch(/function\s*\(/);
 
-    // Capped to the LLM input budget.
-    expect(content.length).toBeLessThanOrEqual(6000);
+    // Capped to the LLM input budget, plus one char so extraction can tell
+    // the page was cut (see fetch-source-truncation.test.ts).
+    expect(content.length).toBeLessThanOrEqual(MAX_INPUT_CHARS + 1);
   });
 
   test("returns null when the host cannot be resolved (DNS failure)", async () => {
