@@ -193,7 +193,7 @@ export async function handleListInbox(
 
   // Page through filtered results; only the current page is read for summaries.
   const page = paginate(filtered, args.offset ?? 0, args.limit ?? 10);
-  await recordSetupStep(user.id, "shown");
+  if (page.items.length) await recordSetupStep(user.id, "shown");
   const summaries = await Promise.all(
     page.items.map(async (f, i) => {
       const n = page.offset + i + 1;
@@ -255,8 +255,8 @@ async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<
     return `No ${what}${scope}.`;
   }
 
-  await recordSetupStep(user.id, "shown");
   const page = paginate(matches, args.offset ?? 0, args.limit ?? 20);
+  if (page.items.length) await recordSetupStep(user.id, "shown");
   const header = query.trim() ? `${page.total} match(es):` : `${page.total} capture(s):`;
   return `${header}\n${page.items.join("\n")}${pageFooter(page, tool)}`;
 }
@@ -659,7 +659,6 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
   const validContents = contents.filter((c): c is { filename: string; content: string } => c !== null);
 
   if (validContents.length === 0) return "Could not read relevant captures.";
-  await recordSetupStep(user.id, "shown");
 
   // Generate application suggestions; the filename lets the agent apply_capture the one it used
   const suggestions = await generateApplicationSuggestions(
@@ -668,6 +667,8 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
     validContents.map((c) => `File: ${c.filename}\n${c.content}`),
     llmSettings(user),
   );
+  // Only once the agent gets an answer with the captures in it.
+  await recordSetupStep(user.id, "shown");
   const considered = validContents.map((c) => `\`${c.filename}\``).join(", ");
   return `${suggestions}\n\n---\nCaptures considered: ${considered}\n${APPLY_HINT}`;
 }
@@ -693,7 +694,6 @@ export async function handleGeneratePlan(
   );
 
   if (selectedCaptures.length === 0) return "None of the specified captures could be found.";
-  if (selectedCaptures.some((c) => CAPTURE_PATH.test(c.filename))) await recordSetupStep(user.id, "shown");
 
   // xkg never reads code (github_repo is the knowledge repo, where code paths
   // don't exist). Only the paths the agent names reach the plan; anything that
@@ -709,6 +709,9 @@ export async function handleGeneratePlan(
     codebasePaths.length > 0 ? codebasePaths : undefined,
     llmSettings(user),
   );
+
+  // Only once the plan built from the captures exists.
+  if (selectedCaptures.some((c) => CAPTURE_PATH.test(c.filename))) await recordSetupStep(user.id, "shown");
 
   // Save plan to plans/ folder in knowledge repo
   const date = formatDate();

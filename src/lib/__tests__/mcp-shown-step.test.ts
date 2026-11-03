@@ -20,11 +20,13 @@ vi.mock("../setup-steps", () => ({
   recordSetupStep: async (userId: number, step: string) => { steps.push([userId, step]); },
 }));
 
+let llmFails = false;
+const answer = <T,>(value: T) => async () => { if (llmFails) throw new Error("401 invalid key"); return value; };
 vi.mock("../llm", async (orig) => ({
   ...(await orig<typeof import("../llm")>()),
   rankByRelevance: async () => [{ filename: "inbox/2026-11-02-alert-owners.md" }],
-  generateApplicationSuggestions: async () => "Use it in alerts.ts",
-  generatePlan: async () => "# Plan",
+  generateApplicationSuggestions: answer("Use it in alerts.ts"),
+  generatePlan: answer("# Plan"),
 }));
 
 const { handleSearch, handleReadCapture, handleListInbox, handleApplyToContext, handleGeneratePlan } = await import("../mcp/handlers");
@@ -33,6 +35,7 @@ const user = { id: 7, github_token: "t", github_repo: "o/r", llm_api_key: "k", l
 beforeEach(() => {
   files.clear();
   steps.length = 0;
+  llmFails = false;
   files.set("INDEX.md", "| Date | Title |\n|---|---|\n| 2026-11-02 | [Alert owners](inbox/2026-11-02-alert-owners.md) |\n");
   files.set("inbox/2026-11-02-alert-owners.md", "# Alert owners");
   files.set("RULES.md", "# Rules");
@@ -64,6 +67,13 @@ describe("search and read_capture record the shown step", () => {
     // `xkg agent --plan` reads a saved plan through read_capture: a plan is not a capture.
     await handleReadCapture(user, { filename: "plans/2026-11-02-plan-alerts.md" });
     await handleGeneratePlan(user, { selected_captures: ["missing.md"], project_context: "app" });
+    // A page past the end holds no captures.
+    await handleSearch(user, { query: "alert", offset: 50 });
+    await handleListInbox(user, { offset: 50 });
+    // The model call failed, so the agent got an error and no captures.
+    llmFails = true;
+    await expect(handleApplyToContext(user, { task: "alerts" })).rejects.toThrow();
+    await expect(handleGeneratePlan(user, { selected_captures: ["2026-11-02-alert-owners.md"], project_context: "app" })).rejects.toThrow();
     files.delete("inbox/2026-11-02-alert-owners.md");
     await handleListInbox(user);
     expect(steps).toEqual([]);
