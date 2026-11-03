@@ -45,7 +45,9 @@ When nothing fits, xkg says why in one line. With no map, the capture is saved w
 #### Handoffs: from capture to your coding agent
 
 - **Strong fit:** xkg queues it for your coding agent by adding a row to `HANDOFFS.md` in your knowledge repo, with the capture, the repo, and the suggested files.
-- **Any other fit:** it waits for you. Tap **Hand off to your coding agent** on the capture card. You can pick an "also fits" repo first; that row has no files, and your agent finds them.
+- **Any other fit:** it waits for you. Tap **Hand off to your coding agent** on the capture card, right after capturing or later on the capture's page in **Your knowledge**. You can pick an "also fits" repo first; that row has no files, and your agent finds them.
+
+Once a capture is queued for a repo, the card shows where it stands there instead of the button: **Sent** ("Sent to your coding agent on Nov 2. It asks you at your next session in owner/name."), **Snoozed** (you said not now), **No answer** (offered 3 days with no answer; you can hand it off again), **Not a fit**, **Applied**, **Done**, or **Not offered** (turned down twice). Pick another repo in the switcher to hand it off there.
 
 Rows hold names only, never code. You can edit or delete the file at any time.
 
@@ -63,7 +65,7 @@ If a suggested file is no longer in your current map, it's marked "moved or dele
 
 #### Your answers
 
-Your agent records your answer with `apply_capture`:
+Your agent records your answer with `apply_capture`. You can also say no from the web: tap **Not a fit** on the capture card and pick a reason (**Wrong files**, **Doesn't fit this repo**, or **Other**). It's recorded exactly like your agent's `declined`, so you don't have to wait for a coding session.
 
 | You say | Recorded as | What happens |
 | --- | --- | --- |

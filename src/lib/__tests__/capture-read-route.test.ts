@@ -60,7 +60,82 @@ describe("GET /api/captures/read", () => {
       fileUrl: `https://github.com/o/knowledge/blob/main/applied/${NAME}`,
       links: [{ name: "2026-10-20-routing.md", slug: "routing", note: "both are about cost", summary: "Route by cost." }],
     });
-    expect(reads).toEqual(["INDEX.md", `applied/${NAME}`]);
+    expect(reads).toEqual(["INDEX.md", `applied/${NAME}`, "HANDOFFS.md"]);
+  });
+
+  // fails_when: the capture page can't tell the user a capture was already handed off
+  it("says where the capture is handed off, from HANDOFFS.md", async () => {
+    files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | src/llm.ts | strong | pending | 2026-11-02 | auto |
+| inbox/2026-10-20-routing.md | acme/app | code | — | possible | pending | 2026-11-01 | button |
+| applied/${NAME} | acme/web | code | — | possible | snoozed:2026-11-10 | 2026-11-01 | button |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "pending", since: "2026-11-02" },
+      { repo: "acme/web", status: "snoozed:2026-11-10", since: "2026-11-01" },
+    ]);
+  });
+
+  // fails_when: "Not a fit" on a repo with no HANDOFFS.md row is lost on reload and the Hand off button comes back
+  it("keeps an answer from the Handoff log for a repo with no HANDOFFS.md row", async () => {
+    const logged = FILE.replace("## Links to memory", `## Handoff log
+- 2026-11-01 · acme/web · later
+- 2026-11-03 · acme/web · declined (wrong-files)
+- 2026-11-02 · acme/old · applied · commit abc123
+- 2026-11-02 · acme/cli · declined (other)
+- 2026-11-03 · acme/cli · reverted · commit def456
+- 2026-11-03 · acme/app · declined (doesnt-fit)
+
+## Links to memory`);
+    files.set(`inbox/${NAME}`, { content: logged, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | src/llm.ts | strong | pending | 2026-11-02 | auto |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "pending", since: "2026-11-02" },
+      { repo: "acme/web", status: "declined", since: "2026-11-03" },
+      { repo: "acme/old", status: "applied", since: "2026-11-02" },
+    ]);
+  });
+
+  // fails_when: a declined row whose log line failed reads as finished, so the web can't repeat the answer
+  it("marks a declined row with no matching Handoff log line as unfinished", async () => {
+    const logged = FILE.replace("## Links to memory", `## Handoff log
+- 2026-11-03 · acme/web · declined (other)
+- 2026-10-01 · acme/app · declined (other)
+
+## Links to memory`);
+    files.set(`inbox/${NAME}`, { content: logged, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | — | strong | declined | 2026-11-03 | auto |
+| inbox/${NAME} | acme/web | code | — | possible | declined | 2026-11-03 | button |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "declined", since: "2026-11-03", unfinished: true },
+      { repo: "acme/web", status: "declined", since: "2026-11-03" },
+    ]);
+  });
+
+  it("shows the capture with no handoffs when HANDOFFS.md is missing or can't be read", async () => {
+    files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
+    expect((await (await get(NAME)).json()).capture.handoffs).toEqual([]);
+    down.add("HANDOFFS.md");
+    const res = await get(NAME);
+    expect(res.status).toBe(200);
+    expect((await res.json()).capture.handoffs).toEqual([]);
   });
 
   it("finds a capture with no index row in any folder", async () => {

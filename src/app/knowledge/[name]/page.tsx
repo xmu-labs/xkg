@@ -131,6 +131,12 @@ function CaptureView({ capture: c, onCapture }: { capture: CaptureDetail; onCapt
       <ApplyIt
         where={applyWhere(c.where)}
         advice={c.advice}
+        handoff={c.where?.repo && c.status !== "archived" ? {
+          filename: `${c.status}/${c.filename}`,
+          repos: [c.where.repo, ...(c.where.also ?? []).map((a) => a.repo)],
+          handoffs: c.handoffs ?? [],
+          files: c.where.files.map((f) => f.path),
+        } : undefined}
         explain={c.where?.repo ? {
           auto: c.where.fit === "Strong fit",
           onRequest: async () => {
