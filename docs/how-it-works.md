@@ -51,7 +51,7 @@ Once a capture is queued for a repo, the card shows where it stands there instea
 
 Rows hold names only, never code. You can edit or delete the file at any time.
 
-In your next coding session in that repo, your agent offers what's waiting: "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?" This works with any `briefing` call that names the repo, which the session-start hooks do. Hooks only run when a session starts, so when you open or add another repo mid-session, your agent calls `briefing` again with that repo (the instructions xkg sends, and the lines `init` writes, tell it to) and offers what waits there. In a chat app, your AI is told how many wait and in which repo instead.
+In your next coding session in that repo, your agent offers what's waiting: "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?" This works with any `briefing` call that names the repo, which the session-start hooks do. Hooks only run when a session starts, so when you open or add another repo mid-session, your agent calls `briefing` again with that repo (the instructions xkg sends, and the lines `init` writes, tell it to) and offers what waits there. In a chat app, your AI is told how many wait and in which repo instead. A connector with no hook can start the same briefing from the xkg **briefing** prompt, where the app shows MCP prompts.
 
 If you say yes and pick one:
 
