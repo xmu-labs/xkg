@@ -3,10 +3,10 @@ import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
 import { appendToIndex, readFile } from "@/lib/github";
 import { saveNewCapture } from "@/lib/capture-file";
-import { githubSaveMessage, llmErrorMessage } from "@/lib/friendly-error";
+import { githubSaveMessage, llmErrorLink, llmErrorMessage } from "@/lib/friendly-error";
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, effortApplied, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
-import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage } from "@/lib/capture-stream";
+import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage, type ErrorLink } from "@/lib/capture-stream";
 import { fetchSourceContent } from "@/lib/fetch-source";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
@@ -135,7 +135,11 @@ async function captureFor(req: NextRequest, user: User): Promise<NextResponse> {
       };
       try {
         const { status, body } = await run((stage) => send({ stage }));
-        send(status === 200 ? { result: body } : { error: (body as { error: string }).error, status });
+        if (status === 200) send({ result: body });
+        else {
+          const { error, link } = body as { error: string; link?: ErrorLink };
+          send(link ? { error, status, link } : { error, status });
+        }
       } catch (err) {
         console.error("[capture] unhandled error:", err);
         send({ error: `[capture] ${err instanceof Error ? err.message : "Unexpected error"}`, status: 500 });
@@ -198,7 +202,9 @@ async function capturePipeline(
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
     timer.mark("extract");
-    const message = err instanceof Error ? llmErrorMessage(err, resolveLlm(llm).provider) : "Extraction failed";
+    const provider = resolveLlm(llm).provider;
+    const message = err instanceof Error ? llmErrorMessage(err, provider) : "Extraction failed";
+    const link = llmErrorLink(err, provider);
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
       await refundQuota(`capture:user:${user.id}`, quotaWindow);
@@ -206,7 +212,7 @@ async function capturePipeline(
       // The refund is a courtesy; the error above is what the user needs.
     }
     console.info(JSON.stringify(failureLine("web", timer, llm, usage, fetched, err)));
-    return { status: 502, body: { error: message } };
+    return { status: 502, body: link ? { error: message, link } : { error: message } };
   }
   timer.mark("extract");
 

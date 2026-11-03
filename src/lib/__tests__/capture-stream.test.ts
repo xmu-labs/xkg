@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readCaptureResponse, CAPTURE_DROPPED_WHILE_SAVING, type CaptureStage } from "../capture-stream";
+import { readCaptureResponse, errorLink, CAPTURE_DROPPED_WHILE_SAVING, type CaptureStage } from "../capture-stream";
 
 /**
  * The page reads the capture answer as newline-delimited JSON: stage lines,
@@ -41,6 +41,21 @@ describe("readCaptureResponse", () => {
   it("throws the error line's message", async () => {
     const res = ndjson(['{"stage":"extracting"}\n{"error":"[llm:openai] HTTP 503","status":502}\n']);
     await expect(read(res)).rejects.toThrow("[llm:openai] HTTP 503");
+  });
+
+  // protects: XKG-143, the billing link on an error line reaches the page; fails_when: the link is dropped; no_claim: none
+  it("keeps the error line's link", async () => {
+    const res = ndjson(['{"error":"No credits.","status":502,"link":{"label":"Add credits","url":"https://example.com/billing"}}\n']);
+    const err = await read(res).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toBe("No credits.");
+    expect(errorLink(err)).toEqual({ label: "Add credits", url: "https://example.com/billing" });
+  });
+
+  // protects: a link that isn't https is dropped; fails_when: a javascript: URL reaches an href; no_claim: none
+  it("drops a link that isn't https", async () => {
+    const res = ndjson(['{"error":"No credits.","status":502,"link":{"label":"x","url":"javascript:alert(1)"}}\n']);
+    expect(errorLink(await read(res).catch((e: unknown) => e))).toBeNull();
   });
 
   // protects: a connection lost while saving tells the user to check before retrying; fails_when: a generic error invites a duplicate capture; no_claim: whether it saved

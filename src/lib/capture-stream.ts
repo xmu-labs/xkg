@@ -19,7 +19,24 @@ export const CAPTURE_STREAM_TYPE = "application/x-ndjson";
 export type CaptureLine =
   | { stage: CaptureStage }
   | { result: unknown }
-  | { error: string; status: number };
+  | { error: string; status: number; link?: ErrorLink };
+
+/** A next step shown under a failed capture, e.g. the provider's billing page. */
+export interface ErrorLink {
+  label: string;
+  url: string;
+}
+
+/** The link a capture error carries, or null. Only https URLs pass, since the page puts it in an href. */
+export function errorLink(err: unknown): ErrorLink | null {
+  const link = (err as { link?: unknown } | null)?.link as Partial<ErrorLink> | undefined;
+  if (!link || typeof link.label !== "string" || typeof link.url !== "string") return null;
+  return /^https:\/\//.test(link.url) ? { label: link.label, url: link.url } : null;
+}
+
+function failure(message: string, link?: unknown): Error {
+  return Object.assign(new Error(message), { link: errorLink({ link }) });
+}
 
 export const CAPTURE_FAILED = "Couldn't capture that. Try again in a moment.";
 export const CAPTURE_DROPPED_WHILE_SAVING =
@@ -33,13 +50,13 @@ const NOT_JSON = "Unexpected response from server. Please refresh and try again.
  */
 export async function readCaptureResponse<T>(res: Response, onStage: (stage: CaptureStage) => void): Promise<T> {
   if (!(res.headers.get("content-type") ?? "").includes(CAPTURE_STREAM_TYPE) || !res.body) {
-    let data: { error?: string };
+    let data: { error?: string; link?: unknown };
     try {
-      data = (await res.json()) as { error?: string };
+      data = (await res.json()) as { error?: string; link?: unknown };
     } catch {
       throw new Error(res.ok ? NOT_JSON : CAPTURE_FAILED);
     }
-    if (!res.ok) throw new Error(data.error || CAPTURE_FAILED);
+    if (!res.ok) throw failure(data.error || CAPTURE_FAILED, data.link);
     return data as T;
   }
 
@@ -61,7 +78,7 @@ export async function readCaptureResponse<T>(res: Response, onStage: (stage: Cap
       onStage(parsed.stage);
       return null;
     }
-    if ("error" in parsed) throw new Error(parsed.error || CAPTURE_FAILED);
+    if ("error" in parsed) throw failure(parsed.error || CAPTURE_FAILED, parsed.link);
     return { done: true, value: parsed.result as T };
   };
 

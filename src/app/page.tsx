@@ -8,7 +8,7 @@ import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
 import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
-import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, readCaptureResponse, type CaptureStage } from "@/lib/capture-stream";
+import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, errorLink, readCaptureResponse, type CaptureStage, type ErrorLink } from "@/lib/capture-stream";
 import type { CaptureUsage } from "@/lib/capture-stats";
 import ModelHint from "@/components/ModelHint";
 
@@ -72,6 +72,7 @@ export default function CapturePage() {
   const [status, setStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
   const [result, setResult] = useState<CaptureResult | null>(null);
   const [error, setError] = useState("");
+  const [errorAction, setErrorAction] = useState<ErrorLink | null>(null);
   const [stage, setStage] = useState<CaptureStage | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [newVersionAvailable, setNewVersionAvailable] = useState(false);
@@ -121,6 +122,7 @@ export default function CapturePage() {
     setElapsed(0);
     setResult(null);
     setError("");
+    setErrorAction(null);
     const started = Date.now();
 
     try {
@@ -140,6 +142,7 @@ export default function CapturePage() {
       setTitle("");
     } catch (err) {
       setError(err instanceof Error ? err.message : CAPTURE_FAILED);
+      setErrorAction(errorLink(err));
       setStatus("error");
     }
   }
@@ -154,6 +157,7 @@ export default function CapturePage() {
     setStatus("idle");
     setResult(null);
     setError("");
+    setErrorAction(null);
   }
 
   return (
@@ -237,7 +241,17 @@ export default function CapturePage() {
           </div>
 
           {status === "error" && (
-            <p role="alert" className="text-xs text-center pt-1" style={{ color: "var(--danger)" }}>{error}</p>
+            <p role="alert" className="text-xs text-center pt-1" style={{ color: "var(--danger)" }}>
+              {error}
+              {errorAction && (
+                <>
+                  {" "}
+                  <a href={errorAction.url} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">
+                    {errorAction.label}
+                  </a>
+                </>
+              )}
+            </p>
           )}
         </div>
       )}
