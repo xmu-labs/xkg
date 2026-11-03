@@ -33,6 +33,9 @@ export function spendLine(s: SpendSummary): string {
   return `${head}, ${money(s.costUsd)}${extra}.`;
 }
 
+/** Dispatch on window after anything that changes this month's spend or the budget, so the home banner re-reads it. */
+export const SPEND_CHANGED_EVENT = "xkg:spend-changed";
+
 export interface BudgetAlert {
   level: "near" | "over";
   text: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { spendLine, type SpendSummary } from "@/lib/spend-format";
+import { SPEND_CHANGED_EVENT, spendLine, type SpendSummary } from "@/lib/spend-format";
 
 /**
  * Settings → AI model: what xkg spent with the user's key this month, and an
@@ -44,6 +44,7 @@ export default function AiSpend({ inputClass }: { inputClass: string }) {
       if (!res.ok) throw new Error(data.error ?? "Couldn't save the budget. Try again.");
       setBudget(typeof data.budgetUsd === "number" ? String(data.budgetUsd) : "");
       setStatus(data.budgetUsd == null ? "cleared" : "saved");
+      window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't save the budget. Try again.");
       setStatus("error");

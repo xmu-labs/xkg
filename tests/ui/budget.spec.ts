@@ -1,4 +1,4 @@
-import { test, expect, signIn, openSettings } from "./fixtures";
+import { test, expect, signIn, openSettings, WORST_CAPTURE, WORST_ME } from "./fixtures";
 
 // XKG-145: an optional monthly AI budget. Set in Settings → AI model; the home
 // page warns from 80% and again from 100%. A warning only.
@@ -87,4 +87,48 @@ test("shows the server's message for a bad budget", async ({ page }) => {
   await page.getByRole("dialog").getByLabel("Monthly budget (USD)").fill("0");
   await page.getByRole("dialog").getByRole("button", { name: "Save budget" }).tap();
   await expect(page.getByRole("dialog").getByRole("alert").filter({ hasText: "between $0.01" })).toBeVisible();
+});
+
+// Codex review on #187: the banner refreshes after a capture and after a budget save
+test("a capture that crosses the budget shows the banner without a reload", async ({ page }) => {
+  await signIn(page);
+  let month = { ...near, costUsd: 1 };
+  await page.route("**/api/spend", (r) => r.fulfill({ json: { month, budgetUsd: 5 } }));
+  await page.route("**/api/capture", (r) => { month = near; return r.fulfill({ json: WORST_CAPTURE }); });
+  await page.goto("/");
+  await expect(page.getByLabel("Content to capture")).toBeVisible();
+  await expect(page.getByRole("region", { name: "AI budget" })).toHaveCount(0);
+  await page.getByLabel("Content to capture").fill("x");
+  await page.getByRole("button", { name: "Capture", exact: true }).tap();
+  await expect(page.getByRole("region", { name: "AI budget" })).toContainText("$4.00 of your $5.00");
+});
+
+test("raising the budget in Settings clears the banner", async ({ page }) => {
+  await signIn(page);
+  let budgetUsd = 5;
+  await page.route("**/api/spend", async (r) => {
+    if (r.request().method() === "PUT") {
+      budgetUsd = (r.request().postDataJSON() as { budgetUsd: number }).budgetUsd;
+      return r.fulfill({ json: { budgetUsd } });
+    }
+    return r.fulfill({ json: { month: near, budgetUsd } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("region", { name: "AI budget" })).toBeVisible();
+  await openSettings(page);
+  await page.getByRole("dialog").getByLabel("Monthly budget (USD)").fill("50");
+  await page.getByRole("dialog").getByRole("button", { name: "Save budget" }).tap();
+  await expect(page.getByRole("dialog").getByText("Budget saved.")).toBeVisible();
+  await expect(page.getByRole("region", { name: "AI budget" })).toHaveCount(0);
+});
+
+test("a dismissal by another account on this browser doesn't hide the warning", async ({ page }) => {
+  await page.addInitScript(() => {
+    const month = new Date().toISOString().slice(0, 7);
+    localStorage.setItem(`xkg-budget-alert:${month}:near`, "1");
+    localStorage.setItem(`xkg-budget-alert:someone-else:${month}:near`, "1");
+  });
+  const banner = await home(page, near, 5);
+  await expect(banner).toBeVisible();
+  expect(WORST_ME.githubUsername).not.toBe("someone-else");
 });
