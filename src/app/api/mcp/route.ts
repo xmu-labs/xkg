@@ -16,6 +16,7 @@ import { env } from "@/lib/env";
 import { TOOLS, type ToolName } from "@/lib/mcp/tools";
 import { HANDLERS } from "@/lib/mcp/handlers";
 import { SERVER_INSTRUCTIONS } from "@/lib/mcp/instructions";
+import { PROMPTS, getPrompt } from "@/lib/mcp/prompts";
 import { withSpendMeter } from "@/lib/llm-spend";
 import { recordSetupStep } from "@/lib/setup-steps";
 
@@ -206,7 +207,7 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
             id,
             result: {
               protocolVersion,
-              capabilities: { tools: {} },
+              capabilities: { tools: {}, prompts: {} },
               // `title`, `websiteUrl`, and `icons` are best-effort branding hints:
               // clients that support them can show the xkg name and logo instead
               // of a generated letter avatar. Unknown fields are ignored by others.
@@ -232,6 +233,19 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
 
       case "tools/list":
         return respond({ jsonrpc: "2.0", id, result: { tools: TOOLS } }, wantsSse);
+
+      // Prompts: one, `briefing`, for clients where no session-start hook runs (XKG-179).
+      case "prompts/list":
+        return respond({ jsonrpc: "2.0", id, result: { prompts: PROMPTS } }, wantsSse);
+
+      case "prompts/get": {
+        const name = (params as { name?: unknown } | undefined)?.name;
+        const prompt = typeof name === "string" ? getPrompt(name, (params as { arguments?: Record<string, unknown> }).arguments ?? {}) : null;
+        if (!prompt) {
+          return respond({ jsonrpc: "2.0", id, error: { code: -32602, message: `Unknown prompt: ${String(name)}` } }, wantsSse);
+        }
+        return respond({ jsonrpc: "2.0", id, result: prompt }, wantsSse);
+      }
 
       case "tools/call": {
         const toolName = (params as { name: string }).name;
