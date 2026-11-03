@@ -13,6 +13,8 @@ export interface HandoffState {
   repo: string;
   status: string;
   since: string;
+  /** A decline HANDOFFS.md has but the capture's Handoff log doesn't yet: answering again finishes it. */
+  unfinished?: boolean;
 }
 
 export interface HandoffStatus {
@@ -45,6 +47,10 @@ export function handoffStatus(row: HandoffState | null): HandoffStatus {
   const { repo } = row;
   const status = row.status.trim().toLowerCase();
   const finished = FINISHED[status];
+  if (finished && status === "declined" && row.unfinished) {
+    const { chip, text } = finished(repo);
+    return { chip, text: `${text} It isn't fully saved yet, so answer again to finish.`, canHandOff: false, canDecline: true };
+  }
   if (finished) return { ...finished(repo), canHandOff: false, canDecline: false };
   if (status === "expired") return { chip: "No answer", text: `Offered 3 times in ${repo} with no answer.`, canHandOff: true, canDecline: true };
   if (status.startsWith("snoozed:")) {

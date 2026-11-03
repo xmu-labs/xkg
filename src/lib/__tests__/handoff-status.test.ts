@@ -46,6 +46,16 @@ describe("handoffStatus", () => {
     expect(handoffStatus({ repo: REPO, status, since: "2026-11-01" })).toEqual({ chip, text, canHandOff: false, canDecline: false });
   });
 
+  // fails_when: a decline whose Handoff log line failed hides "Not a fit" after a reload, so it can never be finished
+  it("keeps Not a fit for a decline that isn't in the Handoff log yet", () => {
+    expect(handoffStatus({ repo: REPO, status: "declined", since: "2026-11-03", unfinished: true })).toEqual({
+      chip: "Not a fit",
+      text: "You said it's not a fit for acme/app. It isn't fully saved yet, so answer again to finish.",
+      canHandOff: false,
+      canDecline: true,
+    });
+  });
+
   it("with no row, offers the handoff and the decline", () => {
     expect(handoffStatus(null)).toEqual({ chip: null, text: null, canHandOff: true, canDecline: true });
   });

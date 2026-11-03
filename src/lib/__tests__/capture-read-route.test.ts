@@ -107,6 +107,28 @@ describe("GET /api/captures/read", () => {
     ]);
   });
 
+  // fails_when: a declined row whose log line failed reads as finished, so the web can't repeat the answer
+  it("marks a declined row with no matching Handoff log line as unfinished", async () => {
+    const logged = FILE.replace("## Links to memory", `## Handoff log
+- 2026-11-03 · acme/web · declined (other)
+- 2026-10-01 · acme/app · declined (other)
+
+## Links to memory`);
+    files.set(`inbox/${NAME}`, { content: logged, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | — | strong | declined | 2026-11-03 | auto |
+| inbox/${NAME} | acme/web | code | — | possible | declined | 2026-11-03 | button |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "declined", since: "2026-11-03", unfinished: true },
+      { repo: "acme/web", status: "declined", since: "2026-11-03" },
+    ]);
+  });
+
   it("shows the capture with no handoffs when HANDOFFS.md is missing or can't be read", async () => {
     files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
     expect((await (await get(NAME)).json()).capture.handoffs).toEqual([]);

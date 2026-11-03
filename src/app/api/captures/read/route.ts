@@ -72,11 +72,17 @@ const LOGGED_FINAL = new Set(["declined", "done", "applied"]);
  * Adds, for each repo with no HANDOFFS.md row, the capture's last logged
  * answer when it's final: a "Not a fit" on a repo that was never queued only
  * goes to the log, and a finished row leaves HANDOFFS.md after a while.
+ * A declined row with no log line for it is marked unfinished.
  */
 function withLoggedAnswers(rows: HandoffState[], content: string): HandoffState[] {
+  const log = parseHandoffLog(content);
   const has = new Set(rows.map((r) => r.repo.toLowerCase()));
+  // A declined row whose log line failed to write: the card lets the user answer again
+  rows = rows.map((r) => r.status.trim().toLowerCase() === "declined"
+    && !log.some((e) => e.outcome === "declined" && e.repo?.toLowerCase() === r.repo.toLowerCase() && e.date >= r.since)
+    ? { ...r, unfinished: true } : r);
   const last = new Map<string, HandoffState>();
-  for (const e of parseHandoffLog(content)) {
+  for (const e of log) {
     const repo = e.repo?.toLowerCase();
     if (!repo || has.has(repo)) continue;
     last.delete(repo);
