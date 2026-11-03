@@ -9,8 +9,9 @@
  * text instead of guessing.
  *
  * Best-effort by design: any failure (timeout, non-HTML, bot challenge, blocked
- * host, too little content) returns `null`, and the caller falls back to
- * URL-only mode (passing the raw URL string to the LLM).
+ * host, too little content) returns its reason instead of text, and the caller
+ * falls back to URL-only mode (passing the raw URL string to the LLM). If the
+ * model then finds nothing, the reason tells the user why (XKG-116).
  */
 
 import { MAX_INPUT_CHARS } from "./llm";
@@ -236,12 +237,20 @@ export async function safeFetch(
   return null; // too many redirects
 }
 
+/** Why a page couldn't be used, so the user can be told (XKG-116). */
+export type FetchFailure = "bot-check" | "refused" | "not-found" | "not-a-page" | "too-short" | "unreachable";
+
+export type FetchResult = { text: string } | { text: null; failure: FetchFailure };
+
+/** Bot walls answer 403/429/503 too; only their body tells them from a plain refusal. */
+const MAX_ERROR_BODY_BYTES = 200_000;
+
 /**
- * Fetch a URL and return cleaned article text, or `null` if it can't be used.
- * Never throws — failures resolve to `null` so the caller can fall back to
- * URL-only capture.
+ * Fetch a URL and return cleaned article text, or why it can't be used.
+ * Never throws.
  */
-export async function fetchSourceContent(url: string): Promise<string | null> {
+export async function fetchSource(url: string): Promise<FetchResult> {
+  const fail = (failure: FetchFailure): FetchResult => ({ text: null, failure });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
@@ -252,26 +261,40 @@ export async function fetchSourceContent(url: string): Promise<string | null> {
         accept: "text/html,application/xhtml+xml,text/plain",
       },
     });
-    if (!res || !res.ok) return null;
+    if (!res) return fail("unreachable"); // blocked host, bad URL, network error, too many redirects
+    if (!res.ok) {
+      if ([403, 429, 503].includes(res.status)) {
+        const body = await readCapped(res, MAX_ERROR_BODY_BYTES).catch(() => "");
+        if (isChallengePage(body)) return fail("bot-check");
+      }
+      if (res.status === 401 || res.status === 403) return fail("refused");
+      if (res.status === 404 || res.status === 410) return fail("not-found");
+      return fail("unreachable");
+    }
 
     const contentType = res.headers.get("content-type") ?? "";
-    // Only HTML / plain text — reject text/css, text/javascript, etc.
-    if (!contentType.includes("html") && !contentType.includes("text/plain")) return null;
+    // Only HTML / plain text — reject text/css, text/javascript, PDFs, etc.
+    if (!contentType.includes("html") && !contentType.includes("text/plain")) return fail("not-a-page");
 
     const declaredLength = Number(res.headers.get("content-length"));
-    if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) return null;
+    if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) return fail("not-a-page");
 
     const html = await readCapped(res, MAX_RESPONSE_BYTES);
-    if (isChallengePage(html)) return null;
+    if (isChallengePage(html)) return fail("bot-check");
 
     const text = htmlToText(html);
-    if (text.length < MIN_USABLE_CHARS) return null;
+    if (text.length < MIN_USABLE_CHARS) return fail("too-short");
 
     // One char over the limit, so extraction can tell the page was cut.
-    return text.slice(0, MAX_INPUT_CHARS + 1);
+    return { text: text.slice(0, MAX_INPUT_CHARS + 1) };
   } catch {
-    return null; // timeout / abort / DNS failure / network error
+    return fail("unreachable"); // timeout / abort / DNS failure / network error
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** The page text, or `null` when it can't be used (see fetchSource for why). */
+export async function fetchSourceContent(url: string): Promise<string | null> {
+  return (await fetchSource(url)).text;
 }

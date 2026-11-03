@@ -8,7 +8,8 @@ import { githubSaveMessage, llmErrorLink, llmErrorMessage } from "@/lib/friendly
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, effortApplied, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
 import { CAPTURE_STREAM_TYPE, type CaptureLine, type CaptureStage, type ErrorLink } from "@/lib/capture-stream";
-import { fetchSourceContent } from "@/lib/fetch-source";
+import { fetchSource, type FetchFailure } from "@/lib/fetch-source";
+import { NoCoreIdeaError, noCoreIdeaMessage } from "@/lib/empty-capture";
 import { linkCapture } from "@/lib/linking";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { captureFileUrl } from "@/lib/captureFileUrl";
@@ -186,12 +187,16 @@ async function capturePipeline(
   let llmContent = content;
   const sourceUrl = sourceType === "url" ? content.trim() : undefined;
   let fetched = false;
+  // Why the page couldn't be read, for the message if the model then finds nothing.
+  let fetchFailure: FetchFailure | null = null;
   if (sourceUrl) {
     emit("reading");
-    const page = await fetchSourceContent(sourceUrl);
-    if (page) {
-      llmContent = page;
+    const page = await fetchSource(sourceUrl);
+    if (page.text !== null) {
+      llmContent = page.text;
       fetched = true;
+    } else {
+      fetchFailure = page.failure;
     }
   }
   timer.mark("fetch");
@@ -203,16 +208,20 @@ async function capturePipeline(
     capture = await extractCapture(user.llm_api_key, llmContent, title, llm, { url: sourceUrl, onUsage: (u) => { usage = u; } });
   } catch (err) {
     timer.mark("extract");
-    const provider = resolveLlm(llm).provider;
-    const message = err instanceof Error ? llmErrorMessage(err, provider) : "Extraction failed";
-    const link = llmErrorLink(err, provider);
     // Nothing was extracted or saved, so the try doesn't count against the hour.
     try {
       await refundQuota(`capture:user:${user.id}`, quotaWindow);
     } catch {
-      // The refund is a courtesy; the error above is what the user needs.
+      // The refund is a courtesy; the error below is what the user needs.
     }
     console.info(JSON.stringify(failureLine("web", timer, llm, usage, fetched, err)));
+    // The model found nothing to save: say why, keep the input, save nothing (XKG-116).
+    if (err instanceof NoCoreIdeaError) {
+      return { status: 422, body: { error: noCoreIdeaMessage({ isUrl: sourceUrl !== undefined, failure: fetchFailure }) } };
+    }
+    const provider = resolveLlm(llm).provider;
+    const message = err instanceof Error ? llmErrorMessage(err, provider) : "Extraction failed";
+    const link = llmErrorLink(err, provider);
     return { status: 502, body: link ? { error: message, link } : { error: message } };
   }
   timer.mark("extract");

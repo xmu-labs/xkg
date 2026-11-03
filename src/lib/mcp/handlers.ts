@@ -38,6 +38,7 @@ import { synthesizeTopic } from "@/lib/synthesis";
 import { saveNewCapture } from "@/lib/capture-file";
 import { recordSetupStep } from "@/lib/setup-steps";
 import type { ExtractedCapture } from "@/lib/types";
+import { NoCoreIdeaError, noCoreIdeaAgentMessage } from "@/lib/empty-capture";
 import type { ToolName } from "./tools";
 
 export async function handleCapture(user: User, args: { content: string; title?: string }): Promise<string> {
@@ -70,6 +71,8 @@ export async function handleCapture(user: User, args: { content: string; title?:
       // The refund is a courtesy; the error is what the agent needs.
     }
     console.info(JSON.stringify(failureLine("mcp", timer, llm, usage, false, err)));
+    // The model found nothing to save: tell the agent what to send instead (XKG-116).
+    if (err instanceof NoCoreIdeaError) throw new Error(noCoreIdeaAgentMessage(sourceType === "url"));
     // An agent can't show a link, so a key with no credits gets the billing URL in the sentence.
     const link = llmErrorLink(err, llm.provider);
     if (link) throw new Error(`${llmErrorMessage(err, llm.provider)} Billing page: ${link.url}`);

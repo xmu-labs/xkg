@@ -76,7 +76,7 @@ When you capture, the server talks to exactly four kinds of places:
 
 There's no third-party analytics, telemetry, or tracking. The counts in the table above are the only usage xkg records.
 
-Each capture, from the app or the `capture` tool, also writes one line to the server log (`capture.timing`). It holds which of the two it came from, the provider, model, and effort, whether the page was fetched, the token counts, and how long each step took. Never the capture's name, content, or URL.
+Each capture, from the app or the `capture` tool, also writes one line to the server log (`capture.timing`). It holds which of the two it came from, the provider, model, and effort, whether the page was fetched, the token counts, and how long each step took. A failed capture also logs its kind, such as `no_core_idea` when the model found nothing to save. Never the capture's name, content, or URL.
 
 ## How your keys are stored
 

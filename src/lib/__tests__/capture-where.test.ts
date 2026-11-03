@@ -65,7 +65,15 @@ const refundQuota = vi.fn();
 const WINDOW = "2026-10-31 11:00:00.123456";
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowKey: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
 let fetchedPage: string | null = null;
-vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => fetchedPage, safeFetch: vi.fn() }));
+/** Why the page couldn't be read, when fetchedPage is null. */
+let fetchFailure = "unreachable";
+vi.mock("@/lib/fetch-source", () => ({
+  fetchSourceContent: async () => fetchedPage,
+  fetchSource: async () => (fetchedPage ? { text: fetchedPage } : { text: null, failure: fetchFailure }),
+  safeFetch: vi.fn(),
+}));
+/** When true, the model finds no core idea (XKG-116). */
+let extractEmpty = false;
 let extractFails = false;
 /** When true, extraction fails the way an OpenAI key with no credits does. */
 let extractNoCredits = false;
@@ -79,6 +87,10 @@ vi.mock("@/lib/llm", async (orig) => ({
     if (extractGate) await extractGate;
     if (extractFails) throw new Error("[llm:openai] HTTP 503");
     if (extractNoCredits) throw new Error(NO_CREDITS);
+    if (extractEmpty) {
+      const { NoCoreIdeaError } = await import("@/lib/empty-capture");
+      throw new NoCoreIdeaError();
+    }
     meta?.onUsage?.({ tokensIn: 2400, tokensOut: 780 });
     return capture;
   },
@@ -164,6 +176,8 @@ beforeEach(() => {
   refundQuota.mockClear();
   linked = [];
   fetchedPage = null;
+  fetchFailure = "unreachable";
+  extractEmpty = false;
   indexFails = false;
   realCreate = false;
   saveFailStatus = null;
@@ -628,5 +642,75 @@ describe("auto-queue for the coding agent", () => {
     const result = await mcp();
     expect(files.has(HANDOFFS_PATH)).toBe(false);
     expect(result).not.toContain("Queued");
+  });
+});
+
+describe("no core idea: nothing is saved and the user is told why (XKG-116)", () => {
+  async function postContent(content: string): Promise<Response> {
+    const res = await POST(new NextRequest("https://xkg.test/api/capture", { method: "POST", body: JSON.stringify({ content }) }));
+    await runAfterResponse();
+    return res;
+  }
+  const savedCaptures = () => githubPut.mock.calls.filter((c) => String(c[2]).startsWith("inbox/"));
+
+  // protects: the 2026-11-03 case, a bot-checked page saved as "Untitled capture"; fails_when: the file or index row is written, or the reason is generic; no_claim: detection (fetch-source-failure.test.ts)
+  it("web: a blocked page saves nothing and says why", async () => {
+    extractEmpty = true;
+    fetchFailure = "bot-check";
+    const res = await postContent("https://watch.example.com/register/webinar");
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe(
+      "This site blocks automated readers, so xkg couldn't read the page. Nothing was saved. Paste the page's text instead.",
+    );
+    expect(savedCaptures()).toHaveLength(0);
+    expect(order).not.toContain("index");
+    expect(matchCapture).not.toHaveBeenCalled();
+  });
+
+  it("web: gives the quota back, since nothing was saved", async () => {
+    extractEmpty = true;
+    await postContent("https://example.com/a");
+    expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  it("web: pasted text with no clear idea asks for more of the text", async () => {
+    extractEmpty = true;
+    const res = await postContent("hmm");
+    expect((await res.json()).error).toBe("xkg found no clear idea in this text. Nothing was saved. Add more of the text and try again.");
+  });
+
+  it("web: a page that was read but had no idea says so", async () => {
+    extractEmpty = true;
+    fetchedPage = "Register for our webinar. Name. Email. Company. Submit.";
+    const res = await postContent("https://example.com/a");
+    expect((await res.json()).error).toMatch(/^xkg read the page but found no clear idea in it\./);
+  });
+
+  it("web stream: ends with the reason as an error line", async () => {
+    extractEmpty = true;
+    fetchFailure = "refused";
+    const { lines } = await postStream("https://example.com/a");
+    expect(lines.map((l) => l.stage ?? "end")).toEqual(["reading", "extracting", "end"]);
+    expect(lines.at(-1)).toEqual({
+      error: "The site wouldn't let xkg read this page. It may need you to sign in. Nothing was saved. Paste the page's text instead.",
+      status: 422,
+    });
+  });
+
+  // protects: agents get a next step, not a placeholder capture; fails_when: MCP saves the file or the error has no next step; no_claim: none
+  it("MCP: a bare link saves nothing and tells the agent to send the page's text", async () => {
+    extractEmpty = true;
+    await expect(handleCapture(user as never, { content: "https://example.com/a" })).rejects.toThrow(
+      "xkg got only a link and doesn't open links from here, so it found no core idea. Nothing was saved. Read the page and call capture again with its text.",
+    );
+    expect(savedCaptures()).toHaveLength(0);
+    expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  it("MCP: text with no clear idea asks for more of it", async () => {
+    extractEmpty = true;
+    await expect(handleCapture(user as never, { content: "hmm" })).rejects.toThrow(
+      "xkg found no core idea in this text. Nothing was saved. Call capture again with more of the text.",
+    );
   });
 });

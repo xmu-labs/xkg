@@ -57,8 +57,9 @@ export function failureLine(via: Via, timer: StepTimer, llm: LlmConfig, usage: L
   return { ...base(via, llm, usage, fetched), ok: false as const, error: errorClass(err), ms: { ...timer.ms } };
 }
 
-/** A failure's kind, from its message: timeout, http_<status>, invalid_json or other. */
+/** A failure's kind: no_core_idea, or from its message timeout, http_<status>, invalid_json or other. */
 export function errorClass(err: unknown): string {
+  if (err instanceof Error && err.name === "NoCoreIdeaError") return "no_core_idea";
   const message = err instanceof Error ? err.message : "";
   if (/No answer from the provider|timed out/i.test(message)) return "timeout";
   const status = /HTTP (\d{3})\b/.exec(message) ?? /^(\d{3})\b/.exec(message);
