@@ -10,6 +10,8 @@ const applyGateStats = vi.fn();
 const applySourceStats = vi.fn();
 const matchingStats = vi.fn();
 const handoffStats = vi.fn();
+const setupFunnel = vi.fn();
+vi.mock("@/lib/setup-steps", () => ({ setupFunnel: (...a: unknown[]) => setupFunnel(...a) }));
 vi.mock("@/lib/apply-events", () => ({ applyGateStats: (...a: unknown[]) => applyGateStats(...a) }));
 vi.mock("@/lib/handoff-events", () => ({ handoffStats: (...a: unknown[]) => handoffStats(...a) }));
 vi.mock("@/lib/surface-events", () => ({
@@ -39,6 +41,8 @@ beforeEach(() => {
   matchingStats.mockResolvedValue([{ userId: 7, weekStart: "2026-10-26", matches: 3, suggestions: 2, medianTokens: 3443 }]);
   handoffStats.mockReset();
   handoffStats.mockResolvedValue([]);
+  setupFunnel.mockReset();
+  setupFunnel.mockResolvedValue({ users: [], reached: {} });
 });
 
 describe("adminAuthorized", () => {
@@ -85,6 +89,15 @@ describe("GET /api/admin/apply-stats", () => {
     const body = await (await GET(get("?weeks=3", "admin-test-secret"))).json();
     expect(body.handoffs).toEqual([week]);
     expect(handoffStats).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), 3);
+  });
+
+  // protects: the setup funnel reaches the operator for the same window; fails_when: setup is missing or read for another window; no_claim: the numbers (see setup-steps tests)
+  it("adds where each new account stopped in setup", async () => {
+    const setup = { users: [{ userId: 9, signedUp: "2026-11-02", stoppedBefore: "aiKey" }], reached: { signedUp: 1 } };
+    setupFunnel.mockResolvedValue(setup);
+    const body = await (await GET(get("?weeks=2", "admin-test-secret"))).json();
+    expect(body.setup).toEqual(setup);
+    expect(setupFunnel).toHaveBeenCalledWith(expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), 2);
   });
 
   it("takes ?weeks= and keeps it between 1 and 52", async () => {

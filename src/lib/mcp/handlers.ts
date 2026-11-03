@@ -36,6 +36,7 @@ import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type Br
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import { saveNewCapture } from "@/lib/capture-file";
+import { recordSetupStep } from "@/lib/setup-steps";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
 
@@ -123,6 +124,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
 
   // A taken name (same source twice in a day, or a shared short name) gets -2, -3, ….
   const filename = await saveNewCapture(user.github_token, user.github_repo, stem, markdown);
+  await recordSetupStep(user.id, "capture");
   const path = `inbox/${filename}`;
   timer.mark("save");
 

@@ -174,6 +174,8 @@ export async function initDb(): Promise<void> {
   await ensureHandoffEventTable();
   handoffScoreTable = null;
   await ensureHandoffScoreTable();
+  setupStepTable = null;
+  await ensureSetupStepTable();
   spendTable = null;
   await ensureSpendTable();
 
@@ -378,6 +380,30 @@ async function createSurfaceEventTable(): Promise<void> {
   await sql`ALTER TABLE surface_events ADD COLUMN IF NOT EXISTS shown BOOLEAN`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_user_capture ON surface_events (user_id, capture_key)`;
   await sql`CREATE INDEX IF NOT EXISTS surface_events_surfaced_at ON surface_events (surfaced_at)`;
+}
+
+// ── Setup steps (dates only; see lib/setup-steps.ts) ──
+
+let setupStepTable: Promise<void> | null = null;
+
+/** One row per user and setup step, the first time it happens (see setup-steps.ts). Created on first use. */
+export function ensureSetupStepTable(): Promise<void> {
+  setupStepTable ??= createSetupStepTable().catch((err: unknown) => {
+    setupStepTable = null;
+    throw err;
+  });
+  return setupStepTable;
+}
+
+async function createSetupStepTable(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS setup_steps (
+      user_id INTEGER NOT NULL,
+      step TEXT NOT NULL,
+      first_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (user_id, step)
+    )
+  `;
 }
 
 // ── Handoff events (counts only; see lib/handoff-events.ts) ──
@@ -790,6 +816,8 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await ensureSpendTable();
   await sql`DELETE FROM llm_spend WHERE user_id = ${userId}`;
   await sql`DELETE FROM llm_budgets WHERE user_id = ${userId}`;
+  await ensureSetupStepTable();
+  await sql`DELETE FROM setup_steps WHERE user_id = ${userId}`;
   await ensureCliKeyTable();
   await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
   await sql`DELETE FROM cli_logins WHERE user_id = ${userId}`;
