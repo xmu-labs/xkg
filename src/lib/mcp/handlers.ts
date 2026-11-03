@@ -263,13 +263,16 @@ async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<
 
 const STATUSES = new Set(["inbox", "applied", "archived"]);
 
+/** A capture file, as opposed to RULES.md, a saved plan or another file in the knowledge repo. */
+const CAPTURE_PATH = /^(inbox|applied|archived)\/[^/]+\.md$/;
+
 export async function handleReadCapture(user: User, args: { filename: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
   // RULES.md sits at the repo root; a bare capture name means the inbox.
   const path = args.filename.includes("/") || args.filename === "RULES.md" ? args.filename : `inbox/${args.filename}`;
   const file = await readFile(user.github_token, user.github_repo, path);
   if (!file) return `File not found: ${path}. Use search to find it.`;
-  if (path !== "RULES.md") await recordSetupStep(user.id, "shown");
+  if (CAPTURE_PATH.test(path)) await recordSetupStep(user.id, "shown");
   return file.content;
 }
 
@@ -690,7 +693,7 @@ export async function handleGeneratePlan(
   );
 
   if (selectedCaptures.length === 0) return "None of the specified captures could be found.";
-  await recordSetupStep(user.id, "shown");
+  if (selectedCaptures.some((c) => CAPTURE_PATH.test(c.filename))) await recordSetupStep(user.id, "shown");
 
   // xkg never reads code (github_repo is the knowledge repo, where code paths
   // don't exist). Only the paths the agent names reach the plan; anything that
