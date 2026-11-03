@@ -80,7 +80,30 @@ test("Not a fit records a decline with a reason, and the card says so", async ({
   await block.getByRole("button", { name: "Wrong files" }).tap();
   await expect(block.getByText(`You said it's not a fit for ${WORST_REPO}.`)).toBeVisible();
   await expect(block.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
-  expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files" }]);
+  expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files", files: WORST_CAPTURE.where.files.map((f) => f.path) }]);
+});
+
+// fails_when: "Wrong files" on a match that was never queued teaches xkg nothing (no files in the log)
+test("Wrong files names the suggested files only for the repo they were suggested in", async ({ page }) => {
+  await capture(page, possible);
+  const sent: unknown[] = [];
+  await page.route("**/api/handoffs/answer", async (r) => {
+    const body = r.request().postDataJSON();
+    sent.push(body);
+    await r.fulfill({ json: { ok: true, status: "declined", repo: body.repo } });
+  });
+  const block = page.getByTestId("apply-it");
+  await block.getByRole("button", { name: "Not a fit" }).tap();
+  await block.getByRole("button", { name: "Wrong files" }).tap();
+  await expect(block.getByText(`You said it's not a fit for ${WORST_REPO}.`)).toBeVisible();
+  await block.getByLabel("Repo to hand off to").selectOption(ALSO);
+  await block.getByRole("button", { name: "Not a fit" }).tap();
+  await block.getByRole("button", { name: "Wrong files" }).tap();
+  await expect(block.getByText(`You said it's not a fit for ${ALSO}.`)).toBeVisible();
+  expect(sent).toEqual([
+    { filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files", files: WORST_CAPTURE.where.files.map((f) => f.path) },
+    { filename: `inbox/${WORST_CAPTURE.filename}`, repo: ALSO, reason: "wrong-files" },
+  ]);
 });
 
 test("Not a fit can be cancelled, and a failed one says why", async ({ page }) => {

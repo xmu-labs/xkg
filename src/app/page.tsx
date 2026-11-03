@@ -326,6 +326,7 @@ export default function CapturePage() {
               filename: `inbox/${result.filename}`,
               repos: [result.where.repo, ...result.where.also.map((a) => a.repo)],
               handoffs: result.handoff ? [{ repo: result.handoff.repo, status: "pending", since: result.handoff.since ?? "" }] : [],
+              files: result.where.files.map((f) => f.path),
             } : undefined}
             explain={result.where?.repo ? {
               auto: result.where.fit === "Strong fit",

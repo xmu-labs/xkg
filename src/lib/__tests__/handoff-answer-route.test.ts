@@ -46,6 +46,12 @@ describe("POST /api/handoffs/answer", () => {
     expect(recordAnswer).toHaveBeenCalledWith(user, { filename: CAPTURE, outcome: "declined", repo: "acme/app", reason: "wrong-files" });
   });
 
+  // fails_when: a web "Wrong files" on a never-queued match records no files, so learning gets no signal
+  it("passes the suggested files of a wrong-files decline on to be checked against the code map", async () => {
+    await post({ filename: CAPTURE, repo: "acme/app", reason: "wrong-files", files: ["src/a.ts", 3, "src/b.ts"] });
+    expect(recordAnswer).toHaveBeenCalledWith(user, { filename: CAPTURE, outcome: "declined", repo: "acme/app", reason: "wrong-files", files: ["src/a.ts", "src/b.ts"] });
+  });
+
   it("refuses a reason the agent couldn't send either", async () => {
     const res = await post({ filename: CAPTURE, repo: "acme/app", reason: "meh" });
     expect(res.status).toBe(400);

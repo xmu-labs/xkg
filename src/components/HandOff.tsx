@@ -18,7 +18,13 @@ const today = () => new Date().toISOString().slice(0, 10);
  * with the same reasons a coding agent sends. The best repo comes first;
  * "also fits" repos are in the switcher.
  */
-export default function HandOff({ filename, repos, handoffs = [] }: { filename: string; repos: string[]; handoffs?: HandoffState[] }) {
+export default function HandOff({ filename, repos, handoffs = [], files = [] }: {
+  filename: string;
+  repos: string[];
+  handoffs?: HandoffState[];
+  /** The files xkg suggested in the best repo (repos[0]), named by a "Wrong files" answer there. */
+  files?: string[];
+}) {
   const [repo, setRepo] = useState(repos[0]!);
   const [rows, setRows] = useState<HandoffState[]>(handoffs);
   const [busy, setBusy] = useState(false);
@@ -29,7 +35,7 @@ export default function HandOff({ filename, repos, handoffs = [] }: { filename: 
   const shown = handoffStatus(row);
   const setRow = (next: HandoffState) => setRows((all) => [next, ...all.filter((r) => r.repo.toLowerCase() !== next.repo.toLowerCase())]);
 
-  async function send(url: string, body: Record<string, string>, fallback: string): Promise<{ status?: string } | null> {
+  async function send(url: string, body: Record<string, string | string[] | undefined>, fallback: string): Promise<{ status?: string } | null> {
     setBusy(true);
     setError("");
     try {
@@ -56,7 +62,8 @@ export default function HandOff({ filename, repos, handoffs = [] }: { filename: 
   }
 
   async function decline(reason: string) {
-    const data = await send("/api/handoffs/answer", { filename, repo, reason }, "Couldn't save your answer. Try again in a moment.");
+    const named: { files?: string[] } = reason === "wrong-files" && repo === repos[0] && files.length ? { files } : {};
+    const data = await send("/api/handoffs/answer", { filename, repo, reason, ...named }, "Couldn't save your answer. Try again in a moment.");
     setAsking(false);
     if (data) setRow({ repo, status: "declined", since: row?.since ?? today() });
   }

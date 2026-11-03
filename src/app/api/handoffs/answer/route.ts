@@ -8,7 +8,8 @@ import { DECLINE_REASONS, recordAnswer } from "@/lib/handoff-outcomes";
  * The capture card's "Not a fit". It records the same decline an agent
  * records with apply_capture (outcome declined), through the same code: one
  * HANDOFFS.md status, one Handoff log line, one learning signal. The body
- * names a capture, a repo and a reason, nothing else.
+ * names a capture, a repo, a reason and, for wrong files, the files xkg
+ * suggested (kept only if they're in the repo's code map, as an agent's are).
  */
 
 const CAPTURE_PATH = /^(inbox|applied)\/[\w.-]+\.md$/;
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!user) return fail(401, "Not authenticated");
     if (!user.github_repo) return fail(400, "Knowledge repo not configured. Complete onboarding first.");
 
-    let body: { filename?: unknown; repo?: unknown; reason?: unknown };
+    let body: { filename?: unknown; repo?: unknown; reason?: unknown; files?: unknown };
     try {
       body = (await req.json()) as typeof body;
     } catch {
@@ -41,7 +42,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       return fail(429, `Rate limit reached: ${quota.limit} handoffs per hour.`, { "Retry-After": String(quota.resetIn) });
     }
 
-    const said = await recordAnswer(user, { filename, outcome: "declined", repo, reason });
+    const files = Array.isArray(body.files) ? body.files.filter((f): f is string => typeof f === "string") : [];
+    const said = await recordAnswer(user, { filename, outcome: "declined", repo, reason, ...(files.length ? { files } : {}) });
     if (!said.startsWith("Recorded:")) return fail(502, said);
     return NextResponse.json({ ok: true, status: "declined", repo });
   } catch (err) {
