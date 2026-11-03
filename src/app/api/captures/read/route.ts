@@ -4,12 +4,16 @@ import { captureName, parseIndexRows, type CaptureStatus } from "@/lib/captures"
 import { parseCaptureFile, type CaptureDetail } from "@/lib/capture-detail";
 import { captureFileUrl } from "@/lib/captureFileUrl";
 import { fail, githubFailure, repoUser } from "@/lib/captures-route";
+import { HANDOFFS_PATH, captureName as handoffCapture, parseHandoffs } from "@/lib/handoffs";
+import type { HandoffState } from "@/lib/handoff-status";
 
 const FOLDERS: CaptureStatus[] = ["inbox", "applied", "archived"];
 
 /**
  * One capture for the capture page, as plain fields. The folder comes from its
  * INDEX.md row; without one (an older or hand-moved file) each folder is tried.
+ * Its handoffs come from HANDOFFS.md; when that can't be read the capture
+ * still shows, with none.
  * GET /api/captures/read?name=2026-10-30-slug.md
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         filename: name,
         status: folder,
         fileUrl: captureFileUrl(repo, name, folder),
+        handoffs: await handoffsOf(user.github_token, repo, name),
       };
       return NextResponse.json({ capture });
     }
@@ -43,5 +48,18 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const github = githubFailure(err);
     if (github) return github;
     return fail(500, `[captures/read] ${err instanceof Error ? err.message : "Failed to read the capture"}`);
+  }
+}
+
+/** The capture's HANDOFFS.md rows, as repo, status and since. None when the file is missing or unreadable. */
+async function handoffsOf(token: string, repo: string, name: string): Promise<HandoffState[]> {
+  try {
+    const file = await readFileStrict(token, repo, HANDOFFS_PATH);
+    if (!file) return [];
+    return parseHandoffs(file.content).rows
+      .filter((r) => handoffCapture(r.capture) === name)
+      .map((r) => ({ repo: r.repo, status: r.status, since: r.since }));
+  } catch {
+    return [];
   }
 }

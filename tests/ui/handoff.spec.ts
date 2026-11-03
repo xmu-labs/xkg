@@ -1,8 +1,9 @@
 import { test, expect, signIn, WORST_CAPTURE, WORST_REPO } from "./fixtures";
 
 // The capture card hands a capture off to the user's coding agent: a Strong
-// fit is already waiting, anything else waits after one tap, in the repo the
-// user picks.
+// fit is already sent, anything else is sent after one tap, in the repo the
+// user picks. A sent capture says so, with the date and the next step, and
+// "Not a fit" answers it from the web.
 
 const ALSO = WORST_CAPTURE.where.also[0]!.repo;
 const possible = { ...WORST_CAPTURE, where: { ...WORST_CAPTURE.where, fit: "Possible fit" } };
@@ -16,10 +17,11 @@ async function capture(page: import("@playwright/test").Page, json: unknown) {
   await expect(page.getByText("Added to your knowledge")).toBeVisible();
 }
 
-test("a Strong fit queued at capture shows that it's waiting", async ({ page }) => {
-  await capture(page, { ...WORST_CAPTURE, handoff: { repo: WORST_REPO } });
+test("a Strong fit queued at capture says it was already sent, when, and what happens next", async ({ page }) => {
+  await capture(page, { ...WORST_CAPTURE, handoff: { repo: WORST_REPO, since: "2026-11-02" } });
   const block = page.getByTestId("apply-it");
-  await expect(block.getByText(`Waiting for your next session in ${WORST_REPO}`)).toBeVisible();
+  await expect(block.getByTestId("handoff-chip")).toHaveText("Sent");
+  await expect(block.getByText(`Sent to your coding agent on Nov 2. It asks you at your next session in ${WORST_REPO}.`)).toBeVisible();
   await expect(block.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
 });
 
@@ -32,7 +34,7 @@ test("one tap hands a Possible fit off to the repo shown", async ({ page }) => {
   });
   const block = page.getByTestId("apply-it");
   await block.getByRole("button", { name: "Hand off to your coding agent" }).tap();
-  await expect(block.getByText(`Waiting for your next session in ${WORST_REPO}`)).toBeVisible();
+  await expect(block.getByText(`Sent to your coding agent`)).toBeVisible();
   expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO }]);
 });
 
@@ -46,10 +48,10 @@ test("the repo switcher hands it off to an also-fits repo", async ({ page }) => 
   const block = page.getByTestId("apply-it");
   await block.getByLabel("Repo to hand off to").selectOption(ALSO);
   await block.getByRole("button", { name: "Hand off to your coding agent" }).tap();
-  await expect(block.getByText(`Waiting for your next session in ${ALSO}`)).toBeVisible();
+  await expect(block.getByText(`in ${ALSO}.`)).toBeVisible();
   expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: ALSO }]);
   await block.getByLabel("Repo to hand off to").selectOption(WORST_REPO);
-  await expect(block.getByText(`Waiting for your next session in ${WORST_REPO}`)).toBeVisible();
+  await expect(block.getByText(`Sent to your coding agent`)).toBeVisible();
 });
 
 test("a failed handoff says why and keeps the button", async ({ page }) => {
@@ -64,4 +66,32 @@ test("a failed handoff says why and keeps the button", async ({ page }) => {
 test("no fit offers no handoff", async ({ page }) => {
   await capture(page, { ...WORST_CAPTURE, where: { fit: "No clear fit", repo: null, files: [], also: [], note: "No code repos synced yet." } });
   await expect(page.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
+});
+
+test("Not a fit records a decline with a reason, and the card says so", async ({ page }) => {
+  await capture(page, { ...WORST_CAPTURE, handoff: { repo: WORST_REPO, since: "2026-11-02" } });
+  const sent: unknown[] = [];
+  await page.route("**/api/handoffs/answer", async (r) => {
+    sent.push(r.request().postDataJSON());
+    await r.fulfill({ json: { ok: true, status: "declined", repo: WORST_REPO } });
+  });
+  const block = page.getByTestId("apply-it");
+  await block.getByRole("button", { name: "Not a fit" }).tap();
+  await block.getByRole("button", { name: "Wrong files" }).tap();
+  await expect(block.getByText(`You said it's not a fit for ${WORST_REPO}.`)).toBeVisible();
+  await expect(block.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
+  expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files" }]);
+});
+
+test("Not a fit can be cancelled, and a failed one says why", async ({ page }) => {
+  await capture(page, possible);
+  await page.route("**/api/handoffs/answer", (r) => r.fulfill({ status: 502, json: { error: "Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment." } }));
+  const block = page.getByTestId("apply-it");
+  await block.getByRole("button", { name: "Not a fit" }).tap();
+  await block.getByRole("button", { name: "Cancel" }).tap();
+  await expect(block.getByRole("button", { name: "Wrong files" })).toHaveCount(0);
+  await block.getByRole("button", { name: "Not a fit" }).tap();
+  await block.getByRole("button", { name: "Doesn't fit this repo" }).tap();
+  await expect(block.getByRole("alert")).toHaveText("Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.");
+  await expect(block.getByRole("button", { name: "Hand off to your coding agent" })).toBeEnabled();
 });

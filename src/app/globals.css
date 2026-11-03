@@ -337,6 +337,8 @@ textarea::placeholder {
 .apply-it[data-tone="strong"] { --fit: var(--fit-strong); --fit-bg: var(--fit-strong-bg); border-left-color: var(--fit-strong); }
 .apply-it[data-tone="possible"] { --fit: var(--fit-possible); --fit-bg: var(--fit-possible-bg); border-left-color: var(--fit-possible); }
 .fit-pill { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.4; padding: 2px 10px; border-radius: 9999px; color: var(--fit); background: var(--fit-bg); border: 1px solid color-mix(in srgb, var(--fit) 45%, transparent); white-space: nowrap; }
+/* A handoff's state (Sent, Snoozed …): neutral, so it never reads as a second fit. */
+.status-pill { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.4; padding: 2px 10px; border-radius: 9999px; color: var(--fg); border: 1px solid var(--gold-low); white-space: nowrap; }
 
 .saved-pop { display: inline-block; animation: xkg-pop 200ms var(--ease-out) 160ms both; }
 

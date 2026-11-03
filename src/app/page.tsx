@@ -30,7 +30,7 @@ interface CaptureResult {
   /** Where the capture applies in the user's code; absent when matching was skipped. */
   where?: WhereCard;
   /** Set when a Strong fit was queued for the next coding session in this repo. */
-  handoff?: { repo: string };
+  handoff?: { repo: string; since?: string };
   /** The model and its token counts; older servers don't send it. */
   usage?: CaptureUsage;
 }
@@ -325,7 +325,7 @@ export default function CapturePage() {
             handoff={result.where?.repo ? {
               filename: `inbox/${result.filename}`,
               repos: [result.where.repo, ...result.where.also.map((a) => a.repo)],
-              waitingIn: result.handoff?.repo,
+              handoffs: result.handoff ? [{ repo: result.handoff.repo, status: "pending", since: result.handoff.since ?? "" }] : [],
             } : undefined}
             explain={result.where?.repo ? {
               auto: result.where.fit === "Strong fit",

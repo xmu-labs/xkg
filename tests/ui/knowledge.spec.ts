@@ -381,3 +381,27 @@ test("a capture page rewrites old After lines once, as Impact", async ({ page })
   await expect(card.getByText("Impact:", { exact: true })).toBeVisible();
   expect(calls).toBe(1);
 });
+
+test("a capture page shows where the capture was handed off, and offers it in other repos", async ({ page }) => {
+  await openDetail(page);
+  const repo = DETAIL.where.repo;
+  const handed = { ...DETAIL, where: { ...DETAIL.where, also: [{ repo: "northwind/web", fit: "Possible fit" }] },
+    handoffs: [{ repo, status: "snoozed:2026-11-10", since: "2026-11-02" }] };
+  await page.route("**/api/captures/read?*", (r) => r.fulfill({ json: { capture: handed } }));
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  const card = page.getByTestId("apply-it");
+  await expect(card.getByTestId("handoff-chip")).toHaveText("Snoozed");
+  await expect(card.getByText(`You said later. Your coding agent asks again after Nov 10 in ${repo}.`)).toBeVisible();
+  await expect(card.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
+  await card.getByLabel("Repo to hand off to").selectOption("northwind/web");
+  await expect(card.getByRole("button", { name: "Hand off to your coding agent" })).toBeVisible();
+});
+
+test("an archived capture page offers no handoff", async ({ page }) => {
+  await openDetail(page);
+  await page.route("**/api/captures/read?*", (r) => r.fulfill({ json: { capture: { ...DETAIL, status: "archived" } } }));
+  await page.goto(`/knowledge/${LONG.replace(/\.md$/, "")}`);
+  await expect(page.getByTestId("apply-it")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
+});

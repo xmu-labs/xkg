@@ -60,7 +60,34 @@ describe("GET /api/captures/read", () => {
       fileUrl: `https://github.com/o/knowledge/blob/main/applied/${NAME}`,
       links: [{ name: "2026-10-20-routing.md", slug: "routing", note: "both are about cost", summary: "Route by cost." }],
     });
-    expect(reads).toEqual(["INDEX.md", `applied/${NAME}`]);
+    expect(reads).toEqual(["INDEX.md", `applied/${NAME}`, "HANDOFFS.md"]);
+  });
+
+  // fails_when: the capture page can't tell the user a capture was already handed off
+  it("says where the capture is handed off, from HANDOFFS.md", async () => {
+    files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | src/llm.ts | strong | pending | 2026-11-02 | auto |
+| inbox/2026-10-20-routing.md | acme/app | code | — | possible | pending | 2026-11-01 | button |
+| applied/${NAME} | acme/web | code | — | possible | snoozed:2026-11-10 | 2026-11-01 | button |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "pending", since: "2026-11-02" },
+      { repo: "acme/web", status: "snoozed:2026-11-10", since: "2026-11-01" },
+    ]);
+  });
+
+  it("shows the capture with no handoffs when HANDOFFS.md is missing or can't be read", async () => {
+    files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
+    expect((await (await get(NAME)).json()).capture.handoffs).toEqual([]);
+    down.add("HANDOFFS.md");
+    const res = await get(NAME);
+    expect(res.status).toBe(200);
+    expect((await res.json()).capture.handoffs).toEqual([]);
   });
 
   it("finds a capture with no index row in any folder", async () => {
