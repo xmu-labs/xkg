@@ -7,6 +7,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { LLM_PROVIDERS, PROVIDERS } from "./providers";
 import { recordSpend } from "./llm-spend";
 import { buildSource, buildExtractionInput, checkClaims, sourceFrontmatter, renderEvidenceSection, renderSourceSection, sourceText } from "./evidence";
+import { NoCoreIdeaError } from "./empty-capture";
 import type { ExtractedCapture, SourceSnapshot, ContentType, RelevanceResult, SynthesisResult, ApplicationSuggestion, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
 // ── Config ──
@@ -597,7 +598,10 @@ export function detectSourceType(content: string): SourceType {
   return "paste";
 }
 
-/** Call the LLM and parse the extraction result. Throws on failure. */
+/**
+ * Call the LLM and parse the extraction result. Throws on failure, and
+ * NoCoreIdeaError when the model found no core idea.
+ */
 export async function extractCapture(
   apiKey: string,
   content: string,
@@ -628,6 +632,8 @@ export async function extractCapture(
   } catch {
     throw new Error("Failed to parse LLM response — extraction returned invalid JSON.");
   }
+  // Nothing to save: the caller tells the user why instead (XKG-116).
+  if (str((parsed as { coreIdea?: unknown } | null)?.coreIdea) === null) throw new NoCoreIdeaError();
   return normalizeCapture(parsed, source);
 }
 

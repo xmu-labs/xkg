@@ -10,6 +10,7 @@ function openAiResponse(text: string) {
   });
 }
 
+const MINIMAL = JSON.stringify({ coreIdea: "Alerts need an owner." });
 const TEXT = "Alerts without a named owner get ignored.\n\nEvery alert needs one person on the hook.";
 
 describe("extractCapture sends a segmented source and checks the claims", () => {
@@ -23,7 +24,7 @@ describe("extractCapture sends a segmented source and checks the claims", () => 
   }
 
   it("sends source ids, metadata and segments as the user message", async () => {
-    fetchSpy.mockResolvedValue(openAiResponse("{}"));
+    fetchSpy.mockResolvedValue(openAiResponse(MINIMAL));
     await extractCapture("k", TEXT, "Alert ownership", "openai", { url: "https://example.com/n" });
     const input = JSON.parse(sent().messages[1]!.content);
     expect(input.metadata).toEqual({ title: "Alert ownership", url: "https://example.com/n" });
@@ -32,7 +33,7 @@ describe("extractCapture sends a segmented source and checks the claims", () => 
 
   // protects: room for a full answer, and a ceiling on what one capture can cost; fails_when: the cap cuts typical answers (~1,000 tokens) or goes back to 4,000; no_claim: none
   it("leaves room for claims in the answer, with a ceiling", async () => {
-    fetchSpy.mockResolvedValue(openAiResponse("{}"));
+    fetchSpy.mockResolvedValue(openAiResponse(MINIMAL));
     await extractCapture("k", TEXT, undefined, "openai");
     expect(sent().max_tokens).toBeGreaterThanOrEqual(1500);
     expect(sent().max_tokens).toBeLessThanOrEqual(2000);
@@ -52,5 +53,18 @@ describe("extractCapture sends a segmented source and checks the claims", () => 
     const c = await extractCapture("k", TEXT, undefined, "openai");
     expect(c.claims).toHaveLength(1);
     expect(c.source?.segments).toHaveLength(2);
+  });
+});
+
+describe("extractCapture with no core idea (XKG-116)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+
+  // protects: an empty answer never becomes a saved placeholder capture; fails_when: extractCapture returns "No core idea could be extracted"; no_claim: what callers show (capture-where.test.ts)
+  it("throws NoCoreIdeaError when the model returns no core idea", async () => {
+    const { NoCoreIdeaError } = await import("../empty-capture");
+    fetchSpy.mockResolvedValue(openAiResponse(JSON.stringify({ slug: null, coreIdea: null, takeaways: [], lowConfidence: true })));
+    await expect(extractCapture("k", "https://example.com/x", undefined, "openai")).rejects.toBeInstanceOf(NoCoreIdeaError);
   });
 });

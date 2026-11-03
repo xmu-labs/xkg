@@ -78,3 +78,11 @@ describe("effortApplied", () => {
     expect(effortApplied(llm as never)).toBe(expected);
   });
 });
+
+describe("errorClass for an empty extraction (XKG-116)", () => {
+  // protects: empty extractions can be counted in the logs; fails_when: they log as "other"; no_claim: none
+  it("logs a capture with no core idea as no_core_idea", async () => {
+    const { NoCoreIdeaError } = await import("../empty-capture");
+    expect(errorClass(new NoCoreIdeaError())).toBe("no_core_idea");
+  });
+});

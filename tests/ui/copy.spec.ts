@@ -45,6 +45,19 @@ test("a failed capture says what failed and what to do", async ({ page }) => {
   await expect(page.locator("main").getByRole("alert")).toHaveText("Couldn't capture that. Try again in a moment.");
 });
 
+test("a page xkg couldn't read says why, saves nothing and keeps the link (XKG-116)", async ({ page }) => {
+  await signIn(page);
+  const reason = "This site blocks automated readers, so xkg couldn't read the page. Nothing was saved. Paste the page's text instead.";
+  await page.route("**/api/capture", (r) => r.fulfill({ status: 422, json: { error: reason } }));
+  await page.goto("/");
+  const input = page.getByLabel("Content to capture");
+  await input.fill("https://example.com/register/webinar");
+  await page.getByRole("button", { name: "Capture", exact: true }).tap();
+  await expect(page.locator("main").getByRole("alert")).toHaveText(reason);
+  await expect(page.getByText("Added to your knowledge")).toHaveCount(0);
+  await expect(input).toHaveValue("https://example.com/register/webinar");
+});
+
 test("Settings gives the connector URL for Claude and ChatGPT on the web", async ({ page, baseURL }) => {
   await signIn(page);
   await page.goto("/");
