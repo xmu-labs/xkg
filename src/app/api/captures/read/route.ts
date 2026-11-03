@@ -4,7 +4,7 @@ import { captureName, parseIndexRows, type CaptureStatus } from "@/lib/captures"
 import { parseCaptureFile, type CaptureDetail } from "@/lib/capture-detail";
 import { captureFileUrl } from "@/lib/captureFileUrl";
 import { fail, githubFailure, repoUser } from "@/lib/captures-route";
-import { HANDOFFS_PATH, captureName as handoffCapture, parseHandoffs } from "@/lib/handoffs";
+import { HANDOFFS_PATH, captureName as handoffCapture, parseHandoffLog, parseHandoffs } from "@/lib/handoffs";
 import type { HandoffState } from "@/lib/handoff-status";
 
 const FOLDERS: CaptureStatus[] = ["inbox", "applied", "archived"];
@@ -12,8 +12,9 @@ const FOLDERS: CaptureStatus[] = ["inbox", "applied", "archived"];
 /**
  * One capture for the capture page, as plain fields. The folder comes from its
  * INDEX.md row; without one (an older or hand-moved file) each folder is tried.
- * Its handoffs come from HANDOFFS.md; when that can't be read the capture
- * still shows, with none.
+ * Its handoffs come from HANDOFFS.md, plus the answers in its Handoff log for
+ * repos with no row there; when HANDOFFS.md can't be read the capture still
+ * shows, with the logged answers only.
  * GET /api/captures/read?name=2026-10-30-slug.md
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         filename: name,
         status: folder,
         fileUrl: captureFileUrl(repo, name, folder),
-        handoffs: await handoffsOf(user.github_token, repo, name),
+        handoffs: withLoggedAnswers(await handoffsOf(user.github_token, repo, name), file.content),
       };
       return NextResponse.json({ capture });
     }
@@ -62,4 +63,24 @@ async function handoffsOf(token: string, repo: string, name: string): Promise<Ha
   } catch {
     return [];
   }
+}
+
+/** What the log keeps for good: a repo whose last answer was one of these. */
+const LOGGED_FINAL = new Set(["declined", "done", "applied"]);
+
+/**
+ * Adds, for each repo with no HANDOFFS.md row, the capture's last logged
+ * answer when it's final: a "Not a fit" on a repo that was never queued only
+ * goes to the log, and a finished row leaves HANDOFFS.md after a while.
+ */
+function withLoggedAnswers(rows: HandoffState[], content: string): HandoffState[] {
+  const has = new Set(rows.map((r) => r.repo.toLowerCase()));
+  const last = new Map<string, HandoffState>();
+  for (const e of parseHandoffLog(content)) {
+    const repo = e.repo?.toLowerCase();
+    if (!repo || has.has(repo)) continue;
+    last.delete(repo);
+    last.set(repo, { repo, status: e.outcome, since: e.date });
+  }
+  return [...rows, ...[...last.values()].filter((r) => LOGGED_FINAL.has(r.status))];
 }

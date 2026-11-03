@@ -81,6 +81,32 @@ describe("GET /api/captures/read", () => {
     ]);
   });
 
+  // fails_when: "Not a fit" on a repo with no HANDOFFS.md row is lost on reload and the Hand off button comes back
+  it("keeps an answer from the Handoff log for a repo with no HANDOFFS.md row", async () => {
+    const logged = FILE.replace("## Links to memory", `## Handoff log
+- 2026-11-01 · acme/web · later
+- 2026-11-03 · acme/web · declined (wrong-files)
+- 2026-11-02 · acme/old · applied · commit abc123
+- 2026-11-02 · acme/cli · declined (other)
+- 2026-11-03 · acme/cli · reverted · commit def456
+- 2026-11-03 · acme/app · declined (doesnt-fit)
+
+## Links to memory`);
+    files.set(`inbox/${NAME}`, { content: logged, sha: "a" });
+    files.set("HANDOFFS.md", { content: `# Handoffs
+
+| capture | repo | kind | files | fit | status | since | source |
+|---|---|---|---|---|---|---|---|
+| inbox/${NAME} | acme/app | code | src/llm.ts | strong | pending | 2026-11-02 | auto |
+`, sha: "h" });
+    const { capture } = await (await get(NAME)).json();
+    expect(capture.handoffs).toEqual([
+      { repo: "acme/app", status: "pending", since: "2026-11-02" },
+      { repo: "acme/web", status: "declined", since: "2026-11-03" },
+      { repo: "acme/old", status: "applied", since: "2026-11-02" },
+    ]);
+  });
+
   it("shows the capture with no handoffs when HANDOFFS.md is missing or can't be read", async () => {
     files.set(`inbox/${NAME}`, { content: FILE, sha: "a" });
     expect((await (await get(NAME)).json()).capture.handoffs).toEqual([]);
