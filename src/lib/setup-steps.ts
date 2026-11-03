@@ -3,12 +3,17 @@
  * signing up and its first apply.
  *
  * Most steps are read from what the database already holds (the users row,
- * surface_events, apply_events). Two have no other trace, so they get one row
- * per user the first time they happen: the first saved capture, and the first
- * tool call from an agent or an xkg hook. A row holds the user id, the step
- * name and the date. Nothing about the capture or the agent.
+ * surface_events, apply_events). Three have no full trace, so they get one row
+ * per user the first time they happen: the first saved capture, the first tool
+ * call from an agent or an xkg hook, and the first capture an agent finds with
+ * search or read_capture. A row holds the user id, the step name and the date.
+ * Nothing about the capture or the agent.
  *
- *   capture / MCP tools/call ──recordSetupStep──> setup_steps ─┐
+ * A later step proves the earlier ones happened, so each step's date is the
+ * earliest of its own row and what came after it. That keeps accounts active
+ * before setup_steps existed from showing as stopped at their first capture.
+ *
+ *   capture / tools/call / search ──recordSetupStep──> setup_steps ─┐
  *   users + surface_events + apply_events ─────────────────────┴─setupFunnel──> admin route
  */
 
@@ -16,7 +21,7 @@ import { sql } from "./sql";
 import { ensureSetupStepTable, ensureSurfaceEventTable } from "./db";
 import { weekStart } from "./ledger";
 
-export type SetupStep = "capture" | "agent";
+export type SetupStep = "capture" | "agent" | "shown";
 
 /** Pairs this instance has already written, so a busy agent doesn't write on every call. */
 const recorded = new Set<string>();
@@ -50,7 +55,7 @@ export type FunnelUser = {
   aiKey: boolean;
   firstCapture: string | null;
   firstAgentCall: string | null;
-  /** First time an agent was shown a capture (briefing, search, handoff offer); the web app's card doesn't count. */
+  /** First time an agent was shown a capture (briefing, search, read_capture, handoff offer); the web app's card doesn't count. */
   firstShown: string | null;
   firstApply: string | null;
   stoppedBefore: FunnelStep | null;
@@ -58,18 +63,30 @@ export type FunnelUser = {
 
 export type SetupFunnel = { users: FunnelUser[]; reached: Record<"signedUp" | FunnelStep, number> };
 
+type When = string | Date | null;
+
 type FunnelRow = {
   user_id: number;
   created_at: string | Date;
   has_repo: boolean;
   has_ai_key: boolean;
-  first_capture: string | Date | null;
-  first_agent: string | Date | null;
-  first_shown: string | Date | null;
-  first_apply: string | Date | null;
+  step_capture: When;
+  step_agent: When;
+  step_shown: When;
+  /** Any surface event: the capture card's is written when a capture is saved. */
+  first_surface: When;
+  /** A surface event from an agent's side (not the web card). */
+  first_agent_surface: When;
+  first_apply: When;
 };
 
-const day = (v: string | Date | null): string | null => (v === null ? null : new Date(v).toISOString().slice(0, 10));
+const day = (v: When): string | null => (v === null ? null : new Date(v).toISOString().slice(0, 10));
+
+/** The earliest of the dates that are set. */
+function earliest(...values: When[]): When {
+  const times = values.filter((v): v is string | Date => v !== null).map((v) => new Date(v).getTime());
+  return times.length ? new Date(Math.min(...times)) : null;
+}
 
 /** Accounts that signed up in the last `weeks` weeks (Monday-aligned, like the apply stats), with the date of each step. */
 export async function setupFunnel(today: string, weeks: number): Promise<SetupFunnel> {
@@ -80,9 +97,11 @@ export async function setupFunnel(today: string, weeks: number): Promise<SetupFu
     SELECT u.id AS user_id, u.created_at,
       (u.github_repo IS NOT NULL) AS has_repo,
       (u.llm_api_key IS NOT NULL) AS has_ai_key,
-      (SELECT min(first_at) FROM setup_steps s WHERE s.user_id = u.id AND s.step = 'capture') AS first_capture,
-      (SELECT min(first_at) FROM setup_steps s WHERE s.user_id = u.id AND s.step = 'agent') AS first_agent,
-      (SELECT min(surfaced_at) FROM surface_events e WHERE e.user_id = u.id AND e.channel <> 'where') AS first_shown,
+      (SELECT min(first_at) FROM setup_steps s WHERE s.user_id = u.id AND s.step = 'capture') AS step_capture,
+      (SELECT min(first_at) FROM setup_steps s WHERE s.user_id = u.id AND s.step = 'agent') AS step_agent,
+      (SELECT min(first_at) FROM setup_steps s WHERE s.user_id = u.id AND s.step = 'shown') AS step_shown,
+      (SELECT min(surfaced_at) FROM surface_events e WHERE e.user_id = u.id) AS first_surface,
+      (SELECT min(surfaced_at) FROM surface_events e WHERE e.user_id = u.id AND e.channel <> 'where') AS first_agent_surface,
       (SELECT min(applied_at) FROM apply_events a WHERE a.user_id = u.id) AS first_apply
     FROM users u
     WHERE u.created_at >= ${from.toISOString().slice(0, 10)}
@@ -91,13 +110,17 @@ export async function setupFunnel(today: string, weeks: number): Promise<SetupFu
 
   const reached: SetupFunnel["reached"] = { signedUp: 0, repo: 0, aiKey: 0, capture: 0, agent: 0, shown: 0, apply: 0 };
   const users = rows.map((r): FunnelUser => {
+    const apply = r.first_apply;
+    const shown = earliest(r.step_shown, r.first_agent_surface, apply);
+    const agent = earliest(r.step_agent, shown);
+    const capture = earliest(r.step_capture, r.first_surface, shown);
     const done: Record<FunnelStep, boolean> = {
       repo: Boolean(r.has_repo),
       aiKey: Boolean(r.has_ai_key),
-      capture: r.first_capture !== null,
-      agent: r.first_agent !== null,
-      shown: r.first_shown !== null,
-      apply: r.first_apply !== null,
+      capture: capture !== null,
+      agent: agent !== null,
+      shown: shown !== null,
+      apply: apply !== null,
     };
     reached.signedUp++;
     for (const step of ORDER) if (done[step]) reached[step]++;
@@ -106,10 +129,10 @@ export async function setupFunnel(today: string, weeks: number): Promise<SetupFu
       signedUp: day(r.created_at)!,
       repo: done.repo,
       aiKey: done.aiKey,
-      firstCapture: day(r.first_capture),
-      firstAgentCall: day(r.first_agent),
-      firstShown: day(r.first_shown),
-      firstApply: day(r.first_apply),
+      firstCapture: day(capture),
+      firstAgentCall: day(agent),
+      firstShown: day(shown),
+      firstApply: day(apply),
       stoppedBefore: ORDER.find((step) => !done[step]) ?? null,
     };
   });

@@ -68,9 +68,11 @@ describe("setupFunnel", () => {
     created_at: "2026-11-02T10:00:00Z",
     has_repo: false,
     has_ai_key: false,
-    first_capture: null,
-    first_agent: null,
-    first_shown: null,
+    step_capture: null,
+    step_agent: null,
+    step_shown: null,
+    first_surface: null,
+    first_agent_surface: null,
     first_apply: null,
     ...over,
   });
@@ -88,11 +90,11 @@ describe("setupFunnel", () => {
 
   it("gives each account its step dates and the first step it has not reached", async () => {
     rows = [
-      row({ user_id: 1, has_repo: true, has_ai_key: true, first_capture: "2026-11-02T11:00:00Z", first_agent: "2026-11-02T12:00:00Z", first_shown: "2026-11-03T08:00:00Z", first_apply: "2026-11-03T09:00:00Z" }),
-      row({ user_id: 2, has_repo: true, has_ai_key: true, first_capture: "2026-11-02T11:00:00Z" }),
+      row({ user_id: 1, has_repo: true, has_ai_key: true, step_capture: "2026-11-02T11:00:00Z", step_agent: "2026-11-02T12:00:00Z", first_agent_surface: "2026-11-03T08:00:00Z", first_apply: "2026-11-03T09:00:00Z" }),
+      row({ user_id: 2, has_repo: true, has_ai_key: true, step_capture: "2026-11-02T11:00:00Z" }),
       row({ user_id: 3, has_repo: true }),
       // An agent can capture before the web app ever does: steps are read in order, not by date.
-      row({ user_id: 4, has_repo: true, has_ai_key: true, first_agent: "2026-11-02T12:00:00Z" }),
+      row({ user_id: 4, has_repo: true, has_ai_key: true, step_agent: "2026-11-02T12:00:00Z" }),
     ];
 
     const funnel = await setupFunnel("2026-11-03", 4);
@@ -104,6 +106,31 @@ describe("setupFunnel", () => {
       { userId: 4, signedUp: "2026-11-02", repo: true, aiKey: true, firstCapture: null, firstAgentCall: "2026-11-02", firstShown: null, firstApply: null, stoppedBefore: "capture" },
     ]);
     expect(funnel.reached).toEqual({ signedUp: 4, repo: 4, aiKey: 3, capture: 2, agent: 2, shown: 1, apply: 1 });
+  });
+
+  // protects: Codex P2 on #188, steps that happened before tracking began are read from later evidence; fails_when: an account with an apply shows as stopped before its first capture; no_claim: exact historical dates
+  it("counts a step as reached when a later step shows it happened", async () => {
+    rows = [
+      // Applied before setup_steps existed: no step rows at all.
+      row({ user_id: 5, has_repo: true, has_ai_key: true, first_surface: "2026-11-01T09:00:00Z", first_agent_surface: "2026-11-01T10:00:00Z", first_apply: "2026-11-01T11:00:00Z" }),
+      // A capture card was shown (written at capture time), nothing else yet.
+      row({ user_id: 6, has_repo: true, has_ai_key: true, first_surface: "2026-11-01T09:00:00Z" }),
+      // A step row later than the evidence: the earlier date wins.
+      row({ user_id: 7, has_repo: true, has_ai_key: true, step_capture: "2026-11-03T09:00:00Z", first_surface: "2026-11-01T09:00:00Z" }),
+    ];
+
+    const users = (await setupFunnel("2026-11-03", 4)).users;
+
+    expect(users[0]).toMatchObject({ firstCapture: "2026-11-01", firstAgentCall: "2026-11-01", firstShown: "2026-11-01", firstApply: "2026-11-01", stoppedBefore: null });
+    expect(users[1]).toMatchObject({ firstCapture: "2026-11-01", firstAgentCall: null, stoppedBefore: "agent" });
+    expect(users[2]!.firstCapture).toBe("2026-11-01");
+  });
+
+  // protects: Codex P2 on #188, a capture found through search or read_capture counts as shown; fails_when: only surface events count; no_claim: which tool showed it
+  it("counts a shown step recorded by search or read_capture", async () => {
+    rows = [row({ user_id: 8, has_repo: true, has_ai_key: true, step_capture: "2026-11-02T09:00:00Z", step_agent: "2026-11-02T10:00:00Z", step_shown: "2026-11-02T10:00:00Z" })];
+    const users = (await setupFunnel("2026-11-03", 4)).users;
+    expect(users[0]).toMatchObject({ firstShown: "2026-11-02", stoppedBefore: "apply" });
   });
 
   it("returns an empty funnel when nobody signed up in the window", async () => {

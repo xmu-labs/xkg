@@ -254,6 +254,7 @@ async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<
     return `No ${what}${scope}.`;
   }
 
+  await recordSetupStep(user.id, "shown");
   const page = paginate(matches, args.offset ?? 0, args.limit ?? 20);
   const header = query.trim() ? `${page.total} match(es):` : `${page.total} capture(s):`;
   return `${header}\n${page.items.join("\n")}${pageFooter(page, tool)}`;
@@ -267,6 +268,7 @@ export async function handleReadCapture(user: User, args: { filename: string }):
   const path = args.filename.includes("/") || args.filename === "RULES.md" ? args.filename : `inbox/${args.filename}`;
   const file = await readFile(user.github_token, user.github_repo, path);
   if (!file) return `File not found: ${path}. Use search to find it.`;
+  if (path !== "RULES.md") await recordSetupStep(user.id, "shown");
   return file.content;
 }
 
