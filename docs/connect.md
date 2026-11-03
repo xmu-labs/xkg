@@ -95,7 +95,7 @@ Most agents read this on their own. Codex CLI doesn't yet, so `init` writes the 
 The session-start hook runs `xkg session-start`. When a session starts, your agent offers what's waiting:
 
 - **Captures matched to this repo** (from `HANDOFFS.md`): "xkg: 2 captures fit this repo (owner/name). Want to see them and apply one?" It lists up to 3. See [handoffs](how-it-works.md#1-capture).
-- **Otherwise, new captures in your inbox:** "You have 3 new xkg captures. Want to see them and apply one here?"
+- **Otherwise, new captures in your inbox:** the agent calls `briefing` for this repo before your task and tells you in one line which captures fit, then asks if you want to apply one. The hook itself makes no LLM call; the agent's briefing call runs on your model and key.
 
 It stays quiet when nothing waits or xkg can't be reached, and gives up after 3 seconds. It speaks once per session: when the agent compacts or forks the chat, it prints nothing. It reads the key from `~/.xkg/config.json` (`xkg config set key YOUR_API_KEY`), so hook files hold no key.
 
@@ -184,7 +184,7 @@ Or use the URL, with no API key:
 claude mcp add --transport http xkg https://xkg.xmu.sh/api/mcp
 ```
 
-The first time `serve-mcp --key` runs, it installs a light session hook, unless a `session-start` hook is already there. A server set up by `init` has no key in its entry and installs nothing.
+The first time `serve-mcp --key` runs, it installs the briefing session hook (Claude Code only), unless a `session-start` hook is already there. `setup-hooks --key YOUR_API_KEY --no-briefing` swaps it for an inbox count with no LLM call. A server set up by `init` has no key in its entry and installs nothing.
 
 More hooks are optional; MCP works without them. Hooks are local files, so they run in the CLI and editor extensions, not in the browser.
 

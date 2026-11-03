@@ -54,6 +54,22 @@ describe("setupHooks", () => {
     expect(cmd).toContain("my-api-key");
   });
 
+  // protects: XKG-177, the briefing is the default hook; fails_when: a hook installed without the option only counts the inbox; no_claim: none
+  it("briefs by default when the briefing option is not given", async () => {
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("key123", { silent: true });
+    const cmd = commands(readSettings(), "SessionStart")[0] ?? "";
+    expect(cmd).toContain("--briefing");
+  });
+
+  // protects: a count-only hook a user chose stays count-only through migration; fails_when: the new default overrides it; no_claim: none
+  it("skipIfExists: migrates an old count-only hook without adding --briefing", async () => {
+    writeSettings({ hooks: { SessionStart: [{ hooks: [{ type: "command", command: "npx -y mnemos-capture@latest inbox-check --key k" }] }] } });
+    const { setupHooks } = await import("../hooks.js");
+    setupHooks("k", { silent: true, skipIfExists: true });
+    expect(commands(readSettings(), "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k"]);
+  });
+
   it("includes --briefing flag when briefing option is true", async () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("key123", { silent: true, briefing: true });
@@ -143,7 +159,7 @@ describe("setupHooks", () => {
     const { setupHooks } = await import("../hooks.js");
     setupHooks("k", { silent: true, vault: true });
     const settings = readSettings();
-    expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k"]);
+    expect(commands(settings, "SessionStart")).toEqual(["npx -y @xmu-labs/xkg@latest inbox-check --key k --briefing"]);
     expect(commands(settings, "PreToolUse")).toEqual(["npx -y @xmu-labs/xkg@latest vault-check --key k"]);
   });
 
@@ -193,7 +209,7 @@ describe("setupHooks", () => {
     expect(commands(readSettings(), "SessionStart")).toEqual([
       scoped,
       prefixed,
-      "npx -y @xmu-labs/xkg@latest inbox-check --key k",
+      "npx -y @xmu-labs/xkg@latest inbox-check --key k --briefing",
     ]);
   });
 

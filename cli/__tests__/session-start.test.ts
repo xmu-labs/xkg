@@ -53,8 +53,10 @@ describe("sessionStart", () => {
   it("prints the count and the question as plain text when no agent is named", async () => {
     const { sessionStart } = await import("../session-start.js");
     const out = await captureStdout(() => sessionStart("key"));
-    expect(out).toContain("You have 3 new xkg captures. Want to see them and apply one here?");
+    expect(out).toContain("3 new captures");
     expect(out).toContain("call the xkg `briefing` tool");
+    expect(out).toContain("Before starting the user's task");
+    expect(out).not.toContain("Want to see");
     expect(() => JSON.parse(out)).toThrow();
   });
 
@@ -73,25 +75,25 @@ describe("sessionStart", () => {
       hookSpecificOutput: { hookEventName: string; additionalContext: string };
     };
     expect(out.hookSpecificOutput.hookEventName).toBe("SessionStart");
-    expect(out.hookSpecificOutput.additionalContext).toContain("You have 3 new xkg captures.");
+    expect(out.hookSpecificOutput.additionalContext).toContain("3 new captures");
   });
 
   it("uses top-level additionalContext for copilot", async () => {
     const { sessionStart } = await import("../session-start.js");
     const out = JSON.parse(await captureStdout(() => sessionStart("key", { agent: "copilot" }))) as { additionalContext: string };
-    expect(out.additionalContext).toContain("You have 3 new xkg captures.");
+    expect(out.additionalContext).toContain("3 new captures");
   });
 
   it("uses additional_context for cursor", async () => {
     const { sessionStart } = await import("../session-start.js");
     const out = JSON.parse(await captureStdout(() => sessionStart("key", { agent: "cursor" }))) as { additional_context: string };
-    expect(out.additional_context).toContain("You have 3 new xkg captures.");
+    expect(out.additional_context).toContain("3 new captures");
   });
 
   it("falls back to plain text for an agent it doesn't know", async () => {
     const { sessionStart } = await import("../session-start.js");
     const out = await captureStdout(() => sessionStart("key", { agent: "aider" }));
-    expect(out).toContain("You have 3 new xkg captures.");
+    expect(out).toContain("3 new captures");
     expect(() => JSON.parse(out)).toThrow();
   });
 
@@ -99,7 +101,8 @@ describe("sessionStart", () => {
     fetchSpy.mockImplementation(() => Promise.resolve(reply("1 capture(s) in inbox:\n\n- a")));
     const { sessionStart } = await import("../session-start.js");
     const out = await captureStdout(() => sessionStart("key"));
-    expect(out).toContain("You have 1 new xkg capture. Want to see it and apply it here?");
+    expect(out).toContain("xkg: 1 new capture in");
+    expect(out).not.toContain("1 new captures");
   });
 
   // protects: the offer is made once per session; fails_when: a chat the agent compacted or forked (Claude Code, Codex) gets the offer again mid-session, or calls xkg for it; no_claim: how each agent fills `source` (QA runs each agent's input shape)
@@ -123,7 +126,7 @@ describe("sessionStart", () => {
   ])("offers as usual for hook input %j", async (input) => {
     const { sessionStart } = await import("../session-start.js");
     const out = await captureStdout(() => sessionStart("key", { repo: null, input }));
-    expect(out).toContain("You have 3 new xkg captures.");
+    expect(out).toContain("3 new captures");
   });
 
   it("prints nothing when the inbox is empty", async () => {
@@ -204,8 +207,19 @@ describe("sessionStart", () => {
       serve("No captures are waiting for acme/app.");
       const { sessionStart } = await import("../session-start.js");
       const out = await captureStdout(() => sessionStart("key", { repo: "acme/app" }));
-      expect(out).toContain("You have 3 new xkg captures.");
+      expect(out).toContain("3 new captures");
       expect(out).not.toContain("No captures are waiting");
+    });
+
+    // protects: XKG-177, the agent briefs right away with the repo it is in instead of asking first; fails_when: the hook asks the user before any briefing, or names no repo; no_claim: whether the agent follows it (QA per agent)
+    it("tells the agent to brief for this repo before the task when nothing waits", async () => {
+      serve("No captures are waiting for acme/app.");
+      const { sessionStart } = await import("../session-start.js");
+      const out = await captureStdout(() => sessionStart("key", { repo: "acme/app" }));
+      expect(out).toContain('call the xkg `briefing` tool with repo "acme/app"');
+      expect(out).toContain("Before starting the user's task");
+      expect(out).toContain("tell the user in one line which captures fit");
+      expect(out).not.toContain("Want to see");
     });
   });
 

@@ -30,10 +30,10 @@ The binary is `xkg`, also available as `xmu` and `mnemos-capture`.
 | --- | --- |
 | `npx -y @xmu-labs/xkg@latest` | Opens the hosted app |
 | `serve-mcp [--key YOUR_API_KEY]` | Runs the local MCP server. Without `--key`, it uses the key in `~/.xkg/config.json` |
-| `session-start [--agent NAME]` | For an agent's session-start hook: offers to show and apply new captures. `NAME` is `claude`, `codex`, `gemini`, `copilot`, or `cursor`; without it, the output is plain text. See [the session-start hook](connect.md#offer-new-captures-when-a-session-starts) |
+| `session-start [--agent NAME]` | For an agent's session-start hook: offers captures waiting for this repo, else has the agent brief on new captures before your task. `NAME` is `claude`, `codex`, `gemini`, `copilot`, or `cursor`; without it, the output is plain text. See [the session-start hook](connect.md#offer-new-captures-when-a-session-starts) |
 | `setup-git-hook --key YOUR_API_KEY` | In a repo: records commits with an `xkg-capture: <filename>` line, and keeps the repo's code map up to date after commits, pulls, and branch switches. Works with any coding agent. The key is stored in `~/.xkg/config.json`, not in the hooks. Setup checks that the hook can reach xkg and sends the map once |
 | `map [--key YOUR_API_KEY]` | In a repo: sends its code map now (file paths, exported names and signatures, opening comment lines; never code) |
-| `setup-hooks --key YOUR_API_KEY [--briefing] [--vault]` | Installs Claude Code hooks |
+| `setup-hooks --key YOUR_API_KEY [--no-briefing] [--vault]` | Installs Claude Code hooks. The session hook briefs by default (one LLM call on your key at session start); `--no-briefing` counts the inbox instead |
 
 The git hooks run the CLI version that installed them. After a new release, run `setup-git-hook` again in each repo to update them.
 
