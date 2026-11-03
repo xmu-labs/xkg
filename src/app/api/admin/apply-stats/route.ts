@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminAuthorized } from "@/lib/admin-auth";
-import { applyGateStats } from "@/lib/apply-events";
-import { applySourceStats, matchingStats } from "@/lib/surface-events";
-import { handoffStats } from "@/lib/handoff-events";
-import { setupFunnel } from "@/lib/setup-steps";
-
-const DEFAULT_WEEKS = 4;
-const MAX_WEEKS = 52;
-const NO_SOURCES = { cardOnly: 0, briefingOnly: 0, both: 0, other: 0, none: 0 };
+import { readStats, weeksOf } from "@/lib/admin-stats";
 
 // Operator read of the apply metric: distinct captures applied per user and
 // week, with commit, with a reason, by agent and by what surfaced them first;
@@ -21,26 +14,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const asked = Number.parseInt(req.nextUrl.searchParams.get("weeks") ?? "", 10);
-  const weeks = Number.isFinite(asked) ? Math.min(Math.max(asked, 1), MAX_WEEKS) : DEFAULT_WEEKS;
-
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    const [gate, sources, matching, handoffs, setup] = await Promise.all([
-      applyGateStats(today, weeks),
-      applySourceStats(today, weeks),
-      matchingStats(today, weeks),
-      handoffStats(today, weeks),
-      setupFunnel(today, weeks),
-    ]);
-    const sourcesOf = (userId: number, week: string) =>
-      sources.find((s) => s.userId === userId && s.weekStart === week)?.sources ?? NO_SOURCES;
-    return NextResponse.json({
-      weeks: gate.map((w) => ({ ...w, sources: sourcesOf(w.userId, w.weekStart) })),
-      matching,
-      handoffs,
-      setup,
-    });
+    return NextResponse.json(await readStats(weeksOf(req.nextUrl.searchParams.get("weeks"))));
   } catch (err) {
     console.error("apply stats read failed:", err);
     return NextResponse.json({ error: "Failed to read apply stats" }, { status: 500 });

@@ -32,6 +32,10 @@ export const env = {
   get adminSecret(): string {
     return required("ADMIN_SECRET");
   },
+  /** The GitHub login allowed to open /admin, lowercased; null lets nobody in. */
+  get adminGithubLogin(): string | null {
+    return process.env.ADMIN_GITHUB_LOGIN?.trim().toLowerCase() || null;
+  },
   /** xkg's own TypeSafe key: when set, Jev decides where a capture applies (server-side only). */
   get typesafeApiKey(): string | null {
     return process.env.TYPESAFE_API_KEY || null;
