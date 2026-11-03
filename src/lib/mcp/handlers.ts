@@ -193,6 +193,7 @@ export async function handleListInbox(
 
   // Page through filtered results; only the current page is read for summaries.
   const page = paginate(filtered, args.offset ?? 0, args.limit ?? 10);
+  await recordSetupStep(user.id, "shown");
   const summaries = await Promise.all(
     page.items.map(async (f, i) => {
       const n = page.offset + i + 1;
@@ -655,6 +656,7 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
   const validContents = contents.filter((c): c is { filename: string; content: string } => c !== null);
 
   if (validContents.length === 0) return "Could not read relevant captures.";
+  await recordSetupStep(user.id, "shown");
 
   // Generate application suggestions; the filename lets the agent apply_capture the one it used
   const suggestions = await generateApplicationSuggestions(
@@ -688,6 +690,7 @@ export async function handleGeneratePlan(
   );
 
   if (selectedCaptures.length === 0) return "None of the specified captures could be found.";
+  await recordSetupStep(user.id, "shown");
 
   // xkg never reads code (github_repo is the knowledge repo, where code paths
   // don't exist). Only the paths the agent names reach the plan; anything that

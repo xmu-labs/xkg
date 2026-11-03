@@ -3,13 +3,15 @@ import type { User } from "../db";
 
 /**
  * The setup funnel's "shown" step (XKG-150): an agent that finds a capture
- * through search or reads one with read_capture has been shown a capture,
- * even though neither writes a surface event.
+ * through search, reads one with read_capture, or gets one from the older
+ * list_inbox, apply_to_context or generate_plan has been shown a capture,
+ * even though none of these writes a surface event.
  */
 
 const files = new Map<string, string>();
 vi.mock("../github", () => ({
-  githubGet: async () => ({ ok: false }), githubPut: vi.fn(), githubDelete: vi.fn(),
+  githubGet: async (_t: string, _r: string, path: string) =>
+    path === "inbox" ? { ok: true, data: [...files.keys()].filter((k) => k.startsWith("inbox/")).map((k) => ({ name: k.slice(6) })) } : { ok: false }, githubPut: vi.fn(), githubDelete: vi.fn(),
   readFile: async (_t: string, _r: string, path: string) => (files.has(path) ? { content: files.get(path)!, sha: "s" } : null),
   updateIndexEntry: vi.fn(), appendToIndex: vi.fn(),
 }));
@@ -18,8 +20,15 @@ vi.mock("../setup-steps", () => ({
   recordSetupStep: async (userId: number, step: string) => { steps.push([userId, step]); },
 }));
 
-const { handleSearch, handleReadCapture } = await import("../mcp/handlers");
-const user = { id: 7, github_token: "t", github_repo: "o/r" } as unknown as User;
+vi.mock("../llm", async (orig) => ({
+  ...(await orig<typeof import("../llm")>()),
+  rankByRelevance: async () => [{ filename: "inbox/2026-11-02-alert-owners.md" }],
+  generateApplicationSuggestions: async () => "Use it in alerts.ts",
+  generatePlan: async () => "# Plan",
+}));
+
+const { handleSearch, handleReadCapture, handleListInbox, handleApplyToContext, handleGeneratePlan } = await import("../mcp/handlers");
+const user = { id: 7, github_token: "t", github_repo: "o/r", llm_api_key: "k", llm_provider: "openai" } as unknown as User;
 
 beforeEach(() => {
   files.clear();
@@ -37,10 +46,21 @@ describe("search and read_capture record the shown step", () => {
     expect(steps).toEqual([[7, "shown"], [7, "shown"]]);
   });
 
+  // protects: Codex P2 on #188 (round 2), every tool that hands an agent a capture counts; fails_when: list_inbox, apply_to_context or generate_plan records no shown step; no_claim: none
+  it("records it from the older tools that hand an agent captures", async () => {
+    await handleListInbox(user);
+    await handleApplyToContext(user, { task: "alerts" });
+    await handleGeneratePlan(user, { selected_captures: ["2026-11-02-alert-owners.md"], project_context: "app" });
+    expect(steps).toEqual([[7, "shown"], [7, "shown"], [7, "shown"]]);
+  });
+
   it("records nothing when nothing was shown", async () => {
     await handleSearch(user, { query: "kubernetes" });
     await handleReadCapture(user, { filename: "missing.md" });
     await handleReadCapture(user, { filename: "RULES.md" });
+    await handleGeneratePlan(user, { selected_captures: ["missing.md"], project_context: "app" });
+    files.delete("inbox/2026-11-02-alert-owners.md");
+    await handleListInbox(user);
     expect(steps).toEqual([]);
   });
 });
