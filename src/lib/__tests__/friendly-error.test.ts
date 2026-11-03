@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { llmErrorMessage, githubSaveMessage } from "../friendly-error";
+import { llmErrorMessage, llmErrorLink, githubSaveMessage } from "../friendly-error";
+import { LLM_PROVIDERS, PROVIDERS } from "../providers";
 
 /**
  * Capture failures reach the person as one plain sentence that says what to
@@ -67,6 +68,28 @@ describe("llmErrorMessage", () => {
   it("keeps a message that is already plain", () => {
     const plain = "Failed to parse LLM response — extraction returned invalid JSON.";
     expect(llmErrorMessage(new Error(plain), "openai")).toBe(plain);
+  });
+});
+
+describe("llmErrorLink", () => {
+  // protects: XKG-143, an out-of-credits error links straight to billing; fails_when: no link or the keys page is linked; no_claim: the URL is live
+  it("links the provider's billing page when the key has no credits", () => {
+    expect(llmErrorLink(openaiNoCredits, "openai")).toEqual({ label: "Open OpenAI billing", url: PROVIDERS.openai.billingUrl });
+  });
+
+  // protects: every provider has a billing page; fails_when: a provider is added without one; no_claim: none
+  it.each(LLM_PROVIDERS)("%s has an https billing URL", (provider) => {
+    expect(PROVIDERS[provider].billingUrl).toMatch(/^https:\/\//);
+  });
+
+  // protects: only credit errors get a billing link; fails_when: a bad key or outage links billing; no_claim: none
+  it.each([
+    new Error(`[llm:openai] HTTP 401 — {"error":{"message":"Incorrect API key provided"}}`),
+    new Error("[llm:openai] HTTP 503"),
+    new Error(`[llm:groq] HTTP 429 — {"error":{"message":"Rate limit reached for requests"}}`),
+    new Error("Failed to parse LLM response — extraction returned invalid JSON."),
+  ])("no link for other errors (%#)", (err) => {
+    expect(llmErrorLink(err, "openai")).toBeNull();
   });
 });
 

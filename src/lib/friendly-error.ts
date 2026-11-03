@@ -21,6 +21,22 @@ function isProviderError(err: unknown, message: string): boolean {
   return message.startsWith("[llm") || typeof (err as { status?: unknown } | null)?.status === "number";
 }
 
+/** True when a provider error says the key has run out of credits or quota. */
+function isNoCredits(err: unknown, message: string): boolean {
+  if (!isProviderError(err, message)) return false;
+  return statusOf(err, message) === 402 || NO_CREDITS.test(message);
+}
+
+const NO_CREDITS = /insufficient_quota|credit_balance|credit balance|insufficient credits|no credits|exceeded your current quota|billing/i;
+
+/** A link that helps fix a provider error: today only "add credits" for a key that ran out. */
+export function llmErrorLink(err: unknown, provider: string): { label: string; url: string } | null {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!isLlmProvider(provider) || !isNoCredits(err, message)) return null;
+  const info = PROVIDERS[provider];
+  return { label: `Open ${info.label} billing`, url: info.billingUrl };
+}
+
 /** A provider error as a sentence: no credits, bad key, rate limit, unknown model, outage, timeout. */
 export function llmErrorMessage(err: unknown, provider: string): string {
   const message = err instanceof Error ? err.message : String(err);
@@ -31,7 +47,7 @@ export function llmErrorMessage(err: unknown, provider: string): string {
     return `${name} didn't answer within a minute. Try again, or pick a faster model in ${SETTINGS}.`;
   }
   const status = statusOf(err, message);
-  if (status === 402 || /insufficient_quota|credit_balance|credit balance|insufficient credits|no credits|exceeded your current quota|billing/i.test(message)) {
+  if (isNoCredits(err, message)) {
     return `Your ${name} key has no credits left. Add credits with ${name}, or pick another model in ${SETTINGS}.`;
   }
   if (status === 401 || status === 403 || /invalid.{0,10}api.?key|incorrect api key|api key not valid/i.test(message)) {

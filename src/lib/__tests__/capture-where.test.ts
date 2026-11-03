@@ -61,6 +61,9 @@ vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true,
 let fetchedPage: string | null = null;
 vi.mock("@/lib/fetch-source", () => ({ fetchSourceContent: async () => fetchedPage, safeFetch: vi.fn() }));
 let extractFails = false;
+/** When true, extraction fails the way an OpenAI key with no credits does. */
+let extractNoCredits = false;
+const NO_CREDITS = `[llm:openai] HTTP 429 — {"error":{"type":"insufficient_quota","code":"credit_balance_exhausted"}}`;
 /** When set, extraction waits for it, so a test can act mid-capture. */
 let extractGate: Promise<void> | null = null;
 let indexFails = false;
@@ -69,6 +72,7 @@ vi.mock("@/lib/llm", async (orig) => ({
   extractCapture: async (_k: string, _c: string, _t: unknown, _l: unknown, meta?: { onUsage?: (u: { tokensIn: number; tokensOut: number }) => void }) => {
     if (extractGate) await extractGate;
     if (extractFails) throw new Error("[llm:openai] HTTP 503");
+    if (extractNoCredits) throw new Error(NO_CREDITS);
     meta?.onUsage?.({ tokensIn: 2400, tokensOut: 780 });
     return capture;
   },
@@ -146,6 +150,7 @@ beforeEach(() => {
   recordHandoffEvent.mockClear();
   failWhereWrite = false;
   extractFails = false;
+  extractNoCredits = false;
   extractGate = null;
   refundQuota.mockClear();
   linked = [];
@@ -286,6 +291,16 @@ describe("web capture", () => {
     expect(body.usage).toMatchObject({ model: "gpt-4o-mini", tokensIn: 2400, tokensOut: 780 });
   });
 
+  // protects: XKG-143, a key with no credits gets the billing link; fails_when: the answer has no link; no_claim: the URL is live
+  it("links the provider's billing page when the key has no credits", async () => {
+    extractNoCredits = true;
+    const res = await post();
+    expect(res.status).toBe(502);
+    const body = await res.json();
+    expect(body.error).toMatch(/no credits left/);
+    expect(body.link).toEqual({ label: "Open OpenAI billing", url: "https://platform.openai.com/settings/organization/billing/overview" });
+  });
+
   // protects: a failed extraction costs no quota; fails_when: the hourly count keeps the failed try; no_claim: none
   it("gives the quota back when extraction fails", async () => {
     extractFails = true;
@@ -410,6 +425,13 @@ describe("web capture progress stream", () => {
     expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
   });
 
+  // protects: XKG-143, the stream's error line carries the billing link; fails_when: the link is dropped on the stream path; no_claim: none
+  it("puts the billing link on the error line when the key has no credits", async () => {
+    extractNoCredits = true;
+    const { lines } = await postStream();
+    expect(lines.at(-1)).toMatchObject({ status: 502, link: { label: "Open OpenAI billing" } });
+  });
+
   // protects: an unexpected failure mid-stream ends the stream with an error and never hangs the after-work; fails_when: the stream throws or the after task waits forever; no_claim: none
   it("ends with an error line when saving fails, and the after-work still finishes", async () => {
     indexFails = true;
@@ -491,6 +513,14 @@ describe("MCP capture", () => {
     extractFails = true;
     await expect(handleCapture(user as never, { content: "notes" })).rejects.toThrow("HTTP 503");
     expect(refundQuota).toHaveBeenCalledWith("capture:user:7", WINDOW);
+  });
+
+  // protects: XKG-143, an agent can tell the user where to add credits; fails_when: the MCP error has no billing URL; no_claim: none
+  it("names the billing page when the key has no credits", async () => {
+    extractNoCredits = true;
+    await expect(handleCapture(user as never, { content: "notes" })).rejects.toThrow(
+      "Your OpenAI key has no credits left. Add credits with OpenAI, or pick another model in Settings → AI model. Billing page: https://platform.openai.com/settings/organization/billing/overview",
+    );
   });
 
   // protects: a failed MCP extraction is logged like a web one; fails_when: no ok:false line, or the provider text leaks; no_claim: none
