@@ -16,6 +16,7 @@ import { env } from "@/lib/env";
 import { TOOLS, type ToolName } from "@/lib/mcp/tools";
 import { HANDLERS } from "@/lib/mcp/handlers";
 import { SERVER_INSTRUCTIONS } from "@/lib/mcp/instructions";
+import { withSpendMeter } from "@/lib/llm-spend";
 
 // ── Types ──
 
@@ -242,7 +243,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
             wantsSse,
           );
         }
-        const result = await handler(user, toolArgs as never, { harness: harnessForCall(providedSession, user.id) });
+        // Model calls the tool makes, now or after the response, count for this user.
+        const result = await withSpendMeter(user.id, () => handler(user, toolArgs as never, { harness: harnessForCall(providedSession, user.id) }));
 
         return respond(
           { jsonrpc: "2.0", id, result: { content: [{ type: "text", text: result }] } },

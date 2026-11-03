@@ -3,6 +3,7 @@ import { consumeQuota } from "@/lib/rate-limit";
 import { readFileStrict } from "@/lib/github";
 import { synthesizeTopic } from "@/lib/synthesis";
 import { llmSettings } from "@/lib/llm";
+import { withSpendMeter } from "@/lib/llm-spend";
 import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 
 const RULES_PER_HOUR = 20;
@@ -28,7 +29,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
     const index = await readFileStrict(user.github_token, user.github_repo!, "INDEX.md");
     if (!index) return NextResponse.json({ topic: tag, rules: [] });
-    const result = await synthesizeTopic(user.llm_api_key, user.github_token, user.github_repo!, tag, index.content, llmSettings(user));
+    const apiKey = user.llm_api_key;
+    const result = await withSpendMeter(user.id, () => synthesizeTopic(apiKey, user.github_token, user.github_repo!, tag, index.content, llmSettings(user)));
     return NextResponse.json({ topic: result.topic, rules: result.rules });
   } catch (err) {
     const github = githubFailure(err);

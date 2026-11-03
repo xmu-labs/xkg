@@ -3,6 +3,7 @@ import { githubPut, readFileStrict } from "@/lib/github";
 import { consumeQuota } from "@/lib/rate-limit";
 import { captureName, parseIndexRows, type CaptureStatus } from "@/lib/captures";
 import { explainCapture, setWhyImpact } from "@/lib/explain";
+import { withSpendMeter } from "@/lib/llm-spend";
 import { parseCaptureFile } from "@/lib/capture-detail";
 import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       if (!file) continue;
       // A new capture's section is written just after the result is shown.
       if (!parseCaptureFile(file.content).where) return fail(409, "This capture's match is still being saved. Try again in a moment.");
-      const explained = await explainCapture(user, file.content);
+      const explained = await withSpendMeter(user.id, () => explainCapture(user, file.content));
       if (!explained) return fail(502, "Couldn't explain these files. Try again.");
       if (explained.tokens) console.log(`[explain] tokens in=${explained.tokens.in} out=${explained.tokens.out}`);
       if (explained.markdown !== file.content) await save(user.github_token, repo, path, name, explained.markdown, file.sha, explained.files);

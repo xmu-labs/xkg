@@ -55,6 +55,12 @@ async function runAfterResponse() {
 }
 
 vi.mock("@/lib/session", () => ({ getSession: async () => user }));
+/** Users each request's model calls were metered for (XKG-144). */
+const meteredFor: number[] = [];
+vi.mock("@/lib/llm-spend", () => ({
+  withSpendMeter: (userId: number, fn: () => Promise<unknown>) => { meteredFor.push(userId); return fn(); },
+  recordSpend: async () => {},
+}));
 const refundQuota = vi.fn();
 const WINDOW = "2026-10-31 11:00:00.123456";
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: true, limit: 60, resetIn: 0, windowKey: WINDOW }), refundQuota: (...a: unknown[]) => refundQuota(...a), CAPTURE_QUOTA: 60, QUOTA_WINDOW_SECONDS: 3600 }));
@@ -150,6 +156,7 @@ beforeEach(() => {
   recordHandoffEvent.mockClear();
   failWhereWrite = false;
   extractFails = false;
+  meteredFor.length = 0;
   extractNoCredits = false;
   extractGate = null;
   refundQuota.mockClear();
@@ -289,6 +296,12 @@ describe("web capture", () => {
   it("returns the model and the token counts with the result", async () => {
     const body = await (await post()).json();
     expect(body.usage).toMatchObject({ model: "gpt-4o-mini", tokensIn: 2400, tokensOut: 780 });
+  });
+
+  // protects: XKG-144, a web capture's model calls count for its user; fails_when: the route stops metering; no_claim: what is recorded (llm-spend.test.ts)
+  it("meters the capture's model calls for the signed-in user", async () => {
+    await post();
+    expect(meteredFor).toEqual([7]);
   });
 
   // protects: XKG-143, a key with no credits gets the billing link; fails_when: the answer has no link; no_claim: the URL is live

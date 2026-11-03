@@ -15,7 +15,7 @@ vi.mock("../sql", () => ({
   },
 }));
 
-const { deleteUserData } = await import("../db");
+const { deleteUserData, deleteCliKeys } = await import("../db");
 const { revokeGithubGrant } = await import("../github");
 
 beforeEach(() => {
@@ -38,6 +38,7 @@ describe("deleteUserData", () => {
       "DELETE FROM surface_events WHERE user_id = ?",
       "DELETE FROM handoff_events WHERE user_id = ?",
       "DELETE FROM handoff_scores WHERE user_id = ?",
+      "DELETE FROM llm_spend WHERE user_id = ?",
       "DELETE FROM cli_keys WHERE user_id = ?",
       "DELETE FROM cli_logins WHERE user_id = ?",
       "DELETE FROM users WHERE id = ?",
@@ -55,7 +56,17 @@ describe("deleteUserData", () => {
       [7],
       [7],
       [7],
+      [7],
     ]);
+  });
+});
+
+describe("deleteCliKeys", () => {
+  // Regression: XKG-144 — rotating the key also wiped the month's spend rows
+  // protects: rotating the key removes machine keys only; fails_when: it deletes other tables such as llm_spend; no_claim: none
+  it("deletes only the user's machine keys", async () => {
+    await deleteCliKeys(7);
+    expect(queries.filter((q) => q.text.startsWith("DELETE")).map((q) => q.text)).toEqual(["DELETE FROM cli_keys WHERE user_id = ?"]);
   });
 });
 
