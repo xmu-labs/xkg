@@ -14,6 +14,7 @@ import { captureFileUrl } from "@/lib/captureFileUrl";
 import { matchCapture, whereCard, writeWhereSection } from "@/lib/where";
 import { recordWhereEvent } from "@/lib/surface-events";
 import { queueStrongFit } from "@/lib/handoffs";
+import { withSpendMeter } from "@/lib/llm-spend";
 
 /**
  * Capture touches the database, GitHub, and an LLM provider — any of which can
@@ -40,6 +41,11 @@ async function handleCapture(req: NextRequest): Promise<NextResponse> {
   if (!user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+  // Every model call from here on, including the after-response work, counts for this user.
+  return withSpendMeter(user.id, () => captureFor(req, user));
+}
+
+async function captureFor(req: NextRequest, user: User): Promise<NextResponse> {
 
   if (!user.github_repo) {
     return NextResponse.json(

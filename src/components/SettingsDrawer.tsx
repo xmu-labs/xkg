@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 import { speedRow } from "@/lib/model-speed";
 import CodeRepos from "./CodeRepos";
+import AiSpend from "./AiSpend";
 
 export interface Me {
   githubUsername: string;
@@ -1095,6 +1096,8 @@ export default function SettingsDrawer({
                         : `${PROVIDERS[llmProvider].label} models set their own reasoning.`}
                     </p>
                   </div>
+
+                  <AiSpend />
 
                   {(llmStatus !== "idle" || llmDirty) && (
                   <div>

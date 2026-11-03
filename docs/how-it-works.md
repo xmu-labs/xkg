@@ -263,6 +263,16 @@ At list prices:
 
 Larger models cost more.
 
+### What you've spent this month
+
+Settings → AI model shows what xkg spent with your key this month, for example "This month: 23 calls with your key, about $0.41." Every model call xkg makes with your key counts: captures (web and coding agents), Why and Impact, rules, and the "Where it applies" fallback to your model. xkg reads the token counts your provider sends back and prices them at list prices (`src/lib/llm-prices.ts`).
+
+It's an estimate, not a bill:
+
+- **xkg only sees its own calls.** If you use the same key in other apps, that spend doesn't show here. Your provider's billing page is the real number.
+- **Prices change.** Cached input is counted at the full input price, so the figure leans high.
+- **A model with no price on file** (a fine-tuned or new model) shows its tokens, not a dollar amount.
+
 ### How the fast model is measured
 
 `scripts/measure-model-speed.ts` runs the same sources (public articles and short notes) through a few fast models and one reasoning model per provider. For each model, it records the mean extraction time and the share of takeaways that keep a checked quote.

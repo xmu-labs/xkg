@@ -14,6 +14,11 @@ let explained: unknown = null;
 const explainCalls: string[] = [];
 
 vi.mock("@/lib/session", () => ({ getSession: async () => session }));
+/** Whose meter each explain call ran under (XKG-144). */
+const meteredFor: number[] = [];
+vi.mock("@/lib/llm-spend", () => ({
+  withSpendMeter: (userId: number, fn: () => Promise<unknown>) => { meteredFor.push(userId); return fn(); },
+}));
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed: quotaAllowed, limit: 60, resetIn: 30, windowKey: "w" }) }));
 vi.mock("@/lib/explain", async () => ({
   setWhyImpact: (await vi.importActual<typeof import("@/lib/explain")>("@/lib/explain")).setWhyImpact,
@@ -59,6 +64,14 @@ beforeEach(() => {
 });
 
 describe("POST /api/captures/explain", () => {
+  // protects: XKG-144, explaining files counts as the user's spend; fails_when: the explain call runs unmetered; no_claim: what is recorded
+  it("meters the explain call for the signed-in user", async () => {
+    meteredFor.length = 0;
+    explained = { files: [{ path: "src/a.ts", why: "w", impact: "a" }], markdown: "NEW", tokens: { in: 400, out: 50 } };
+    await post({ name: NAME });
+    expect(meteredFor).toEqual([7]);
+  });
+
   it("returns the lines and writes the updated file with its sha", async () => {
     explained = { files: [{ path: "src/a.ts", why: "w", impact: "a" }], markdown: "NEW", tokens: { in: 400, out: 50 } };
     const res = await post({ name: NAME });

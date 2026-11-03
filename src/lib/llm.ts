@@ -5,6 +5,7 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { LLM_PROVIDERS, PROVIDERS } from "./providers";
+import { recordSpend } from "./llm-spend";
 import { buildSource, buildExtractionInput, checkClaims, sourceFrontmatter, renderEvidenceSection, renderSourceSection, sourceText } from "./evidence";
 import type { ExtractedCapture, SourceSnapshot, ContentType, RelevanceResult, SynthesisResult, ApplicationSuggestion, SourceType, LlmProvider, LlmEffort, LlmSettings } from "./types";
 
@@ -185,6 +186,15 @@ export function effortApplied(config: LlmConfig): boolean {
 /** Call the configured provider and return the raw text response (empty string on no content). */
 export async function callLlm(opts: LlmCallOptions): Promise<string> {
   const llm = resolveLlm(opts.llm);
+  let usage: LlmUsage | null = null;
+  const text = await callProvider({ ...opts, onUsage: (u) => { usage = u; opts.onUsage?.(u); } }, llm);
+  // Counted for the user whose request this is (llm-spend.ts); never throws.
+  const counted = usage as LlmUsage | null;
+  if (counted) await recordSpend(llm.provider, llm.model, counted.tokensIn, counted.tokensOut);
+  return text;
+}
+
+function callProvider(opts: LlmCallOptions, llm: ResolvedLlm): Promise<string> {
   switch (llm.provider) {
     case "anthropic":
       return callAnthropic(opts, llm);

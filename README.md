@@ -90,7 +90,7 @@ Every claim, with the code that backs it: [Privacy and data](https://github.com/
 
 ## Cost
 
-xkg doesn't charge for AI; you pay your provider directly. 100 captures a month cost about $0.80 on Claude Haiku 4.5, or about $0.10 on GPT-4o mini. Details: [Cost](https://github.com/xmu-labs/xkg/blob/main/docs/how-it-works.md#cost).
+xkg doesn't charge for AI; you pay your provider directly. 100 captures a month cost about $0.80 on Claude Haiku 4.5, or about $0.10 on GPT-4o mini. Settings → AI model shows what xkg spent with your key this month. Details: [Cost](https://github.com/xmu-labs/xkg/blob/main/docs/how-it-works.md#cost).
 
 ## Roadmap
 

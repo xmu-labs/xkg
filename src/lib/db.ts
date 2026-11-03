@@ -174,6 +174,8 @@ export async function initDb(): Promise<void> {
   await ensureHandoffEventTable();
   handoffScoreTable = null;
   await ensureHandoffScoreTable();
+  spendTable = null;
+  await ensureSpendTable();
 
   await upgradeLegacyData();
 }
@@ -300,6 +302,35 @@ export async function deleteCodeMap(userId: number, repo: string): Promise<boole
   await ensureCodeMapTable();
   const { rowCount } = await sql`DELETE FROM code_maps WHERE user_id = ${userId} AND repo = ${repo} RETURNING id`;
   return rowCount > 0;
+}
+
+// ── Model spend with the user's key (see lib/llm-spend.ts) ──
+
+let spendTable: Promise<void> | null = null;
+
+/** One row per model call with the user's key. Created on first use as well as by initDb. */
+export function ensureSpendTable(): Promise<void> {
+  spendTable ??= createSpendTable().catch((err: unknown) => {
+    spendTable = null;
+    throw err;
+  });
+  return spendTable;
+}
+
+async function createSpendTable(): Promise<void> {
+  await sql`
+    CREATE TABLE IF NOT EXISTS llm_spend (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      tokens_in INTEGER NOT NULL,
+      tokens_out INTEGER NOT NULL,
+      cost_usd DOUBLE PRECISION,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS llm_spend_user_created ON llm_spend (user_id, created_at)`;
 }
 
 // ── Surface events (counts only; see lib/surface-events.ts) ──
@@ -572,6 +603,8 @@ async function createCliKeyTables(): Promise<void> {
 
 /** Remove every machine key of a user: part of rotating the key, which is the revoke lever. */
 export async function deleteCliKeys(userId: number): Promise<void> {
+  await ensureSpendTable();
+  await sql`DELETE FROM llm_spend WHERE user_id = ${userId}`;
   await ensureCliKeyTable();
   await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
 }
@@ -748,6 +781,8 @@ export async function deleteUserData(userId: number, username: string): Promise<
   await sql`DELETE FROM handoff_events WHERE user_id = ${userId}`;
   await ensureHandoffScoreTable();
   await sql`DELETE FROM handoff_scores WHERE user_id = ${userId}`;
+  await ensureSpendTable();
+  await sql`DELETE FROM llm_spend WHERE user_id = ${userId}`;
   await ensureCliKeyTable();
   await sql`DELETE FROM cli_keys WHERE user_id = ${userId}`;
   await sql`DELETE FROM cli_logins WHERE user_id = ${userId}`;

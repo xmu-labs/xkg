@@ -21,6 +21,12 @@ vi.mock("@/lib/mcp/handlers", () => ({
   HANDLERS: { apply_capture: (...a: unknown[]) => applyCapture(...a) },
 }));
 
+/** Whose meter each tool call ran under (XKG-144). */
+const meteredFor: number[] = [];
+vi.mock("@/lib/llm-spend", () => ({
+  withSpendMeter: (userId: number, fn: () => Promise<unknown>) => { meteredFor.push(userId); return fn(); },
+}));
+
 beforeAll(() => {
   process.env.SESSION_SECRET = "test-secret-for-mcp-route-harness";
 });
@@ -41,6 +47,15 @@ const callApply = { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name:
 beforeEach(() => {
   applyCapture.mockReset();
   applyCapture.mockResolvedValue("Applied");
+});
+
+describe("MCP route meters model spend", () => {
+  // protects: XKG-144, an agent's captures count as the user's spend; fails_when: tools/call runs unmetered; no_claim: what is recorded
+  it("runs each tool call under the user's spend meter", async () => {
+    meteredFor.length = 0;
+    await POST(rpc(callApply));
+    expect(meteredFor).toEqual([7]);
+  });
 });
 
 describe("MCP route passes the agent's name to tool handlers", () => {
