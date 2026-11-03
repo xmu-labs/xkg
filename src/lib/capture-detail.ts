@@ -5,6 +5,7 @@
  * capture and source text after the closing `---` can hold any heading.
  */
 
+import type { HandoffState } from "@/lib/handoff-status";
 import { captureName, type CaptureStatus } from "@/lib/captures";
 import { readCodeSpan } from "@/lib/where";
 
@@ -53,6 +54,8 @@ export type CaptureDetail = CaptureFileFields & {
   status: CaptureStatus;
   /** The file on GitHub. */
   fileUrl: string;
+  /** Its HANDOFFS.md rows (repo, status, since); none when it was never handed off. */
+  handoffs?: HandoffState[];
 };
 
 /** Values the writers use for "nothing here". */

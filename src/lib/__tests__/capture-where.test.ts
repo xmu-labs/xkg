@@ -596,7 +596,7 @@ describe("auto-queue for the coding agent", () => {
     matchResult = strong;
     const body = await (await post()).json();
     expect(queued()).toEqual([{ capture: capturePath(), repo: "acme/app", kind: "code", files: ["src/llm.ts"], fit: "strong", status: "pending", since: formatDate(), source: "auto" }]);
-    expect(body.handoff).toEqual({ repo: "acme/app" });
+    expect(body.handoff).toEqual({ repo: "acme/app", since: formatDate() });
     expect(recordHandoffEvent).toHaveBeenCalledWith(7, capturePath(), "acme/app", "queued", { source: "auto" });
   });
 

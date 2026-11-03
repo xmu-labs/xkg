@@ -293,7 +293,7 @@ async function capturePipeline(
       filename,
       fileUrl: captureFileUrl(user.github_repo, filename),
       ...(card ? { where: card } : {}),
-      ...(waitingIn ? { handoff: { repo: waitingIn } } : {}),
+      ...(waitingIn ? { handoff: { repo: waitingIn, since: date } } : {}),
       usage: {
         model: resolveLlm(llm).model,
         tokensIn: spent?.tokensIn ?? null,
