@@ -146,7 +146,8 @@ export function setupHooks(
     opts = { ...opts, briefing: existingCmd.includes("--briefing") };
   }
 
-  const command = opts.briefing
+  // The briefing is the default (XKG-177); `briefing: false` keeps the count-only hook.
+  const command = opts.briefing !== false
     ? `npx -y ${PACKAGE}@latest inbox-check --key ${apiKey} --briefing`
     : `npx -y ${PACKAGE}@latest inbox-check --key ${apiKey}`;
 
@@ -168,7 +169,7 @@ export function setupHooks(
   if (!opts.silent) {
     console.log("xkg inbox hook installed.");
     console.log(`Location: ${CLAUDE_SETTINGS_PATH}`);
-    if (opts.briefing) {
+    if (opts.briefing !== false) {
       console.log("At the start of each Claude Code session you'll see a full project briefing.");
     } else {
       console.log("At the start of each Claude Code session you'll see your inbox count.");
