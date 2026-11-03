@@ -21,15 +21,18 @@ function hookSpecificOutput(text: string): unknown {
   return { hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: text } };
 }
 
-function message(count: number): string {
-  const ask = count === 1
-    ? "You have 1 new xkg capture. Want to see it and apply it here?"
-    : `You have ${count} new xkg captures. Want to see them and apply one here?`;
+/**
+ * The agent briefs right away, before the user's task, instead of asking first
+ * (XKG-177): the offer then shows in every session, and the agent makes the
+ * briefing call, so this hook never waits on an LLM.
+ */
+function message(count: number, repo: string | null): string {
+  const scope = repo ? `with repo "${repo}", ` : "with ";
   return (
     `xkg: ${count} new capture${count === 1 ? "" : "s"} in the user's inbox.\n` +
-    `Before starting the user's task, ask them: "${ask}"\n` +
-    "If they say yes, call the xkg `briefing` tool with this repo's name, branch and last few commit messages, " +
-    "then check each candidate against the code before suggesting where it applies."
+    `Before starting the user's task, call the xkg \`briefing\` tool ${scope}this repo's name, branch and last few commit messages as project_context. ` +
+    "Then tell the user in one line which captures fit this repo and ask if they want to apply one. " +
+    "Check each candidate against the code before suggesting where it applies; never name a file you have not opened."
   );
 }
 
@@ -67,7 +70,7 @@ const OFFER_PREFIX = "xkg: ";
  * Runs from any agent's SessionStart hook. In a repo with captures waiting for
  * it (HANDOFFS.md), prints the server's offer as is, so the hook and a briefing
  * call give the same words. Otherwise counts new captures and, when there are
- * some, prints the question the agent should ask. Either way shaped for that
+ * some, tells the agent to brief for this repo before the user's task. Either way shaped for that
  * agent. Prints nothing, without calling xkg, when `input` says the session goes on
  * after a compact or fork. Never fails or delays a session for long: on any error it prints nothing.
  */
@@ -95,7 +98,7 @@ export async function sessionStart(
     const text = await callMcp(apiKey, "search", { status: "inbox", limit: 1 }, remaining(), session);
     const count = parseInt(text?.match(/^(\d+)\s+capture/)?.[1] ?? "0", 10);
     if (count <= 0) return;
-    print(message(count));
+    print(message(count, repo));
   } catch {
     // Silent fail: never interrupt a session start
   }

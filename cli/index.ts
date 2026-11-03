@@ -34,10 +34,10 @@ async function main(): Promise<void> {
     const keyIdx = args.indexOf("--key");
     const apiKey = keyIdx !== -1 ? args[keyIdx + 1] : undefined;
     if (!apiKey) {
-      console.error("Usage: npx @xmu-labs/xkg setup-hooks --key YOUR_API_KEY [--briefing] [--vault]");
+      console.error("Usage: npx @xmu-labs/xkg setup-hooks --key YOUR_API_KEY [--no-briefing] [--vault]");
       process.exit(1);
     }
-    setupHooks(apiKey, { briefing: args.includes("--briefing"), vault: args.includes("--vault") });
+    setupHooks(apiKey, { briefing: !args.includes("--no-briefing"), vault: args.includes("--vault") });
     return;
   }
 
@@ -211,15 +211,14 @@ function printHelp(): void {
     xkg doctor [--json]                                        Check the key, server, knowledge repo, each agent and this repo,
                                                                with the command that fixes each problem. Changes nothing
     xkg serve-mcp [--key KEY]                                  Start the MCP server for your AI worker (key from ~/.xkg/config.json)
-    xkg setup-hooks --key KEY                                  Install inbox count hook (fast)
-    xkg setup-hooks --key KEY --briefing                       Install full briefing hook (uses LLM; puts
+    xkg setup-hooks --key KEY                                  Install the briefing hook (uses your LLM; puts
                                                                handoffs waiting for this repo first)
-    xkg setup-hooks --key KEY --vault                          Install vault hook (PreToolUse)
-    xkg setup-hooks --key KEY --briefing --vault               Install both hooks
+    xkg setup-hooks --key KEY --no-briefing                    Install the inbox count hook instead (no LLM)
+    xkg setup-hooks --key KEY --vault                          Also install the vault hook (PreToolUse)
     xkg setup-git-hook --key KEY                               Record commits with an xkg-capture trailer and keep the code map fresh (any agent);
                                                                keeps .xkg/ (handoff specs) out of git
     xkg map [--key KEY]                                        Send this repo's code map now (paths, exported names, signatures, opening comment lines; never code)
-    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else new ones
+    xkg session-start [--agent NAME]                           For an agent's session-start hook: offer captures waiting for this repo, else have the agent brief on new ones
                                                                (NAME: claude, codex, gemini, copilot, cursor; else plain text)
     xkg config set agent "claude -p"                           Set which AI worker xkg agent drives
     xkg agent --key KEY --plan FILE                            Implement a saved plan in an isolated worktree
@@ -257,9 +256,9 @@ function printHelp(): void {
   published version. serve-mcp also self-upgrades on startup as a safety net
   for users who registered without @latest.
 
-  The hook is installed automatically when you start the MCP server.
-  To upgrade to a full project briefing at session start:
-    npx @xmu-labs/xkg setup-hooks --key YOUR_API_KEY --briefing
+  The briefing hook is installed automatically when you start the MCP server with --key.
+  For an inbox count only (no LLM call at session start):
+    npx @xmu-labs/xkg setup-hooks --key YOUR_API_KEY --no-briefing
 
   To enable the vault (surfaces captures as you edit files — opt-in):
     npx @xmu-labs/xkg setup-hooks --key YOUR_API_KEY --vault
