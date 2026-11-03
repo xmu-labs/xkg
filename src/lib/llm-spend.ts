@@ -76,3 +76,35 @@ export async function monthSpend(userId: number): Promise<MonthSpend> {
     unpricedCalls: Number(r?.unpriced ?? 0),
   };
 }
+
+// ── Monthly budget (XKG-145): optional, a warning only ──
+
+export const MAX_BUDGET_USD = 10_000;
+
+/** A budget from user input: a positive amount up to MAX_BUDGET_USD (rounded to cents), or null to clear it. */
+export function parseBudget(input: unknown): { ok: true; value: number | null } | { ok: false } {
+  if (input === null || input === "") return { ok: true, value: null };
+  const n = typeof input === "number" ? input : typeof input === "string" && input.trim() !== "" ? Number(input) : NaN;
+  if (!Number.isFinite(n)) return { ok: false };
+  const value = Math.round(n * 100) / 100;
+  if (value < 0.01 || value > MAX_BUDGET_USD) return { ok: false };
+  return { ok: true, value };
+}
+
+export async function getBudget(userId: number): Promise<number | null> {
+  await ensureSpendTable();
+  const { rows } = await sql<{ monthly_usd: number }>`SELECT monthly_usd FROM llm_budgets WHERE user_id = ${userId}`;
+  return rows[0] ? Number(rows[0].monthly_usd) : null;
+}
+
+export async function setBudget(userId: number, monthlyUsd: number | null): Promise<void> {
+  await ensureSpendTable();
+  if (monthlyUsd === null) {
+    await sql`DELETE FROM llm_budgets WHERE user_id = ${userId}`;
+    return;
+  }
+  await sql`
+    INSERT INTO llm_budgets (user_id, monthly_usd, updated_at) VALUES (${userId}, ${monthlyUsd}, NOW())
+    ON CONFLICT (user_id) DO UPDATE SET monthly_usd = EXCLUDED.monthly_usd, updated_at = NOW()
+  `;
+}

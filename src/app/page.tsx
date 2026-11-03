@@ -6,6 +6,7 @@ import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
 import BrandMark from "@/components/BrandMark";
 import Backdrop from "@/components/Backdrop";
 import PolicyNotice from "@/components/PolicyNotice";
+import BudgetBanner from "@/components/BudgetBanner";
 import ApplyIt, { applyWhere, explainFiles } from "@/components/ApplyIt";
 import type { WhereCard } from "@/lib/where";
 import { CAPTURE_FAILED, CAPTURE_STREAM_TYPE, errorLink, readCaptureResponse, type CaptureStage, type ErrorLink } from "@/lib/capture-stream";
@@ -193,6 +194,7 @@ export default function CapturePage() {
       </div>
 
       <PolicyNotice />
+      <BudgetBanner provider={me?.llmProvider} />
 
       {/* Capture form */}
       {status !== "done" && (

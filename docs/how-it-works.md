@@ -273,6 +273,12 @@ It's an estimate, not a bill:
 - **Prices change.** Cached input is counted at the full input price, so the figure leans high.
 - **A model with no price on file** (a fine-tuned or new model) shows its tokens, not a dollar amount.
 
+### Monthly budget
+
+You can set a monthly budget in US dollars under Settings → AI model (Monthly budget, then Save budget). Clear the field and save to remove it. When this month's estimate reaches 80% of the budget, the home page shows a banner with a link to your provider's billing page; at 100% it shows again, even if you dismissed the first one. "Got it" hides a banner for the rest of the month on that browser.
+
+The budget is a warning, not a limit. Captures keep working past it, because the estimate can be off and only your provider can stop charges to your key. To set a hard cap, use your provider's own spend limit. The budget follows the same estimate as above, so calls with this key from other apps don't count toward it.
+
 ### How the fast model is measured
 
 `scripts/measure-model-speed.ts` runs the same sources (public articles and short notes) through a few fast models and one reasoning model per provider. For each model, it records the mean extraction time and the share of takeaways that keep a checked quote.

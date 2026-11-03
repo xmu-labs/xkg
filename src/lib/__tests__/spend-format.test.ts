@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { spendLine } from "../spend-format";
+import { budgetAlert, spendLine } from "../spend-format";
 
 /** XKG-144: Settings → AI model says what xkg spent with the user's key this month, in one plain line. */
 
@@ -31,5 +31,28 @@ describe("spendLine", () => {
 
   it("says nothing yet for an empty month", () => {
     expect(spendLine({ calls: 0, tokensIn: 0, tokensOut: 0, costUsd: 0, unpricedCalls: 0 })).toBe("No calls with your key yet this month.");
+  });
+});
+
+describe("budgetAlert (XKG-145)", () => {
+  const month = (costUsd: number) => ({ ...base, costUsd });
+
+  // protects: no budget means no banner; fails_when: a banner shows without a budget; no_claim: none
+  it("is null without a budget", () => {
+    expect(budgetAlert(month(100), null)).toBeNull();
+  });
+
+  // protects: the early warning; fails_when: 80% doesn't warn or 79% does; no_claim: none
+  it("warns at 80% of the budget", () => {
+    expect(budgetAlert(month(3.99), 5)).toBeNull();
+    expect(budgetAlert(month(4), 5)).toEqual({ level: "near", text: "You've used about $4.00 of your $5.00 AI budget this month." });
+  });
+
+  // protects: the over-budget notice says captures still work; fails_when: it reads as a block; no_claim: none
+  it("says the budget is used up at 100%", () => {
+    expect(budgetAlert(month(5.2), 5)).toEqual({
+      level: "over",
+      text: "You've used your $5.00 AI budget this month (about $5.20). Captures still work; your provider keeps charging your key.",
+    });
   });
 });

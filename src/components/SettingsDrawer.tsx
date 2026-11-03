@@ -1097,7 +1097,7 @@ export default function SettingsDrawer({
                     </p>
                   </div>
 
-                  <AiSpend />
+                  <AiSpend inputClass={INPUT_CLASS} />
 
                   {(llmStatus !== "idle" || llmDirty) && (
                   <div>
