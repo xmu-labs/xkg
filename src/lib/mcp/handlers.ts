@@ -36,6 +36,7 @@ import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type Br
 import { LEDGER_PATH, appendLedgerRow, ledgerHasCommit, markReverted } from "@/lib/ledger";
 import { synthesizeTopic } from "@/lib/synthesis";
 import { saveNewCapture } from "@/lib/capture-file";
+import { recordSetupStep } from "@/lib/setup-steps";
 import type { ExtractedCapture } from "@/lib/types";
 import type { ToolName } from "./tools";
 
@@ -123,6 +124,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
 
   // A taken name (same source twice in a day, or a shared short name) gets -2, -3, ….
   const filename = await saveNewCapture(user.github_token, user.github_repo, stem, markdown);
+  await recordSetupStep(user.id, "capture");
   const path = `inbox/${filename}`;
   timer.mark("save");
 
@@ -191,6 +193,7 @@ export async function handleListInbox(
 
   // Page through filtered results; only the current page is read for summaries.
   const page = paginate(filtered, args.offset ?? 0, args.limit ?? 10);
+  if (page.items.length) await recordSetupStep(user.id, "shown");
   const summaries = await Promise.all(
     page.items.map(async (f, i) => {
       const n = page.offset + i + 1;
@@ -253,11 +256,15 @@ async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<
   }
 
   const page = paginate(matches, args.offset ?? 0, args.limit ?? 20);
+  if (page.items.length) await recordSetupStep(user.id, "shown");
   const header = query.trim() ? `${page.total} match(es):` : `${page.total} capture(s):`;
   return `${header}\n${page.items.join("\n")}${pageFooter(page, tool)}`;
 }
 
 const STATUSES = new Set(["inbox", "applied", "archived"]);
+
+/** A capture file, as opposed to RULES.md, a saved plan or another file in the knowledge repo. */
+const CAPTURE_PATH = /^(inbox|applied|archived)\/[^/]+\.md$/;
 
 export async function handleReadCapture(user: User, args: { filename: string }): Promise<string> {
   if (!user.github_repo) return "Knowledge repo not configured.";
@@ -265,6 +272,7 @@ export async function handleReadCapture(user: User, args: { filename: string }):
   const path = args.filename.includes("/") || args.filename === "RULES.md" ? args.filename : `inbox/${args.filename}`;
   const file = await readFile(user.github_token, user.github_repo, path);
   if (!file) return `File not found: ${path}. Use search to find it.`;
+  if (CAPTURE_PATH.test(path)) await recordSetupStep(user.id, "shown");
   return file.content;
 }
 
@@ -659,6 +667,8 @@ export async function handleApplyToContext(user: User, args: { task: string; sta
     validContents.map((c) => `File: ${c.filename}\n${c.content}`),
     llmSettings(user),
   );
+  // Only once the agent gets an answer with the captures in it.
+  await recordSetupStep(user.id, "shown");
   const considered = validContents.map((c) => `\`${c.filename}\``).join(", ");
   return `${suggestions}\n\n---\nCaptures considered: ${considered}\n${APPLY_HINT}`;
 }
@@ -699,6 +709,9 @@ export async function handleGeneratePlan(
     codebasePaths.length > 0 ? codebasePaths : undefined,
     llmSettings(user),
   );
+
+  // Only once the plan built from the captures exists.
+  if (selectedCaptures.some((c) => CAPTURE_PATH.test(c.filename))) await recordSetupStep(user.id, "shown");
 
   // Save plan to plans/ folder in knowledge repo
   const date = formatDate();

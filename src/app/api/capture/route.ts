@@ -3,6 +3,7 @@ import { getSession } from "@/lib/session";
 import type { User } from "@/lib/db";
 import { appendToIndex, readFile } from "@/lib/github";
 import { saveNewCapture } from "@/lib/capture-file";
+import { recordSetupStep } from "@/lib/setup-steps";
 import { githubSaveMessage, llmErrorLink, llmErrorMessage } from "@/lib/friendly-error";
 import { extractCapture, formatDate, buildMarkdown, buildIndexRow, detectSourceType, llmSettings, resolveLlm, effortApplied, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
@@ -234,6 +235,7 @@ async function capturePipeline(
     console.error("[capture] save failed:", err);
     return { status: 502, body: { error: githubSaveMessage(err, user.github_repo) } };
   }
+  await recordSetupStep(user.id, "capture");
   const path = `inbox/${filename}`;
   timer.mark("save");
 

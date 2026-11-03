@@ -103,6 +103,8 @@ const recordWhereEvent = vi.fn();
 vi.mock("@/lib/surface-events", () => ({ recordWhereEvent: (...a: unknown[]) => recordWhereEvent(...a), recordSurfaceEvents: vi.fn() }));
 vi.mock("@/lib/where", async (orig) => ({ ...(await orig<typeof import("../where")>()), matchCapture: () => matchCapture() }));
 const recordHandoffEvent = vi.fn();
+const recordSetupStep = vi.fn(async () => {});
+vi.mock("@/lib/setup-steps", () => ({ recordSetupStep: (...a: unknown[]) => recordSetupStep(...(a as [])) }));
 vi.mock("@/lib/handoff-events", () => ({ recordHandoffEvent: (...a: unknown[]) => recordHandoffEvent(...a) }));
 
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai" };
@@ -466,6 +468,16 @@ describe("web capture progress stream", () => {
     const res = await post();
     expect(res.headers.get("content-type")).toContain("application/json");
     expect((await res.json()).filename).toBe(`${formatDate()}-llm-memory.md`);
+  });
+});
+
+describe("setup funnel: first capture (XKG-150)", () => {
+  // protects: both capture paths count toward the setup funnel once saved; fails_when: one path records no capture step, or a failed save records one; no_claim: once-only (see setup-steps tests)
+  it("records the capture step after the web route and the MCP tool save", async () => {
+    recordSetupStep.mockClear();
+    await post();
+    await mcp();
+    expect(recordSetupStep.mock.calls).toEqual([[7, "capture"], [7, "capture"]]);
   });
 });
 

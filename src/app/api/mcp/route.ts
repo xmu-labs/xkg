@@ -17,6 +17,7 @@ import { TOOLS, type ToolName } from "@/lib/mcp/tools";
 import { HANDLERS } from "@/lib/mcp/handlers";
 import { SERVER_INSTRUCTIONS } from "@/lib/mcp/instructions";
 import { withSpendMeter } from "@/lib/llm-spend";
+import { recordSetupStep } from "@/lib/setup-steps";
 
 // ── Types ──
 
@@ -243,6 +244,8 @@ async function handlePost(req: NextRequest): Promise<NextResponse> {
             wantsSse,
           );
         }
+        // The setup funnel's "an agent or hook reached xkg" step (first time only).
+        await recordSetupStep(user.id, "agent");
         // Model calls the tool makes, now or after the response, count for this user.
         const result = await withSpendMeter(user.id, () => handler(user, toolArgs as never, { harness: harnessForCall(providedSession, user.id) }));
 

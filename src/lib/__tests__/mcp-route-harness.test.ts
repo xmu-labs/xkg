@@ -27,6 +27,12 @@ vi.mock("@/lib/llm-spend", () => ({
   withSpendMeter: (userId: number, fn: () => Promise<unknown>) => { meteredFor.push(userId); return fn(); },
 }));
 
+/** Setup steps the route recorded (XKG-150). */
+const steps: Array<[number, string]> = [];
+vi.mock("@/lib/setup-steps", () => ({
+  recordSetupStep: async (userId: number, step: string) => { steps.push([userId, step]); },
+}));
+
 beforeAll(() => {
   process.env.SESSION_SECRET = "test-secret-for-mcp-route-harness";
 });
@@ -55,6 +61,16 @@ describe("MCP route meters model spend", () => {
     meteredFor.length = 0;
     await POST(rpc(callApply));
     expect(meteredFor).toEqual([7]);
+  });
+});
+
+describe("MCP route records the first agent call", () => {
+  // protects: XKG-150, the setup funnel sees an agent or hook reach xkg; fails_when: a tool call records no agent step, or a call to an unknown tool does; no_claim: once-only (see setup-steps tests)
+  it("records the agent step on a tool call, not on an unknown tool", async () => {
+    steps.length = 0;
+    await POST(rpc(callApply));
+    await POST(rpc({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: "nope" } }));
+    expect(steps).toEqual([[7, "agent"]]);
   });
 });
 

@@ -53,6 +53,16 @@ XKG_API_URL=http://localhost:3000/api/mcp node dist/cli/index.js serve-mcp --key
 
 **After any schema change**, `init-db` must run again. From GitHub: **Actions → Initialize database → Run workflow**.
 
+**Operator read of the numbers** (counts and dates only, no content):
+
+```bash
+curl "https://xkg.xmu.sh/api/admin/apply-stats?weeks=4" -H "x-admin-secret: $ADMIN_SECRET"
+```
+
+- `weeks`: applies per account and week, by agent and by what showed the capture first.
+- `matching`, `handoffs`: "Where it applies" matches and handoff answers per week.
+- `setup`: each account that signed up in the window, with the date of each setup step (`repo`, `aiKey`, first capture, first call from an agent or hook, first capture shown to an agent, first apply) and `stoppedBefore`, the first step it hasn't reached. `reached` counts the accounts at each step.
+
 
 ## The checks
 
