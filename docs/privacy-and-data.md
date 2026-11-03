@@ -74,7 +74,7 @@ When you capture, the server talks to exactly four kinds of places:
 3. **TypeSafe**, with xkg's key, only if you sync code maps: the extracted title, core idea, and takeaways, and the map entries (paths, exported names and signatures, opening comment lines, imported paths) of up to 15 files per repo. It also gets any file proven for one of the capture's tags, with a note naming that tag. Its model, Jev, says where the capture applies. If TypeSafe can't answer, the maps of your 5 most recently synced repos (names only) go to your AI provider instead.
 4. **The page you captured:** if you paste a bare URL, so the model reads the real content. Only http and https, never an internal address.
 
-There's no third-party analytics, telemetry, or tracking. The counts in the table above are the only usage xkg records. Only xkg's operator reads them, added up across all accounts: on an owner-only page (`/admin`, open to one GitHub login and a 404 for everyone else) or through an endpoint behind the admin secret. Both show counts and dates only, never a capture, a repo, or who you are.
+There's no third-party analytics, telemetry, or tracking. The counts in the table above are the only usage xkg records. Only xkg's operator reads them, as totals across all accounts: counts and dates only, never a capture, a repo, or who you are.
 
 Each capture, from the app or the `capture` tool, also writes one line to the server log (`capture.timing`). It holds which of the two it came from, the provider, model, and effort, whether the page was fetched, the token counts, and how long each step took. A failed capture also logs its kind, such as `no_core_idea` when the model found nothing to save. Never the capture's name, content, or URL.
 
