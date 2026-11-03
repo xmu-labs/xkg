@@ -48,6 +48,16 @@ describe("GET /api/spend", () => {
     expect((await res.json()).error).toBe("Enter a monthly budget between $0.01 and $10,000, or leave it empty.");
   });
 
+  // Regression: QA XKG-145 — a PUT without a body cleared the saved budget
+  // protects: only an explicit null clears; fails_when: a missing or malformed body clears the budget; no_claim: none
+  it("refuses a body without budgetUsd instead of clearing", async () => {
+    saved.length = 0;
+    expect((await put({})).status).toBe(400);
+    const res = await PUT(new Request("https://xkg.test/api/spend", { method: "PUT", body: "not json" }) as never);
+    expect(res.status).toBe(400);
+    expect(saved).toEqual([]);
+  });
+
   // protects: spend is private; fails_when: a signed-out request gets numbers; no_claim: none
   it("needs a session", async () => {
     session = null;

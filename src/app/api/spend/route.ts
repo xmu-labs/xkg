@@ -22,8 +22,10 @@ export async function PUT(req: Request): Promise<NextResponse> {
   try {
     const user = await getSession();
     if (!user) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-    const body = (await req.json().catch(() => null)) as { budgetUsd?: unknown } | null;
-    const parsed = parseBudget(body?.budgetUsd ?? null);
+    const body: unknown = await req.json().catch(() => null);
+    // Only an explicit { budgetUsd: null } clears; a missing or malformed body is refused.
+    const hasField = typeof body === "object" && body !== null && "budgetUsd" in body;
+    const parsed = hasField ? parseBudget((body as { budgetUsd: unknown }).budgetUsd) : ({ ok: false } as const);
     if (!parsed.ok) {
       return NextResponse.json({ error: "Enter a monthly budget between $0.01 and $10,000, or leave it empty." }, { status: 400 });
     }

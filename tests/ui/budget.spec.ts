@@ -22,6 +22,12 @@ test("warns near the budget and links the provider's billing page", async ({ pag
   expect(overflow).toBeLessThanOrEqual(0);
 });
 
+test("Change budget opens Settings on the budget field", async ({ page }) => {
+  const banner = await home(page, near, 5);
+  await banner.getByRole("button", { name: "Change budget" }).tap();
+  await expect(page.getByRole("dialog").getByLabel("Monthly budget (USD)")).toHaveValue("5");
+});
+
 test("dismissing hides it until the next level", async ({ page }) => {
   const banner = await home(page, near, 5);
   await banner.getByRole("button", { name: "Got it" }).tap();

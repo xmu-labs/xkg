@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { budgetAlert, type BudgetAlert, type SpendSummary } from "@/lib/spend-format";
 import { PROVIDERS, type LlmProvider } from "@/lib/providers";
+import { OPEN_SETTINGS_EVENT } from "./SettingsDrawer";
 
 /** Remembers a dismissed alert per month and level, so "over" still shows after "near" was dismissed. */
 const seenKey = (alert: BudgetAlert) => `xkg-budget-alert:${new Date().toISOString().slice(0, 7)}:${alert.level}`;
@@ -50,13 +51,21 @@ export default function BudgetBanner({ provider }: { provider?: LlmProvider }) {
     >
       <p className="eyebrow" style={{ color: alert.level === "over" ? "var(--danger)" : "var(--gold)" }}>AI budget</p>
       <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{alert.text}</p>
-      <div className="flex items-center justify-between gap-3 pt-1">
-        {billing ? (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1">
+        {billing && (
           <a href={billing.billingUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline underline-offset-2" style={{ color: "var(--fg-muted)" }}>
             Open {billing.label} billing
           </a>
-        ) : <span />}
-        <button onClick={dismiss} className="text-sm font-medium shrink-0 px-3 py-1.5" style={{ color: "var(--gold)" }}>
+        )}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new Event(OPEN_SETTINGS_EVENT))}
+          className="text-sm underline underline-offset-2"
+          style={{ color: "var(--fg-muted)" }}
+        >
+          Change budget
+        </button>
+        <button onClick={dismiss} className="ml-auto text-sm font-medium shrink-0 px-3 py-1.5" style={{ color: "var(--gold)" }}>
           Got it
         </button>
       </div>
