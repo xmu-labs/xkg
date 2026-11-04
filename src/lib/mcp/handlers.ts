@@ -29,7 +29,7 @@ import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
 import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
-import { handoffMention, handoffOffer } from "@/lib/handoff-offer";
+import { handoffMention, handoffNote, handoffOffer, handoffRows, knownRepos } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, parseIndexRows, type LinkCheck } from "@/lib/captures";
 import { briefingCandidate, formatBriefing, inboxBriefing, selectRanked, type BriefingCandidate } from "@/lib/briefing";
@@ -261,7 +261,15 @@ async function searchIndex(user: User, args: SearchArgs, tool: string): Promise<
   const page = paginate(matches, args.offset ?? 0, args.limit ?? 20);
   if (page.items.length) await recordSetupStep(user.id, "shown");
   const header = query.trim() ? `${page.total} match(es):` : `${page.total} capture(s):`;
-  return `${header}\n${page.items.join("\n")}${pageFooter(page, tool)}`;
+  // A capture already handed off says so, so the AI doesn't check its fit again (XKG-189).
+  const handoffs = await handoffRows(user);
+  const today = formatDate();
+  const items = page.items.map((row) => {
+    const name = row.match(/\]\((?:inbox|applied|archived)\/([^)]+)\)/)?.[1];
+    const note = name ? handoffNote(handoffs, name, today) : null;
+    return note ? `${row}\n  ↳ ${note}` : row;
+  });
+  return `${header}\n${items.join("\n")}${pageFooter(page, tool)}`;
 }
 
 const STATUSES = new Set(["inbox", "applied", "archived"]);
@@ -275,8 +283,10 @@ export async function handleReadCapture(user: User, args: { filename: string }):
   const path = args.filename.includes("/") || args.filename === "RULES.md" ? args.filename : `inbox/${args.filename}`;
   const file = await readFile(user.github_token, user.github_repo, path);
   if (!file) return `File not found: ${path}. Use search to find it.`;
-  if (CAPTURE_PATH.test(path)) await recordSetupStep(user.id, "shown");
-  return file.content;
+  if (!CAPTURE_PATH.test(path)) return file.content;
+  await recordSetupStep(user.id, "shown");
+  const note = handoffNote(await handoffRows(user), path, formatDate());
+  return note ? `${file.content.trimEnd()}\n\n---\nxkg: ${note}. It is applied from a coding session in that repo.` : file.content;
 }
 
 /** Appended wherever xkg suggests a capture, so the agent closes the loop after committing. */
@@ -568,7 +578,12 @@ export async function handleBriefing(
     // Rows are appended, and parseIndexRows sorts by date only (stable), so
     // reversing first puts the latest capture of a day first.
     const rows = index ? parseIndexRows(index.content.split("\n").reverse().join("\n")) : null;
-    const { text, shown } = inboxBriefing(rows);
+    const handoffs = await handoffRows(user);
+    const today = formatDate();
+    const { text, shown } = inboxBriefing(rows, {
+      notes: (filename) => handoffNote(handoffs, filename, today),
+      repos: await knownRepos(user, handoffs),
+    });
     await recordSurfaceEvents(user.id, shown, "briefing");
     return offer ? `${offer}\n\n${text}` : text;
   }

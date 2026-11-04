@@ -39,7 +39,7 @@ vi.mock("@/lib/synthesis", () => ({ synthesizeTopic: async () => ({ topic: "mcp"
 vi.mock("@/lib/apply-events", () => ({ recordApplyEvent: vi.fn() }));
 const recordSurfaceEvents = vi.fn();
 vi.mock("@/lib/surface-events", () => ({ recordSurfaceEvents: (...a: unknown[]) => recordSurfaceEvents(...a), recordWhereEvent: vi.fn() }));
-vi.mock("@/lib/handoff-offer", () => ({ handoffOffer: async () => null }));
+vi.mock("@/lib/handoff-offer", () => ({ handoffOffer: async () => null, handoffRows: async () => [], handoffNote: () => null }));
 vi.mock("@/lib/handoff-learning", () => ({ forgetCapture: vi.fn() }));
 
 beforeAll(() => {

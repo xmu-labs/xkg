@@ -61,9 +61,9 @@ You don't need to remember these. Ask in plain language: "save this", "what do I
 | Tool | What it does |
 | --- | --- |
 | `capture` | Saves new knowledge from pasted text or a URL |
-| `briefing` | **In a chat app** (no arguments): how many captures wait in your inbox, the newest few, and which repos have handoffs waiting. **At session start in a repo:** captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting there (found from `repo`, or from the `Project:` line of `project_context`). **Mid-task**, with `task` (and optional `files`): the captures that fit what the agent is doing now |
-| `search` | Finds captures by words, tag, status (`inbox`, `applied`, `archived`), or date, or lists them all |
-| `read_capture` | Reads a capture in full (or `RULES.md`) |
+| `briefing` | **In a chat app** (no arguments): how many captures wait in your inbox, the newest few (each marked if it was handed off, with its repo and state), and which repos have handoffs waiting. It tells your AI to ask once which repo you're in before checking where a capture fits. **At session start in a repo:** captures that may fit the repo, for the agent to check against the code, plus your rules and any handoffs waiting there (found from `repo`, or from the `Project:` line of `project_context`). **Mid-task**, with `task` (and optional `files`): the captures that fit what the agent is doing now |
+| `search` | Finds captures by words, tag, status (`inbox`, `applied`, `archived`), or date, or lists them all. A capture handed off to a repo is marked with the repo and its state |
+| `read_capture` | Reads a capture in full (or `RULES.md`). A capture handed off to a repo ends with the repo and its state |
 | `apply_capture` | Marks a capture as applied, with the commit and why. Also records your answer to a handoff: `declined` with a reason, `done`, `later`, or `reverted` |
 
 Archiving, deleting, the source check, making rules, and weekly stats live in the app under **Your knowledge**, because they're your decisions, not agent work.

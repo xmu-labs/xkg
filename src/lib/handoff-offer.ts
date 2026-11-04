@@ -26,6 +26,8 @@ export const MAX_OFFERED = 3;
 /** Days a waiting capture is offered without an answer before it stops. */
 export const EXPIRE_AFTER_DAYS = 3;
 
+type OfferUser = Pick<User, "id" | "github_token" | "github_repo">;
+
 const FIT: Record<string, string> = { strong: "Strong fit", possible: "Possible fit" };
 
 export interface OfferItem {
@@ -71,6 +73,45 @@ export function waitingByRepo(rows: HandoffRow[], today: string): Map<string, nu
     counts.set(name, (counts.get(name) ?? 0) + 1);
   }
   return counts;
+}
+
+/** A row's state in words, or null for a dead row (never offered again). */
+function stateOf(r: HandoffRow, today: string): string | null {
+  if (r.status === "dead") return null;
+  if (offerable([r], r.repo, today).length) return "waiting for the coding agent there";
+  if (r.status.startsWith("snoozed:")) return `snoozed until ${r.status.slice("snoozed:".length)}`;
+  return r.status === "done" ? "already done" : r.status === "expired" ? "expired, never answered" : r.status;
+}
+
+/**
+ * Where a capture was handed off and how each stands, for every place that
+ * lists or opens a capture (XKG-189), or null when it never was. `capture`
+ * may carry its folder or not. Shown so the AI doesn't offer a new fit check
+ * for a capture already handed off.
+ */
+export function handoffNote(rows: HandoffRow[], capture: string, today: string): string | null {
+  const name = captureName(capture);
+  const parts = rows
+    .filter((r) => captureName(r.capture) === name)
+    .map((r) => ({ repo: r.repo, state: stateOf(r, today) }))
+    .filter((p): p is { repo: string; state: string } => p.state !== null)
+    .map((p) => `${p.repo} (${p.state})`);
+  return parts.length ? `handed off to ${parts.join(", ")}` : null;
+}
+
+/**
+ * The repos the user is known to work in: every repo in HANDOFFS.md, then
+ * every repo with a code map, each once. Never throws.
+ */
+export async function knownRepos(user: OfferUser, rows: HandoffRow[]): Promise<string[]> {
+  const mapped = await codeMapRepos(user.id).catch(() => [] as string[]);
+  const seen = new Set<string>();
+  return [...rows.map((r) => r.repo), ...mapped].filter((repo) => {
+    const key = repo.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** The repo name from the `Project: <name>` line a session-start hook sends, or null. */
@@ -148,8 +189,6 @@ export function formatOffer(repo: string, total: number, items: OfferItem[]): st
   return `${ask}\n\n## Waiting for you in ${repo}\n${list}\n${HANDOFF_GUIDE}`;
 }
 
-type OfferUser = Pick<User, "id" | "github_token" | "github_repo">;
-
 /** The capture's title and where it is now (inbox/ or applied/), or null when it's gone. */
 async function findCapture(user: OfferUser, capture: string): Promise<{ path: string; title: string } | null> {
   const name = captureName(capture);
@@ -161,7 +200,7 @@ async function findCapture(user: OfferUser, capture: string): Promise<{ path: st
 }
 
 /** The rows of HANDOFFS.md, or none when it is missing or unreadable. Never throws. */
-async function handoffRows(user: OfferUser): Promise<HandoffRow[]> {
+export async function handoffRows(user: OfferUser): Promise<HandoffRow[]> {
   try {
     if (!user.github_repo) return [];
     const file = await readFile(user.github_token, user.github_repo, HANDOFFS_PATH);
