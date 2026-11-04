@@ -86,7 +86,7 @@ describe("MCP prompts", () => {
   // protects: XKG-189, a chat guessed the repo instead of asking; fails_when: the chat path never asks; no_claim: that the AI obeys
   it("tells a chat with no repo to ask once which repo before checking where a capture applies", () => {
     const text = getPrompt("briefing", {})!.messages[0]!.content.text;
-    expect(text).toMatch(/no repo.*ask the user once which repo they're working in/i);
+    expect(text).toMatch(/no repo.*ask the user once which repo they're working in, then call `briefing` with repo set to it and task set to/i);
   });
 
   it("drops a repo that isn't owner/name", () => {

@@ -99,7 +99,7 @@ describe("chat briefing (no arguments)", () => {
     setup([row(ROUTING)]);
     codeMapRepos.mockResolvedValue(["xmu-labs/xkg", "xmu-labs/xmu-monorepo"]);
     const text = await handleBriefing(user, {});
-    expect(text).toMatch(/ask the user once which repo they're working in \(xmu-labs\/xmu-monorepo, xmu-labs\/xkg\), then call briefing with repo set to it/);
+    expect(text).toMatch(/ask the user once which repo they're working in \(xmu-labs\/xmu-monorepo, xmu-labs\/xkg\), then call briefing with repo set to it and task set to what the user wants to apply or check/);
     expect(text).toContain("say it was handed off instead of checking its fit again");
   });
 
@@ -115,7 +115,8 @@ describe("chat briefing (no arguments)", () => {
   it("still asks for the repo when no repo is known yet, without a list", async () => {
     setup([]);
     const text = await handleBriefing(user, {});
-    expect(text).toContain("ask the user once which repo they're working in, then call briefing with repo set to it");
+    // Codex P2 on #198: repo alone returns only the handoff queue, never fit candidates
+    expect(text).toContain("ask the user once which repo they're working in, then call briefing with repo set to it and task set to what the user wants to apply or check.");
   });
 
   it("keeps working when the code map lookup fails", async () => {
