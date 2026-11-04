@@ -131,6 +131,36 @@ test("a Strong fit asks for Why and Impact by itself and shows them per file", a
   expect(bodies).toEqual([{ name: WORST_CAPTURE.filename }]);
 });
 
+// XKG-185: file names read as code: monospace on a chip background, also bare names in Why and Impact.
+for (const theme of ["dark", "light"] as const) {
+  test(`file names show as code chips, in the path and inside Why and Impact (${theme})`, async ({ page }) => {
+    await setTheme(page, theme);
+    const files = WORST_CAPTURE.where.files.map((f, i) => ({ path: f.path, why: `Implements suggest.ts logic ${i}`, impact: `Routing in packages/llm/src/policy.ts changes ${i}` }));
+    await page.route("**/api/captures/explain", (r) => r.fulfill({ json: { files } }));
+    await capture(page, WORST_CAPTURE);
+    const card = page.getByTestId("apply-it");
+    await expect(card.getByText("Implements", { exact: false }).first()).toBeVisible();
+    for (const name of [WORST_CAPTURE.where.files[0]!.path, "suggest.ts", "packages/llm/src/policy.ts"]) {
+      const chip = card.locator("code", { hasText: name }).first();
+      await expect(chip).toBeVisible();
+      const [font, chipBg, cardBg, fg] = await chip.evaluate((el) => {
+        const s = getComputedStyle(el);
+        return [s.fontFamily, s.backgroundColor, getComputedStyle(el.closest("[data-testid=apply-it]")!).backgroundColor, s.color];
+      });
+      expect(font).toMatch(/mono/i);
+      expect(chipBg).not.toBe("rgba(0, 0, 0, 0)");
+      expect(chipBg).not.toBe(cardBg);
+      // The chip is a see-through tint: measure the color it shows over the card.
+      const [r, g, b, a = 1] = chipBg!.match(/[\d.]+/g)!.map(Number);
+      const under = cardBg!.match(/[\d.]+/g)!.map(Number);
+      const shown = `rgb(${[r, g, b].map((v, i) => v! * a + under[i]! * (1 - a)).join(", ")})`;
+      expect(contrast(fg!, shown)).toBeGreaterThanOrEqual(4.5);
+    }
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+}
+
 test("a Possible fit asks only when you tap Why and how", async ({ page }) => {
   let calls = 0;
   await page.route("**/api/captures/explain", (r) => {
