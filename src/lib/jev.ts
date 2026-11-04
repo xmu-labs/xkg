@@ -67,8 +67,8 @@ export function jevPayload(repo: string, capture: CaptureText, files: JevFile[])
       type: "noul",
       instructions: { question: `Would a developer applying a takeaway from \`capture\` to ${repo} change this file?`, file },
       criteria: {
-        true: "The file holds the code that one of the takeaways is about, so applying it means editing this file.",
-        false: "The file does a different job; it only shares general words (such as model, cache, or routing) with the capture.",
+        true: "The file holds the code that one of the takeaways is about, in the sense the capture means it, so applying it means editing this file.",
+        false: "The file does a different job. It only shares words with the capture: general words (such as model, cache, or routing), or a word that names something else in this repo than in the capture.",
       },
     };
   });
@@ -77,7 +77,7 @@ export function jevPayload(repo: string, capture: CaptureText, files: JevFile[])
     instructions: `Does any takeaway in \`capture\` call for a concrete code change in ${repo}?`,
     criteria: {
       true: `A developer could name a change in ${repo} code that applies a takeaway.`,
-      false: `The capture is about a different domain or is general advice with no code change in ${repo}.`,
+      false: `The capture is about a different domain or is general advice with no code change in ${repo}, even where a word in it also names a feature of ${repo}.`,
     },
   };
   return {
