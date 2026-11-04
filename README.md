@@ -62,6 +62,8 @@ For Claude, ChatGPT, or Grok, add a custom connector named `xkg` with this URL, 
 https://xkg.xmu.sh/api/mcp
 ```
 
+To have every new chat start with a briefing, paste the line from Settings → **Make it start on its own** into the app's custom instructions.
+
 Step-by-step for each app, manual setup for any agent, and how to remove xkg: [Connect your AI](https://github.com/xmu-labs/xkg/blob/main/docs/connect.md).
 
 ## What your agent can do

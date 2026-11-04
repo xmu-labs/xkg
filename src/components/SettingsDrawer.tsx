@@ -7,6 +7,7 @@ import { PROVIDERS, type LlmProvider as Provider } from "@/lib/providers";
 import { speedRow } from "@/lib/model-speed";
 import CodeRepos from "./CodeRepos";
 import AiSpend from "./AiSpend";
+import { ALWAYS_ON_APPS, ALWAYS_ON_LINE } from "@/lib/always-on-line";
 
 /** Dispatch on window to open the drawer on Settings. */
 export const OPEN_SETTINGS_EVENT = "xkg:open-settings";
@@ -221,6 +222,7 @@ export default function SettingsDrawer({
   const [pinOpen, setPinOpen] = useState(false);
   const reduceMotion = useReducedMotion();
   const [urlCopied, setUrlCopied] = useState(false);
+  const [lineCopied, setLineCopied] = useState(false);
   // The deployment this page came from, so previews hand out their own URL.
   // The panel only renders in the browser, so window is always there when it's read.
   const connectorUrl = typeof window === "undefined" ? "https://xkg.xmu.sh/api/mcp" : `${window.location.origin}/api/mcp`;
@@ -518,6 +520,14 @@ export default function SettingsDrawer({
       await navigator.clipboard.writeText(connectorUrl);
       setUrlCopied(true);
       window.setTimeout(() => setUrlCopied(false), 1500);
+    } catch { /* clipboard unavailable */ }
+  }
+
+  async function copyAlwaysOnLine() {
+    try {
+      await navigator.clipboard.writeText(ALWAYS_ON_LINE);
+      setLineCopied(true);
+      window.setTimeout(() => setLineCopied(false), 1500);
     } catch { /* clipboard unavailable */ }
   }
 
@@ -850,6 +860,29 @@ export default function SettingsDrawer({
                       >
                         {urlCopied ? "Copied" : "Copy URL"}
                       </button>
+                    </div>
+                    <div className="mb-3">
+                      <p className="text-xs font-medium mb-1" style={{ color: "var(--fg)" }}>Make it start on its own</p>
+                      <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
+                        Chat apps can&apos;t run a startup hook. Paste this line once into the app&apos;s standing instructions:
+                      </p>
+                      <div className="flex items-start gap-2 mb-2">
+                        <p className="text-xs flex-1 min-w-0 p-2 rounded-lg" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
+                          {ALWAYS_ON_LINE}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => void copyAlwaysOnLine()}
+                          className="btn-secondary shrink-0 text-sm font-medium rounded-xl px-3 py-2"
+                        >
+                          {lineCopied ? "Copied" : "Copy line"}
+                        </button>
+                      </div>
+                      <ul className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+                        {ALWAYS_ON_APPS.map((a) => (
+                          <li key={a.app}><span style={{ color: "var(--fg)" }}>{a.app}:</span> {a.where}</li>
+                        ))}
+                      </ul>
                     </div>
                     <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
                       In a terminal, run <code>npx -y @xmu-labs/xkg@latest init</code>. It signs you in through the
