@@ -99,6 +99,8 @@ To check every capture instead of these candidates, call \`search\` with no quer
 }
 
 const INBOX_SHOWN = 5;
+/** Known repos named in the chat briefing's "which repo?" line. */
+const REPOS_SHOWN = 5;
 
 /**
  * The briefing for a chat app, where there is no repo, task or project to rank
@@ -119,7 +121,9 @@ export function inboxBriefing(
     return `- ${r.filename}: ${r.summary}${note ? ` (${note})` : ""}`;
   };
   // A chat app has no repo: ask once instead of guessing (XKG-189).
-  const repos = extra.repos?.length ? ` (${extra.repos.join(", ")})` : "";
+  const known = extra.repos ?? [];
+  const more = known.length > REPOS_SHOWN ? `, and ${known.length - REPOS_SHOWN} more` : "";
+  const repos = known.length ? ` (${known.slice(0, REPOS_SHOWN).join(", ")}${more})` : "";
   const text = [
     `xkg inbox: ${inbox.length} ${noun} waiting. Newest first:`,
     // The filename, not the INDEX slug: it is what read_capture opens.

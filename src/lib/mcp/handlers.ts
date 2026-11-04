@@ -286,7 +286,7 @@ export async function handleReadCapture(user: User, args: { filename: string }):
   if (!CAPTURE_PATH.test(path)) return file.content;
   await recordSetupStep(user.id, "shown");
   const note = handoffNote(await handoffRows(user), path, formatDate());
-  return note ? `${file.content.trimEnd()}\n\n---\nxkg: ${note}. It is applied from a coding session in that repo.` : file.content;
+  return note ? `${file.content.trimEnd()}\n\n---\nxkg: this capture was ${note}.` : file.content;
 }
 
 /** Appended wherever xkg suggests a capture, so the agent closes the loop after committing. */

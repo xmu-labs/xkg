@@ -103,6 +103,15 @@ describe("chat briefing (no arguments)", () => {
     expect(text).toContain("say it was handed off instead of checking its fit again");
   });
 
+  // Regression: ISSUE-001 — 30 code-mapped repos made a 600-char line in the chat briefing
+  // Found by /qa on 2026-11-04
+  it("names at most five known repos", async () => {
+    setup([]);
+    codeMapRepos.mockResolvedValue(Array.from({ length: 30 }, (_, i) => `org/repo-${i}`));
+    const text = await handleBriefing(user, {});
+    expect(text).toContain("(org/repo-0, org/repo-1, org/repo-2, org/repo-3, org/repo-4, and 25 more)");
+  });
+
   it("still asks for the repo when no repo is known yet, without a list", async () => {
     setup([]);
     const text = await handleBriefing(user, {});
@@ -135,7 +144,7 @@ describe("search and read_capture", () => {
     setup([row(ROUTING)]);
     const text = await handleReadCapture(user, { filename: ROUTING });
     expect(text.startsWith("# Smart model routing")).toBe(true);
-    expect(text.endsWith("\n\n---\nxkg: handed off to xmu-labs/xmu-monorepo (waiting for the coding agent there). It is applied from a coding session in that repo.")).toBe(true);
+    expect(text.endsWith("\n\n---\nxkg: this capture was handed off to xmu-labs/xmu-monorepo (waiting for the coding agent there).")).toBe(true);
   });
 
   it("read_capture leaves other files untouched", async () => {
