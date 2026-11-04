@@ -99,6 +99,8 @@ To check every capture instead of these candidates, call \`search\` with no quer
 }
 
 const INBOX_SHOWN = 5;
+/** Known repos named in the chat briefing's "which repo?" line. */
+const REPOS_SHOWN = 5;
 
 /**
  * The briefing for a chat app, where there is no repo, task or project to rank
@@ -106,17 +108,29 @@ const INBOX_SHOWN = 5;
  * INDEX rows (newest first). No LLM call. `rows` is null when there's no INDEX.
  * `shown` names the listed captures, for the surface events.
  */
-export function inboxBriefing(rows: Array<{ filename: string; status: string; summary: string }> | null): { text: string; shown: string[] } {
+export function inboxBriefing(
+  rows: Array<{ filename: string; status: string; summary: string }> | null,
+  extra: { notes?: (filename: string) => string | null; repos?: string[] } = {},
+): { text: string; shown: string[] } {
   const inbox = (rows ?? []).filter((r) => r.status === "inbox");
   if (inbox.length === 0) return { text: "xkg inbox: empty. When the user shares something worth keeping, call capture.", shown: [] };
   const listed = inbox.slice(0, INBOX_SHOWN);
   const noun = inbox.length === 1 ? "capture" : "captures";
+  const line = (r: { filename: string; summary: string }) => {
+    const note = extra.notes?.(r.filename);
+    return `- ${r.filename}: ${r.summary}${note ? ` (${note})` : ""}`;
+  };
+  // A chat app has no repo: ask once instead of guessing (XKG-189).
+  const known = extra.repos ?? [];
+  const more = known.length > REPOS_SHOWN ? `, and ${known.length - REPOS_SHOWN} more` : "";
+  const repos = known.length ? ` (${known.slice(0, REPOS_SHOWN).join(", ")}${more})` : "";
   const text = [
     `xkg inbox: ${inbox.length} ${noun} waiting. Newest first:`,
     // The filename, not the INDEX slug: it is what read_capture opens.
-    ...listed.map((r) => `- ${r.filename}: ${r.summary}`),
+    ...listed.map(line),
     "",
     "Tell the user how many captures are waiting. To open one, call read_capture with its name. To find the captures that fit what the user asks about, call briefing with task set to it.",
+    `Before checking where a capture applies in code, ask the user once which repo they're working in${repos}, then call briefing with repo set to it and task set to what the user wants to apply or check. If a capture is marked handed off, say it was handed off instead of checking its fit again.`,
   ].join("\n");
   return { text, shown: listed.map((r) => r.filename) };
 }

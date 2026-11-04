@@ -129,6 +129,7 @@ describe("handleBriefing with no repo, task or project (a chat app)", () => {
         "- 2026-10-21-fewer-tools.md: Short tool lists",
         "",
         "Tell the user how many captures are waiting. To open one, call read_capture with its name. To find the captures that fit what the user asks about, call briefing with task set to it.",
+        "Before checking where a capture applies in code, ask the user once which repo they're working in, then call briefing with repo set to it and task set to what the user wants to apply or check. If a capture is marked handed off, say it was handed off instead of checking its fit again.",
       ].join("\n"),
     );
   });

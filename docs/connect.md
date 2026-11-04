@@ -35,7 +35,9 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, and sign in with G
 
 When a chat starts, your AI tells you how many captures wait in your inbox and shows the newest few. You can also ask "what's in my inbox?" or "what do I have on payments?"
 
-A connector can't run the [session-start hook](#offer-new-captures-when-a-session-starts). Where the app shows MCP prompts (Claude, ChatGPT, Codex), pick the xkg **briefing** prompt instead: it asks your AI to call `briefing` for the repo you name (or the one it's in) and say which captures fit before your task.
+A chat app can't see which repo you're working in. Before it checks where a capture fits your code, your AI asks you once and then briefs for that repo. A capture you already handed off to a repo is marked as handed off, with how it stands (waiting, applied, declined), so your AI doesn't check its fit again.
+
+A connector can't run the [session-start hook](#offer-new-captures-when-a-session-starts). Where the app shows MCP prompts (Claude, ChatGPT, Codex), pick the xkg **briefing** prompt instead (in Claude, start a new chat, then **+** → xkg → **Brief me**). Type the repo you're working in, such as `owner/name`, to skip the question: it asks your AI to call `briefing` for that repo (or the one it's in) and say which captures fit before your task.
 
 ## Coding agents: one command
 

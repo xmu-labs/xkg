@@ -36,7 +36,7 @@ function briefingText(repo: string | null): string {
     "If it starts with captures waiting, ask the user the question it gives. " +
     "Otherwise tell the user in one line which captures fit this repo and ask if they want to apply one. " +
     "Check each candidate against the code before suggesting where it applies; never name a file you have not opened. " +
-    "With no repo (a chat), call `briefing` with no arguments and say what is waiting."
+    "With no repo (a chat), call `briefing` with no arguments and say what is waiting. Before checking where a capture applies, ask the user once which repo they're working in, then call `briefing` with repo set to it and task set to what the user wants to apply or check."
   );
 }
 
