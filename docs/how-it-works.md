@@ -181,7 +181,7 @@ After a capture, the app says **Added to your knowledge** and shows an **Apply i
 
 Your own model writes Why and Impact from the capture and the file's path, one-line summary, and exported names, never its code. A Strong fit gets them right away; a Possible fit has a **Why and how** button.
 
-They're saved in the capture's "Where it applies" section as `` - `path`: why · Impact: impact ``, so each capture is explained once. The call is capped at 400 output tokens and runs at low effort.
+They're saved in the capture's "Where it applies" section as `` - `path`: why · Impact: impact ``, so each capture is explained once. The call is capped at 400 output tokens and runs at low effort. On the page, file paths and code names (in backticks, or bare file names like `suggest.ts`) show as code chips.
 
 Captures from before this change hold `· After:` lines. The first time one is opened, its lines are rewritten once as Impact.
 

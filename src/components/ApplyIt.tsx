@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import HandOff from "./HandOff";
 import type { HandoffState } from "@/lib/handoff-status";
+import { splitCode } from "@/lib/code-names";
 
 export type Fit = "Strong fit" | "Possible fit";
 
@@ -72,9 +73,9 @@ export async function explainFiles<F extends { path: string; why?: string; impac
 
 const FIT_TONE: Record<Fit, string> = { "Strong fit": "strong", "Possible fit": "possible" };
 
-/** Text with `backticked` names shown as code. */
+/** Text with code names (`backticked`, or bare file names and paths) shown as code chips. */
 function withCode(text: string) {
-  return text.split("`").map((part, i) => (i % 2 ? <code key={i} className="font-mono text-[12px]">{part}</code> : part));
+  return splitCode(text).map((part, i) => (part.code ? <code key={i} className="code-chip">{part.text}</code> : part.text));
 }
 
 /** Always this line: the stored note ("from file names, not yet checked … · map from …") reads as noise on the card. */
@@ -136,7 +137,7 @@ export default function ApplyIt({ where, advice, handoff, explain, style }: Appl
           <ul className="stack-3">
             {where.files.map((f) => (
               <li key={f.path} className="stack-1 text-sm leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-                <code className="block font-mono text-[12px] break-all" style={{ color: "var(--fg)" }}>{f.path}</code>
+                <code className="code-chip inline-block max-w-full self-start break-all">{f.path}</code>
                 {f.why && <p>{f.impact ? <><b className="font-medium" style={{ color: "var(--fg)" }}>Why:</b> </> : null}{withCode(f.why)}</p>}
                 {f.impact && <p><b className="font-medium" style={{ color: "var(--fg)" }}>Impact:</b> {withCode(f.impact)}</p>}
               </li>

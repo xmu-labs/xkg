@@ -336,6 +336,8 @@ textarea::placeholder {
 .apply-it { background: var(--card-bg); border: 1px solid var(--gold-faint); border-left: 3px solid var(--gold-low); }
 .apply-it[data-tone="strong"] { --fit: var(--fit-strong); --fit-bg: var(--fit-strong-bg); border-left-color: var(--fit-strong); }
 .apply-it[data-tone="possible"] { --fit: var(--fit-possible); --fit-bg: var(--fit-possible-bg); border-left-color: var(--fit-possible); }
+/* Code names (file paths, functions) in running text: monospace on a soft chip. */
+.code-chip { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: 12px; line-height: 1.5; padding: 1px 6px; border-radius: 6px; color: var(--fg); background: color-mix(in srgb, var(--fg) 9%, transparent); border: 1px solid color-mix(in srgb, var(--fg) 12%, transparent); overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .fit-pill { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.4; padding: 2px 10px; border-radius: 9999px; color: var(--fit); background: var(--fit-bg); border: 1px solid color-mix(in srgb, var(--fit) 45%, transparent); white-space: nowrap; }
 /* A handoff's state (Sent, Snoozed …): neutral, so it never reads as a second fit. */
 .status-pill { display: inline-block; font-size: 12px; font-weight: 600; line-height: 1.4; padding: 2px 10px; border-radius: 9999px; color: var(--fg); border: 1px solid var(--gold-low); white-space: nowrap; }
