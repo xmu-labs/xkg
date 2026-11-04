@@ -65,7 +65,7 @@ If a suggested file is no longer in your current map, it's marked "moved or dele
 
 #### Your answers
 
-Your agent records your answer with `apply_capture`. You can also say no from the web: tap **Not a fit** on the capture card and pick a reason (**Wrong files**, **Doesn't fit this repo**, or **Other**). It's recorded exactly like your agent's `declined`, so you don't have to wait for a coding session.
+Your agent records your answer with `apply_capture`. The capture page doesn't ask you to judge the fit: that's xkg's job. If an offer is wrong, say no to your agent, and xkg learns from that answer.
 
 | You say | Recorded as | What happens |
 | --- | --- | --- |

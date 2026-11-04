@@ -2,8 +2,7 @@ import { test, expect, signIn, WORST_CAPTURE, WORST_REPO } from "./fixtures";
 
 // The capture card hands a capture off to the user's coding agent: a Strong
 // fit is already sent, anything else is sent after one tap, in the repo the
-// user picks. A sent capture says so, with the date and the next step, and
-// "Not a fit" answers it from the web.
+// user picks. A sent capture says so, with the date and the next step.
 
 const ALSO = WORST_CAPTURE.where.also[0]!.repo;
 const possible = { ...WORST_CAPTURE, where: { ...WORST_CAPTURE.where, fit: "Possible fit" } };
@@ -68,53 +67,14 @@ test("no fit offers no handoff", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
 });
 
-test("Not a fit records a decline with a reason, and the card says so", async ({ page }) => {
-  await capture(page, { ...WORST_CAPTURE, handoff: { repo: WORST_REPO, since: "2026-11-02" } });
-  const sent: unknown[] = [];
-  await page.route("**/api/handoffs/answer", async (r) => {
-    sent.push(r.request().postDataJSON());
-    await r.fulfill({ json: { ok: true, status: "declined", repo: WORST_REPO } });
-  });
-  const block = page.getByTestId("apply-it");
-  await block.getByRole("button", { name: "Not a fit" }).tap();
-  await block.getByRole("button", { name: "Wrong files" }).tap();
-  await expect(block.getByText(`You said it's not a fit for ${WORST_REPO}.`)).toBeVisible();
-  await expect(block.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
-  expect(sent).toEqual([{ filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files", files: WORST_CAPTURE.where.files.map((f) => f.path) }]);
-});
-
-// fails_when: "Wrong files" on a match that was never queued teaches xkg nothing (no files in the log)
-test("Wrong files names the suggested files only for the repo they were suggested in", async ({ page }) => {
-  await capture(page, possible);
-  const sent: unknown[] = [];
-  await page.route("**/api/handoffs/answer", async (r) => {
-    const body = r.request().postDataJSON();
-    sent.push(body);
-    await r.fulfill({ json: { ok: true, status: "declined", repo: body.repo } });
-  });
-  const block = page.getByTestId("apply-it");
-  await block.getByRole("button", { name: "Not a fit" }).tap();
-  await block.getByRole("button", { name: "Wrong files" }).tap();
-  await expect(block.getByText(`You said it's not a fit for ${WORST_REPO}.`)).toBeVisible();
-  await block.getByLabel("Repo to hand off to").selectOption(ALSO);
-  await block.getByRole("button", { name: "Not a fit" }).tap();
-  await block.getByRole("button", { name: "Wrong files" }).tap();
-  await expect(block.getByText(`You said it's not a fit for ${ALSO}.`)).toBeVisible();
-  expect(sent).toEqual([
-    { filename: `inbox/${WORST_CAPTURE.filename}`, repo: WORST_REPO, reason: "wrong-files", files: WORST_CAPTURE.where.files.map((f) => f.path) },
-    { filename: `inbox/${WORST_CAPTURE.filename}`, repo: ALSO, reason: "wrong-files" },
-  ]);
-});
-
-test("Not a fit can be cancelled, and a failed one says why", async ({ page }) => {
-  await capture(page, possible);
-  await page.route("**/api/handoffs/answer", (r) => r.fulfill({ status: 502, json: { error: "Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment." } }));
-  const block = page.getByTestId("apply-it");
-  await block.getByRole("button", { name: "Not a fit" }).tap();
-  await block.getByRole("button", { name: "Cancel" }).tap();
-  await expect(block.getByRole("button", { name: "Wrong files" })).toHaveCount(0);
-  await block.getByRole("button", { name: "Not a fit" }).tap();
-  await block.getByRole("button", { name: "Doesn't fit this repo" }).tap();
-  await expect(block.getByRole("alert")).toHaveText("Nothing was recorded: HANDOFFS.md couldn't be updated. Try again in a moment.");
-  await expect(block.getByRole("button", { name: "Hand off to your coding agent" })).toBeEnabled();
+// XKG-187: judging fit is xkg's job, so the page never asks the user to decline.
+// A no comes from the user's answer to their coding agent's offer.
+test("the card never asks the user to say it's not a fit", async ({ page }) => {
+  for (const json of [WORST_CAPTURE, possible, { ...WORST_CAPTURE, handoff: { repo: WORST_REPO, since: "2026-11-02" } }]) {
+    await capture(page, json);
+    const block = page.getByTestId("apply-it");
+    await expect(block).toBeVisible();
+    await expect(block.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
+    await expect(block.getByRole("button", { name: "Wrong files" })).toHaveCount(0);
+  }
 });

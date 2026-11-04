@@ -23,7 +23,7 @@ export interface ApplyItProps {
   /** The capture's general advice (`appliedTo`); shown when nothing fits. */
   advice: string | null;
   /** The hand-off button; left out on read-only pages. */
-  handoff?: { filename: string; repos: string[]; handoffs?: HandoffState[]; files?: string[] };
+  handoff?: { filename: string; repos: string[]; handoffs?: HandoffState[] };
   /**
    * Fills in Why and Impact for files that lack them: asked for by itself when
    * `auto` (Strong fit), else behind a "Why and how" button. Old "After"

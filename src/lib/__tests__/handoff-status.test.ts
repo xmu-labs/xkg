@@ -15,7 +15,6 @@ describe("handoffStatus", () => {
       chip: "Sent",
       text: "Sent to your coding agent on Nov 2. It asks you at your next session in acme/app.",
       canHandOff: false,
-      canDecline: true,
     });
   });
 
@@ -24,7 +23,6 @@ describe("handoffStatus", () => {
       chip: "Snoozed",
       text: "You said later. Your coding agent asks again after Nov 10 in acme/app.",
       canHandOff: false,
-      canDecline: true,
     });
   });
 
@@ -33,7 +31,6 @@ describe("handoffStatus", () => {
       chip: "No answer",
       text: "Offered 3 times in acme/app with no answer.",
       canHandOff: true,
-      canDecline: true,
     });
   });
 
@@ -43,21 +40,20 @@ describe("handoffStatus", () => {
     ["done", "Done", "Already done in acme/app."],
     ["dead", "Not offered", "Turned down twice, so xkg won't offer it in acme/app again."],
   ])("a finished row (%s) offers nothing more", (status, chip, text) => {
-    expect(handoffStatus({ repo: REPO, status, since: "2026-11-01" })).toEqual({ chip, text, canHandOff: false, canDecline: false });
+    expect(handoffStatus({ repo: REPO, status, since: "2026-11-01" })).toEqual({ chip, text, canHandOff: false });
   });
 
-  // fails_when: a decline whose Handoff log line failed hides "Not a fit" after a reload, so it can never be finished
-  it("keeps Not a fit for a decline that isn't in the Handoff log yet", () => {
+  // fails_when: the card asks the user to answer again, with no button to do it (XKG-187)
+  it("reads a decline that isn't in the Handoff log yet like any other decline", () => {
     expect(handoffStatus({ repo: REPO, status: "declined", since: "2026-11-03", unfinished: true })).toEqual({
       chip: "Not a fit",
-      text: "You said it's not a fit for acme/app. It isn't fully saved yet, so answer again to finish.",
+      text: "You said it's not a fit for acme/app.",
       canHandOff: false,
-      canDecline: true,
     });
   });
 
-  it("with no row, offers the handoff and the decline", () => {
-    expect(handoffStatus(null)).toEqual({ chip: null, text: null, canHandOff: true, canDecline: true });
+  it("with no row, offers the handoff", () => {
+    expect(handoffStatus(null)).toEqual({ chip: null, text: null, canHandOff: true });
   });
 
   it("treats a status typed by hand as waiting, without inventing a date", () => {
