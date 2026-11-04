@@ -67,6 +67,24 @@ test("Settings gives the connector URL for Claude and ChatGPT on the web", async
   await expect(dialog.getByRole("button", { name: "Copy URL" })).toBeVisible();
 });
 
+// protects: XKG-199, chat apps get one optional line to paste so the briefing starts in every chat; fails_when: the line shows as a required step, or the line, its Copy button or an app's place is missing; no_claim: each app obeys it
+test("Settings offers one optional always-on line to paste into any chat app", async ({ page, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await signIn(page);
+  await page.goto("/");
+  await openSettings(page);
+  const dialog = page.getByRole("dialog");
+  const tip = dialog.getByText("Optional: brief me in every chat", { exact: true });
+  await expect(tip).toBeVisible();
+  await expect(dialog.getByText(/call the xkg briefing tool/)).toBeHidden();
+  await tip.click();
+  await expect(dialog.getByText(/call the xkg briefing tool/)).toBeVisible();
+  for (const app of ["ChatGPT", "Grok", "Claude", "Gemini"]) await expect(dialog.getByText(`${app}:`, { exact: true })).toBeVisible();
+  await dialog.getByRole("button", { name: "Copy line" }).click();
+  await expect(dialog.getByRole("button", { name: "Copied" })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toMatch(/call the xkg briefing tool/);
+});
+
 test("the Capture label doesn't animate on page load", async ({ page }) => {
   await signIn(page);
   await page.goto("/");

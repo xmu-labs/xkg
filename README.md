@@ -62,6 +62,8 @@ For Claude, ChatGPT, or Grok, add a custom connector named `xkg` with this URL, 
 https://xkg.xmu.sh/api/mcp
 ```
 
+xkg asks your AI to brief you when a chat starts. Optional: to make it every chat, paste the line from Settings → **Optional: brief me in every chat** into the app's custom instructions.
+
 Step-by-step for each app, manual setup for any agent, and how to remove xkg: [Connect your AI](https://github.com/xmu-labs/xkg/blob/main/docs/connect.md).
 
 ## What your agent can do

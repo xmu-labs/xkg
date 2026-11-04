@@ -33,6 +33,13 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, and sign in with G
   4. Tick the risk box, click **Create**, and sign in with GitHub.
 - **Grok:** open [grok.com/connectors](https://grok.com/connectors) → New Connector → Custom.
 
+You don't need to set anything else: the `briefing` tool asks your AI to call it when a conversation starts. No app lets a connector force a call, so if you want it in every chat, paste one line into the app's standing instructions (optional). Settings → Credentials → **Optional: brief me in every chat** has the line and a Copy button:
+
+- **ChatGPT:** Settings → Personalization → Custom instructions.
+- **Grok:** Settings → Customize → Custom instructions.
+- **Claude:** Settings → Profile → personal preferences.
+- **Gemini:** Settings → Saved info.
+
 When a chat starts, your AI tells you how many captures wait in your inbox and shows the newest few. You can also ask "what's in my inbox?" or "what do I have on payments?"
 
 A chat app can't see which repo you're working in. Before it checks where a capture fits your code, your AI asks you once and then briefs for that repo. A capture you already handed off to a repo is marked as handed off, with how it stands (waiting, applied, declined), so your AI doesn't check its fit again.
