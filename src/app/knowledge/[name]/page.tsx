@@ -135,7 +135,6 @@ function CaptureView({ capture: c, onCapture }: { capture: CaptureDetail; onCapt
           filename: `${c.status}/${c.filename}`,
           repos: [c.where.repo, ...(c.where.also ?? []).map((a) => a.repo)],
           handoffs: c.handoffs ?? [],
-          files: c.where.files.map((f) => f.path),
         } : undefined}
         explain={c.where?.repo ? {
           auto: c.where.fit === "Strong fit",
