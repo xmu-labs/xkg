@@ -33,7 +33,7 @@ Name the connector `xkg`, paste `https://xkg.xmu.sh/api/mcp`, and sign in with G
   4. Tick the risk box, click **Create**, and sign in with GitHub.
 - **Grok:** open [grok.com/connectors](https://grok.com/connectors) → New Connector → Custom.
 
-To make sure every new chat starts with a briefing, paste one line into the app's standing instructions. Settings → Credentials → **Make it start on its own** has the line and a Copy button:
+You don't need to set anything else: the `briefing` tool asks your AI to call it when a conversation starts. No app lets a connector force a call, so if you want it in every chat, paste one line into the app's standing instructions (optional). Settings → Credentials → **Optional: brief me in every chat** has the line and a Copy button:
 
 - **ChatGPT:** Settings → Personalization → Custom instructions.
 - **Grok:** Settings → Customize → Custom instructions.

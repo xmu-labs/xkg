@@ -861,10 +861,10 @@ export default function SettingsDrawer({
                         {urlCopied ? "Copied" : "Copy URL"}
                       </button>
                     </div>
-                    <div className="mb-3">
-                      <p className="text-xs font-medium mb-1" style={{ color: "var(--fg)" }}>Make it start on its own</p>
+                    <details className="mb-3">
+                      <summary className="text-xs font-medium mb-1 cursor-pointer" style={{ color: "var(--fg)" }}>Optional: brief me in every chat</summary>
                       <p className="text-xs leading-relaxed mb-2" style={{ color: "var(--fg-muted)" }}>
-                        Chat apps can&apos;t run a startup hook. Paste this line once into the app&apos;s standing instructions:
+                        xkg already asks your AI to brief you when a chat starts. To make it every chat, paste this line once into the app&apos;s standing instructions:
                       </p>
                       <div className="flex items-start gap-2 mb-2">
                         <p className="text-xs flex-1 min-w-0 p-2 rounded-lg" style={{ background: "var(--input-bg)", color: "var(--fg-muted)" }}>
@@ -883,7 +883,7 @@ export default function SettingsDrawer({
                           <li key={a.app}><span style={{ color: "var(--fg)" }}>{a.app}:</span> {a.where}</li>
                         ))}
                       </ul>
-                    </div>
+                    </details>
                     <p className="text-xs leading-relaxed mb-3" style={{ color: "var(--fg-muted)" }}>
                       In a terminal, run <code>npx -y @xmu-labs/xkg@latest init</code>. It signs you in through the
                       browser and sets up every coding agent on that computer. To set up a tool by hand, use a key.
