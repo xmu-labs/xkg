@@ -9,8 +9,9 @@
  *
  * Every answer goes to the capture's `## Handoff log` and to handoff_events,
  * and xkg learns from the log (handoff-learning.ts).
- * Any other outcome text is an older client describing an apply, and records
- * one as before.
+ * Any other outcome text records an apply only with a commit_sha: that's an
+ * older client describing what it changed. Without one it's refused, so an
+ * outcome word the server doesn't know yet (archive, keep) never counts as an apply.
  */
 
 import type { User } from "./db";
@@ -36,6 +37,20 @@ const MAX_FILES = 20;
 export function outcomeOf(value: unknown): Outcome | null {
   return OUTCOMES.find((o) => o === normal(value)) ?? null;
 }
+
+/**
+ * The outcome text when it's neither blank nor one of OUTCOMES, else null.
+ * Shortened, since it's echoed back in the refusal.
+ */
+export function unknownOutcome(value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text && !outcomeOf(value) ? text.slice(0, 60) : null;
+}
+
+/** The refusal for an unknown outcome with no commit. */
+export const unknownOutcomeReply = (text: string) =>
+  `Unknown outcome: ${text}. Use ${OUTCOMES.slice(0, -1).join(", ")} or ${OUTCOMES.at(-1)}. Nothing was recorded.`;
 
 // Arguments arrive as the agent sent them, whatever the schema says
 const normal = (v: unknown) => (typeof v === "string" ? v.trim().toLowerCase() : undefined);
