@@ -44,6 +44,41 @@ export function isBareUrl(content: string): boolean {
  * pin-the-IP, which the platform fetch doesn't expose; it remains an accepted
  * residual risk for a tool where users paste their own public article URLs.
  */
+/** The 8 16-bit groups of an IPv6 literal (no brackets), or null when it isn't one. */
+function ipv6Groups(host: string): number[] | null {
+  let text = host;
+  const tail: number[] = [];
+  const dotted = text.match(/^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (dotted) {
+    const octets = dotted.slice(2, 6).map(Number);
+    if (octets.some((o) => o > 255)) return null;
+    tail.push((octets[0]! << 8) | octets[1]!, (octets[2]! << 8) | octets[3]!);
+    text = dotted[1]!.endsWith("::") ? dotted[1]! : dotted[1]!.slice(0, -1);
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const parse = (part: string) => (part ? part.split(":") : []);
+  const head = parse(halves[0]!);
+  const rest = halves.length === 2 ? parse(halves[1]!) : [];
+  if ([...head, ...rest].some((g) => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+  const known = head.length + rest.length + tail.length;
+  if (halves.length === 1 ? known !== 8 : known > 7) return null;
+  const zeros = Array(8 - known).fill(0) as number[];
+  return [...head.map((g) => parseInt(g, 16)), ...zeros, ...rest.map((g) => parseInt(g, 16)), ...tail];
+}
+
+/** The IPv4 carried by a mapped, compatible or NAT64 IPv6 literal, dotted; else null. */
+function embeddedIPv4(host: string): string | null {
+  const g = ipv6Groups(host);
+  if (!g) return null;
+  const zeroTo = (n: number) => g.slice(0, n).every((x) => x === 0);
+  const mapped = zeroTo(5) && g[5] === 0xffff;
+  const compatible = zeroTo(6) && (g[6] !== 0 || g[7]! > 1); // not :: or ::1
+  const nat64 = g[0] === 0x64 && g[1] === 0xff9b && g.slice(2, 6).every((x) => x === 0);
+  if (!mapped && !compatible && !nat64) return null;
+  return [g[6]! >> 8, g[6]! & 0xff, g[7]! >> 8, g[7]! & 0xff].join(".");
+}
+
 export function isBlockedHost(hostname: string): boolean {
   const host = hostname.toLowerCase().replace(/^\[|\]$/g, ""); // strip IPv6 brackets
 
@@ -54,10 +89,12 @@ export function isBlockedHost(hostname: string): boolean {
     if (host === "::1" || host === "::") return true; // loopback / unspecified
     if (host.startsWith("fc") || host.startsWith("fd")) return true; // unique-local fc00::/7
     if (host.startsWith("fe80")) return true; // link-local
-    // IPv4-mapped/compatible (e.g. ::ffff:127.0.0.1) — re-check the embedded IPv4
-    // so an internal address can't be smuggled through the IPv6 form.
-    const embeddedV4 = host.match(/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-    if (embeddedV4) return isBlockedHost(embeddedV4[1]!);
+    // IPv4-mapped (::ffff:a.b.c.d), IPv4-compatible (::a.b.c.d) and NAT64
+    // (64:ff9b::a.b.c.d) addresses carry an IPv4 in their last 32 bits. Re-check
+    // it so an internal address can't be smuggled through the IPv6 form. The URL
+    // parser hands us hex (::ffff:a9fe:a9fe), never the dotted form, so decode it.
+    const embeddedV4 = embeddedIPv4(host);
+    if (embeddedV4) return isBlockedHost(embeddedV4);
     return false;
   }
 
