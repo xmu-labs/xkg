@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { isBareUrl, isBlockedHost, isChallengePage, htmlToText } from "../fetch-source";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { isBareUrl, isBlockedHost, isChallengePage, htmlToText, safeFetch, validateFetchUrl } from "../fetch-source";
 
 // ── isBareUrl ─────────────────────────────────────────────────────────────────
 
@@ -56,6 +56,30 @@ describe("isBlockedHost", () => {
     expect(isBlockedHost("[::ffff:127.0.0.1]")).toBe(true);
     expect(isBlockedHost("[::ffff:169.254.169.254]")).toBe(true);
     expect(isBlockedHost("[::ffff:10.0.0.1]")).toBe(true);
+  });
+
+  // The guard gets URL.hostname, and the URL parser rewrites an embedded IPv4
+  // to hex (::ffff:169.254.169.254 → ::ffff:a9fe:a9fe), so test what it really sees.
+  it("blocks IPv4-mapped IPv6 after the URL parser rewrites it to hex", () => {
+    const host = (u: string) => new URL(u).hostname;
+    expect(host("http://[::ffff:169.254.169.254]/")).toBe("[::ffff:a9fe:a9fe]");
+    expect(isBlockedHost(host("http://[::ffff:169.254.169.254]/"))).toBe(true);
+    expect(isBlockedHost(host("http://[::ffff:127.0.0.1]/"))).toBe(true);
+    expect(isBlockedHost(host("http://[::ffff:10.0.0.1]/"))).toBe(true);
+    expect(isBlockedHost(host("http://[::ffff:192.168.0.1]/"))).toBe(true);
+    expect(isBlockedHost("[::ffff:a9fe:a9fe]")).toBe(true);
+    expect(isBlockedHost("[0:0:0:0:0:ffff:a9fe:a9fe]")).toBe(true);
+  });
+
+  it("blocks IPv4-compatible and NAT64 forms of an internal address", () => {
+    expect(isBlockedHost(new URL("http://[::169.254.169.254]/").hostname)).toBe(true);
+    expect(isBlockedHost("[::a9fe:a9fe]")).toBe(true);
+    expect(isBlockedHost("[::7f00:1]")).toBe(true);
+    expect(isBlockedHost(new URL("http://[64:ff9b::169.254.169.254]/").hostname)).toBe(true);
+  });
+
+  it("does not block the hex form of a public mapped address", () => {
+    expect(isBlockedHost(new URL("http://[::ffff:8.8.8.8]/").hostname)).toBe(false);
   });
 
   it("does not block IPv4-mapped IPv6 of a public address", () => {
@@ -172,5 +196,37 @@ describe("htmlToText", () => {
     const start = performance.now();
     htmlToText("<a ".repeat(100_000));
     expect(performance.now() - start).toBeLessThan(2000);
+  });
+});
+
+// ── The whole path: URL string → validateFetchUrl / safeFetch ─────────────────
+
+describe("validateFetchUrl with IPv6 forms of internal addresses", () => {
+  it.each([
+    "http://[::ffff:169.254.169.254]/latest/meta-data/",
+    "http://[::ffff:a9fe:a9fe]/",
+    "http://[0:0:0:0:0:ffff:7f00:1]:8080/",
+    "https://[::ffff:10.1.2.3]/",
+    "http://[64:ff9b::a9fe:a9fe]/",
+  ])("refuses %s", (url) => {
+    expect(validateFetchUrl(url)).toBeNull();
+  });
+
+  it("still allows a public IPv6 address and a public mapped IPv4", () => {
+    expect(validateFetchUrl("http://[2606:4700::1111]/")).not.toBeNull();
+    expect(validateFetchUrl("http://[::ffff:8.8.8.8]/")).not.toBeNull();
+  });
+});
+
+describe("safeFetch redirect to a hex-mapped internal address", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("does not follow a redirect to [::ffff:a9fe:a9fe]", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(null, { status: 302, headers: { location: "http://[::ffff:169.254.169.254]/" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await safeFetch("https://example.com/article")).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
