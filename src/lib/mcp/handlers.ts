@@ -28,7 +28,7 @@ import { llmErrorLink, llmErrorMessage } from "@/lib/friendly-error";
 import { linkCapture } from "@/lib/linking";
 import { matchCapture, whereLine, writeWhereSection } from "@/lib/where";
 import { appendHandoffLog, queueStrongFit } from "@/lib/handoffs";
-import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, type Closed } from "@/lib/handoff-outcomes";
+import { appliedHandoff, closeHandoff, closedNote, fillApply, outcomeOf, recordAnswer, revertedOn, unknownOutcome, unknownOutcomeReply, type Closed } from "@/lib/handoff-outcomes";
 import { handoffMention, handoffNote, handoffOffer, handoffRows, knownRepos } from "@/lib/handoff-offer";
 import { repoName } from "@/lib/code-repos";
 import { applyStats, archiveCapture, checkCapture, clampWeeks, deleteCapture, inboxPage, parseIndexRows, type LinkCheck } from "@/lib/captures";
@@ -316,6 +316,10 @@ export async function handleApplyCapture(
   // declined, done, later and reverted are answers to a handoff, never an apply
   const outcome = outcomeOf(args.outcome);
   if (outcome && outcome !== "applied") return recordAnswer(user, { ...args, outcome });
+  // Free text is an older client describing an apply, which always came with a commit.
+  // Without one it's a word xkg doesn't know yet: refuse it rather than count an apply.
+  const unknown = unknownOutcome(args.outcome);
+  if (unknown && !args.commit_sha) return unknownOutcomeReply(unknown);
   const filename = args.filename.replace(/^(?:inbox|applied)\//, "");
   const note = args.applied_note?.replace(/\s+/g, " ").trim().slice(0, NOTE_MAX) || undefined;
   const inboxPath = `inbox/${filename}`;

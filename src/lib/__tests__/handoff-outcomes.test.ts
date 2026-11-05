@@ -501,6 +501,26 @@ describe("applied", () => {
     expect(files[`applied/${NAME}`]!.content).toContain("- **Outcome:** Cut the error rate");
     expect(recordApplyEvent).toHaveBeenCalledTimes(1);
   });
+
+  // protects: the apply metric; an outcome word the server doesn't know yet (archive, keep) never records an apply; fails_when: an unknown outcome without a commit moves the capture, adds a ledger row or counts an apply; no_claim: none
+  it.each(["archived", "keep", "Archive", "skip"])("refuses unknown outcome %s without a commit, and changes nothing", async (outcome) => {
+    setup();
+    const before = JSON.stringify(files);
+    const reply = await handleApplyCapture(user, { filename: NAME, outcome, repo: "acme/app" });
+    expect(reply).toBe(`Unknown outcome: ${outcome}. Use applied, declined, done, later or reverted. Nothing was recorded.`);
+    expect(JSON.stringify(files)).toBe(before);
+    expect(githubPut).not.toHaveBeenCalled();
+    expect(recordApplyEvent).not.toHaveBeenCalled();
+    expect(recordHandoffEvent).not.toHaveBeenCalled();
+  });
+
+  // protects: no outcome, or a blank one, is still the default apply; fails_when: the new check refuses it; no_claim: none
+  it.each([undefined, "", "  "])("still applies with outcome %j and no commit", async (outcome) => {
+    setup([]);
+    await handleApplyCapture(user, { filename: NAME, outcome });
+    expect(files[`applied/${NAME}`]).toBeDefined();
+    expect(recordApplyEvent).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("reverted", () => {
