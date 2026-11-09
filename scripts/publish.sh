@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Publishes the current version to npm as @xmu-labs/xkg (scoped: npm rejects
-# plain `xkg` as too similar to existing packages). Up to 1.8.0 every version
-# was also published as `mnemos-capture`, the old name; that name gets no new
-# versions, so installs that still run it stay on 1.8.0.
+# plain `xkg` as too similar to existing packages).
 #
 # Usage: scripts/publish.sh [dist-tag] [extra npm publish flags…]
 #   scripts/publish.sh                      # by hand: latest

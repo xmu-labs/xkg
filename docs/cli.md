@@ -11,7 +11,7 @@ There's nothing to install. Run any command with npx:
 npx -y @xmu-labs/xkg@latest <command>
 ```
 
-The binary is `xkg`, also available as `xmu` and `mnemos-capture`.
+The binary is `xkg`.
 
 ## Commands
 
