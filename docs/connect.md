@@ -224,12 +224,6 @@ Settings → Developer → Edit Config. Add this to `claude_desktop_config.json`
 - **It has custom connectors instead:** paste the URL, as in [Chat apps](#chat-apps).
 - **No MCP support yet:** capture in the [xkg app](https://xkg.xmu.sh) and connect later. Your knowledge is already in your repo.
 
-## Old names still work
-
-The CLI binary is `xkg`, also available as `xmu` and `mnemos-capture`. An MCP server registered as `xmu` or `mnemos` keeps working.
-
-A server set up with `mnemos-capture@latest` is stuck on 1.8.0, the last version under that name. Switch its command to `@xmu-labs/xkg@latest`.
-
 ## Remove xkg from a computer
 
 This doesn't touch your account or your captures.

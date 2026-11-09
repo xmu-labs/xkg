@@ -2,10 +2,8 @@
 //
 // Strategy: on serve-mcp startup, query npm for the latest published version.
 // If behind, respawn the process via npx (see upgradeArgs) and proxy stdio.
-// <name> is the package this copy was installed as, so each install updates
-// under its own name. Releases up to 1.8.0 were also published as
-// `mnemos-capture`; that name gets no new versions. An XKG_UPGRADED=1 env var
-// (MNEMOS_UPGRADED=1 from releases before 1.4.1) prevents infinite recursion.
+// An XKG_UPGRADED=1 env var (MNEMOS_UPGRADED=1 from releases before 1.4.1)
+// prevents infinite recursion.
 
 import { readFileSync } from "fs";
 import { homedir } from "os";
@@ -14,8 +12,8 @@ import { dirname, join } from "path";
 import { spawn } from "child_process";
 
 const CHECK_TIMEOUT_MS = 2000;
-/** The names releases are published under; anything else falls back to the first. */
-export const PACKAGE_NAMES = ["@xmu-labs/xkg", "mnemos-capture"] as const;
+/** The npm package releases are published under. */
+export const PACKAGE_NAME = "@xmu-labs/xkg";
 
 function readOwnPackage(): { name?: string; version?: string } {
   try {
@@ -34,10 +32,8 @@ export function getCurrentVersion(): string {
   return readOwnPackage().version ?? "0.0.0";
 }
 
-/** The npm name this copy was installed as, so updates come from the same name. */
 export function getPackageName(): string {
-  const name = readOwnPackage().name;
-  return (PACKAGE_NAMES as readonly string[]).includes(name ?? "") ? name! : PACKAGE_NAMES[0];
+  return PACKAGE_NAME;
 }
 
 export function isNewer(latest: string, current: string): boolean {

@@ -14,8 +14,7 @@
 #      along) → Publish. Mark it as a pre-release to publish under the `next`
 #      dist-tag.
 #
-# A Release publishes @xmu-labs/xkg. Up to 1.8.0 every version was also
-# published as `mnemos-capture`, the old name; it gets no new versions.
+# A Release publishes @xmu-labs/xkg.
 #
 # Auth: npm trusted publishing (OIDC), no long-lived token. One-time setup on
 # npmjs.com → the package → Settings → Trusted Publisher → GitHub Actions:
