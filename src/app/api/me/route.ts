@@ -2,7 +2,8 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { getSession } from "@/lib/session";
-import { ensureLlmColumns, ensureProfileColumns, updateUserLlmKey, updateUserLlmSettings, updateUserNudgeDismissed, updateUserProfile, updateUserRepo } from "@/lib/db";
+import { ensureLlmColumns, ensureProfileColumns, updateUserJevMatching, updateUserLlmKey, updateUserLlmSettings, updateUserNudgeDismissed, updateUserProfile, updateUserRepo } from "@/lib/db";
+import { env } from "@/lib/env";
 import { currentRepoName } from "@/lib/github";
 import { LLM_EFFORTS, LLM_PROVIDERS, defaultModel, validateLlmModel, verifyLlmKey } from "@/lib/llm";
 import type { LlmEffort, LlmProvider } from "@/lib/types";
@@ -32,6 +33,7 @@ function mePayload(user: {
   llm_model?: string | null;
   llm_effort?: LlmEffort | null;
   model_nudge_dismissed_for?: string | null;
+  jev_matching?: boolean | null;
   github_repo?: string | null;
 }) {
   return {
@@ -48,6 +50,9 @@ function mePayload(user: {
     llmEffort: user.llm_effort ?? null,
     defaultModel: defaultModel(user.llm_provider),
     modelNudgeDismissedFor: user.model_nudge_dismissed_for ?? null,
+    // Settings offers the choice only when this server can call Jev at all.
+    jevAvailable: Boolean(env.typesafeApiKey),
+    jevMatching: user.jev_matching !== false,
     knowledgeRepo: user.github_repo ?? null,
     version: appVersion(),
   };
@@ -90,6 +95,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       llmModel?: unknown;
       llmEffort?: unknown;
       modelNudgeDismissedFor?: unknown;
+      jevMatching?: unknown;
     };
     try {
       body = await req.json() as typeof body;
@@ -189,7 +195,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       }
     }
 
-    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange && !llmApiKey && !nudgeChange) {
+    // Who decides where a capture applies: Jev (TypeSafe, on xkg's key) or the user's own model.
+    const jevChange = "jevMatching" in body;
+    if (jevChange && typeof body.jevMatching !== "boolean") {
+      return NextResponse.json({ error: "jevMatching must be true or false." }, { status: 400 });
+    }
+    const jevMatching = jevChange ? (body.jevMatching as boolean) : user.jev_matching !== false;
+
+    if (fields.displayName === undefined && fields.avatarData === undefined && !llmChange && !llmApiKey && !nudgeChange && !jevChange) {
       return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
     }
 
@@ -199,6 +212,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     if (llmApiKey) await updateUserLlmKey(user.id, llmProvider, llmApiKey);
     if (llmChange) await updateUserLlmSettings(user.id, llmModel, llmEffort);
     if (nudgeChange) await updateUserNudgeDismissed(user.id, nudgeDismissedFor);
+    if (jevChange) await updateUserJevMatching(user.id, jevMatching);
     const next = {
       ...user,
       display_name: fields.displayName !== undefined ? fields.displayName : user.display_name,
@@ -208,6 +222,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       llm_model: llmModel,
       llm_effort: llmEffort,
       model_nudge_dismissed_for: nudgeDismissedFor,
+      jev_matching: jevMatching,
     };
     return NextResponse.json(mePayload(next));
   } catch (err) {

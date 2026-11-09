@@ -153,7 +153,8 @@ export default function PrivacyPage() {
               names and signatures, the first sentence of the doc comment they open with, and the paths
               of the files they import, and for a file that applies of two of
               your captures sharing a tag changed, a note naming that tag. Never code or file
-              contents. Sent with xkg&apos;s TypeSafe key, not yours
+              contents. Sent with xkg&apos;s TypeSafe key, not yours. Turn it off in Settings → AI
+              model → Where it applies
             </>,
             "Deciding where a capture applies in your code",
             "TypeSafe's infrastructure (United States)",
@@ -163,7 +164,7 @@ export default function PrivacyPage() {
             <>
               Capture content, relevant knowledge-base entries, the code maps of your 5 most recently
               synced repositories when a new capture is matched to your code and TypeSafe can&apos;t
-              answer, and the context sent for briefings,
+              answer or you turned it off, and the context sent for briefings,
               plans and suggestions (such as project name, branch, recent commit messages, file paths,
               task descriptions and code), sent with <strong>your</strong> API key
             </>,

@@ -198,6 +198,32 @@ describe("matchCapture with Jev", () => {
     errors.mockRestore();
   });
 
+  // protects: the user's "Your model" choice in Settings; fails_when: Jev is asked or TypeSafe is called while the user turned Jev off; no_claim: none
+  it("never asks Jev when the user turned it off, even with xkg's TypeSafe key set", async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    vi.stubEnv("TYPESAFE_API_KEY", "ts-key");
+    const off = { ...user, jev_matching: false };
+
+    const jev = jevStub({ [`xmu-labs/xkg:${LLM_TS}`]: 0.73 });
+    const injected = deps({ jev });
+    expect((await matchCapture(off, capture, injected.d))!.scorer).toBe("evidence");
+    expect(jev.score).not.toHaveBeenCalled();
+    expect(injected.complete).toHaveBeenCalledTimes(1);
+
+    const byDefault = deps();
+    expect((await matchCapture(off, capture, byDefault.d))!.scorer).toBe("evidence");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  // protects: an unset choice keeps today's default; fails_when: null (never chosen) turns Jev off; no_claim: none
+  it("keeps Jev on when the user never chose", async () => {
+    const jev = jevStub({ [`xmu-labs/xkg:${LLM_TS}`]: 0.73 });
+    const where = (await matchCapture({ ...user, jev_matching: null }, capture, deps({ jev }).d))!;
+    expect(where.scorer).toBe("jev");
+    expect(jev.score).toHaveBeenCalledTimes(1);
+  });
+
   // protects: no key, no change; fails_when: without TYPESAFE_API_KEY anything but the model path runs, or with it TypeSafe isn't asked; no_claim: none
   it("uses Jev only when xkg's TypeSafe key is set", async () => {
     const fetch = vi.fn(async (_url: string, init: RequestInit) => {

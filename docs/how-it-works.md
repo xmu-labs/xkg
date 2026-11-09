@@ -34,7 +34,7 @@ How xkg picks the files:
 3. A file rated 0.50 or more is a **Strong fit**. A file rated 0.40 or more is a **Possible fit** (0.30 or more when the map has signatures and comment lines, because Jev answers more cautiously then).
 4. Each file shown lists the exported names it shares with the capture.
 
-Your own model is only used to extract the capture. If TypeSafe can't answer, your model picks the files instead:
+Your own model is only used to extract the capture. If TypeSafe can't answer, or you choose **Your model** under Settings → AI model → Where it applies, your model picks the files instead, and nothing goes to TypeSafe:
 
 - Every path is checked against your map.
 - A reason that names a function the file doesn't export is dropped.
@@ -253,7 +253,7 @@ Each provider starts on a low-cost model, which you can change in Settings → A
 A capture uses about 2,000–3,700 input tokens and 500–1,400 output tokens, depending on the source's length. That was measured in October 2026 with the current extraction prompt, on a reasoning model. Each claim cites one short quote, and the answer is capped at 2,000 tokens.
 
 - Linking related captures uses no model.
-- **Where it applies** runs only when you sync a code map. It goes to TypeSafe's Jev on xkg's key, or to your model when Jev can't answer.
+- **Where it applies** runs only when you sync a code map. It goes to TypeSafe's Jev on xkg's key, or to your model when Jev can't answer or you turned Jev off in Settings.
 - Briefing, planning, and making rules only run when you ask.
 
 At list prices:
