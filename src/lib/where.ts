@@ -4,11 +4,11 @@
  * function names, never code).
  *
  * With xkg's TypeSafe key set, Jev decides: it rates the name ranker's top
- * files per repo, and the user's model is not called. Otherwise, or when Jev
- * fails, one call to the user's model picks the files; xkg then checks every
- * path against the stored map, drops reasons that name functions the file
- * doesn't export, and takes the tier from a scorer, never from the model's own
- * confidence.
+ * files per repo, and the user's model is not called. Otherwise, when the user
+ * turned Jev off in Settings, or when Jev fails, one call to the user's model
+ * picks the files; xkg then checks every path against the stored map, drops
+ * reasons that name functions the file doesn't export, and takes the tier from
+ * a scorer, never from the model's own confidence.
  *
  * Never throws: any failure returns null and the capture is saved as before.
  */
@@ -68,14 +68,14 @@ export interface WhereDeps {
   listMaps?: (userId: number) => Promise<StoredCodeMap[]>;
   complete?: (system: string, prompt: string, onUsage?: (usage: LlmUsage) => void) => Promise<string>;
   scorer?: Scorer;
-  /** Decides instead of the model when set; null: always the model. Defaults to Jev when xkg's TypeSafe key is set. */
+  /** Decides instead of the model when set; null: always the model. Defaults to Jev when xkg's TypeSafe key is set. The user's "off" wins over both. */
   jev?: Scorer | null;
   /** Files proven for any of these tags by earlier applies (handoff-learning.ts); Jev also rates them. */
   proven?: (tags: string[]) => Promise<Proven[]>;
   now?: () => Date;
 }
 
-type MatchUser = Pick<User, "id" | "llm_api_key" | "llm_provider" | "llm_model" | "llm_effort"> & Partial<Pick<User, "github_token">>;
+type MatchUser = Pick<User, "id" | "llm_api_key" | "llm_provider" | "llm_model" | "llm_effort"> & Partial<Pick<User, "github_token" | "jev_matching">>;
 
 export const PROVENANCE = "from file names, not yet checked in your code";
 const FIT_LABEL: Record<Tier, string> = { strong: "Strong fit", possible: "Possible fit", none: "No clear fit" };
@@ -185,7 +185,8 @@ export async function matchCapture(user: MatchUser, capture: ExtractedCapture, d
       callLlm({ llm: llmSettings(user), apiKey, system, user: text, maxTokens: 600, onUsage }));
   const now = (deps.now ?? (() => new Date()))();
   const fresh = (m: StoredCodeMap) => now.getTime() - m.syncedAt.getTime() <= FRESH_DAYS * 86_400_000;
-  const jev = deps.jev === undefined ? defaultJev() : deps.jev;
+  // The user's choice in Settings: off means nothing goes to TypeSafe.
+  const jev = user.jev_matching === false ? null : deps.jev === undefined ? defaultJev() : deps.jev;
   let tokens: WhereResult["tokens"];
   const none = (noFit: WhereResult["noFit"], modelConf: number | null = null, by = scorer): WhereResult => ({
     repo: null,

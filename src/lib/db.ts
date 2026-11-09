@@ -22,6 +22,8 @@ export interface User {
   llm_effort?: LlmEffort | null;
   /** "model/effort" the faster-model hint was kept for; it stays quiet for that setup. */
   model_nudge_dismissed_for?: string | null;
+  /** Whether TypeSafe's Jev decides where a capture applies; null = yes (the default), false = the user's model only. */
+  jev_matching?: boolean | null;
   display_name: string | null;
   avatar_data: string | null;
   /** Bumped to revoke every outstanding session and OAuth token for this user. */
@@ -81,6 +83,7 @@ export async function initDb(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS model_nudge_dismissed_for TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS jev_matching BOOLEAN`;
 
   // Refresh tokens are tracked so they can be single-use with reuse detection
   // (OAuth 2.1 for public clients). Only the jti is stored, never the token.
@@ -703,6 +706,7 @@ export async function ensureLlmColumns(): Promise<void> {
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_model TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS llm_effort TEXT`;
   await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS model_nudge_dismissed_for TEXT`;
+  await sql`ALTER TABLE users ADD COLUMN IF NOT EXISTS jev_matching BOOLEAN`;
   llmColumnsReady = true;
 }
 
@@ -713,6 +717,12 @@ export async function updateUserLlmSettings(
 ): Promise<void> {
   await ensureLlmColumns();
   await sql`UPDATE users SET llm_model = ${model}, llm_effort = ${effort} WHERE id = ${userId}`;
+}
+
+/** Save whether Jev decides where a capture applies (false: the user's model only). */
+export async function updateUserJevMatching(userId: number, on: boolean): Promise<void> {
+  await ensureLlmColumns();
+  await sql`UPDATE users SET jev_matching = ${on} WHERE id = ${userId}`;
 }
 
 /** Save which setup the faster-model hint was answered for (null clears it). */

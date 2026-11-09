@@ -11,7 +11,7 @@ Captures are Markdown files in **your** GitHub repo, private by default.
 
 - **No lock-in:** clone it, move it, delete xkg, and keep the files.
 - **No special format:** every capture is a readable `.md` file.
-- **No training on your data:** captures go only to the AI provider you chose, with your key, to extract what you asked for. If you sync code maps, the extracted title, core idea, and takeaways also go to TypeSafe, which says where the capture applies and doesn't train on what it gets.
+- **No training on your data:** captures go only to the AI provider you chose, with your key, to extract what you asked for. If you sync code maps, the extracted title, core idea, and takeaways also go to TypeSafe, which says where the capture applies and doesn't train on what it gets. To keep everything with your own provider, choose **Your model** under Settings → AI model → Where it applies.
 - **Any tool can read it:** anything that reads Git or speaks MCP.
 - **Your key, your cost:** you pick the provider.
 - **Never commit your xkg API key** to source control.
@@ -71,7 +71,7 @@ When you capture, the server talks to exactly four kinds of places:
 
 1. **GitHub:** to write the capture into your repo, and to read (or refresh after a week) the file list of a code repo you add in Settings.
 2. **Your AI provider**, with *your* key: the one you picked in Settings, to extract the capture.
-3. **TypeSafe**, with xkg's key, only if you sync code maps: the extracted title, core idea, and takeaways, and the map entries (paths, exported names and signatures, opening comment lines, imported paths) of up to 15 files per repo. It also gets any file proven for one of the capture's tags, with a note naming that tag. Its model, Jev, says where the capture applies. If TypeSafe can't answer, the maps of your 5 most recently synced repos (names only) go to your AI provider instead.
+3. **TypeSafe**, with xkg's key, only if you sync code maps and leave Settings → AI model → Where it applies on **Jev (TypeSafe)**, the default: the extracted title, core idea, and takeaways, and the map entries (paths, exported names and signatures, opening comment lines, imported paths) of up to 15 files per repo. It also gets any file proven for one of the capture's tags, with a note naming that tag. Its model, Jev, says where the capture applies. If TypeSafe can't answer, or you chose **Your model**, the maps of your 5 most recently synced repos (names only) go to your AI provider instead.
 4. **The page you captured:** if you paste a bare URL, so the model reads the real content. Only http and https, never an internal address.
 
 There's no third-party analytics, telemetry, or tracking. The counts in the table above are the only usage xkg records. Only xkg's operator reads them, as totals across all accounts: counts and dates only, never a capture, a repo, or who you are.
