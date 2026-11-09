@@ -300,6 +300,19 @@ describe("MCP server stuck on mnemos-capture", () => {
     expect(inspectAgent(agent("claude"), env()).find((c) => c.part === "mcp")!.status).toBe("warn");
   });
 
+  it("names the exact text to replace, version included, so the fix doesn't leave a double @latest", () => {
+    put(".gemini/settings.json", JSON.stringify({ mcpServers: { xkg: { command: "npx", args: ["-y", "mnemos-capture@1.8.0", "serve-mcp"] } } }));
+    const mcp = inspectAgent(agent("gemini"), env()).find((c) => c.part === "mcp")!;
+    expect(mcp.fix).toBe('In ~/.gemini/settings.json, replace "mnemos-capture@1.8.0" with "@xmu-labs/xkg@latest"');
+  });
+
+  it("reads Codex dotted-key args that span several lines", () => {
+    put(".codex/config.toml", 'mcp_servers.xkg.command = "npx"\nmcp_servers.xkg.args = [\n  "-y",\n  "mnemos-capture@latest",\n  "serve-mcp",\n]\n');
+    expect(inspectAgent(agent("codex"), env()).find((c) => c.part === "mcp")!.status).toBe("warn");
+    put(".codex/config.toml", '[mcp_servers]\nxkg.command = "npx"\nxkg.args = [\n  "-y",\n  "mnemos-capture@latest",\n  "serve-mcp",\n]\n');
+    expect(inspectAgent(agent("codex"), env()).find((c) => c.part === "mcp")!.status).toBe("warn");
+  });
+
   it("stays ok when only a project folder is named mnemos-capture", () => {
     put(".claude.json", JSON.stringify({ mcpServers: { xkg: { command: "npx", args: MCP_ARGS } }, projects: { "/Users/s/mnemos-capture": { mcpServers: {} } } }));
     put(".codex/config.toml", '[projects."/Users/s/mnemos-capture"]\ntrust_level = "trusted"\n\n[mcp_servers.xkg]\ncommand = "npx"\nargs = ["-y", "@xmu-labs/xkg@latest", "serve-mcp"]\n');

@@ -162,13 +162,14 @@ function hasServer(servers: unknown): boolean {
  * not the whole file, which can hold a project folder of that name.
  */
 function registered(env: AgentEnv, id: AgentId, file: string, server: string, detail: string): Check {
-  if (!/(?:^|[^\w@/-])mnemos-capture(?![\w/-])/.test(server)) return { agent: id, part: "mcp", status: "ok", detail };
+  const found = server.match(/(?:^|[^\w@/-])(mnemos-capture(?:@[\w.-]+)?)(?![\w/-])/)?.[1];
+  if (!found) return { agent: id, part: "mcp", status: "ok", detail };
   return {
     agent: id,
     part: "mcp",
     status: "warn",
     detail: `The server in ${tilde(env, file)} runs mnemos-capture, which stopped at 1.8.0`,
-    fix: `In ${tilde(env, file)}, replace mnemos-capture with @xmu-labs/xkg@latest`,
+    fix: `In ${tilde(env, file)}, replace "${found}" with "@xmu-labs/xkg@latest"`,
   };
 }
 
@@ -205,6 +206,12 @@ function jsonServer(rel: string, entry: Json): Writer {
 const NAME = `(["']?)(?:${SERVER_NAMES.join("|")})\\1`;
 const TABLE_HEADER = /^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$/;
 
+/** Opening minus closing brackets and braces on a TOML line, outside strings and comments. */
+function bracketDelta(line: string): number {
+  const bare = line.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, "").replace(/#.*$/, "");
+  return (bare.match(/[[{]/g)?.length ?? 0) - (bare.match(/[\]}]/g)?.length ?? 0);
+}
+
 /**
  * How config.toml holds MCP servers, read line by line (no TOML parser in the CLI):
  * whether an xkg server is already defined in any spelling, and whether
@@ -216,7 +223,17 @@ function codexServers(text: string): { hasXkg: boolean; inline: boolean; xkgLine
   let hasXkg = false;
   let inline = false;
   const xkgLines: string[] = [];
+  // Open brackets of a dotted-key xkg value that continues on the next lines.
+  let depth = 0;
+  const take = (line: string) => {
+    xkgLines.push(line);
+    depth = Math.max(0, depth + bracketDelta(line));
+  };
   for (const line of text.split("\n")) {
+    if (depth > 0) {
+      take(line);
+      continue;
+    }
     if (/^\s*#/.test(line)) continue;
     const header = line.match(TABLE_HEADER);
     if (header) {
@@ -231,11 +248,11 @@ function codexServers(text: string): { hasXkg: boolean; inline: boolean; xkgLine
       if (/^\s*mcp_servers\s*=/.test(line)) inline = true;
       if (new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${NAME}\\s*[.=]`).test(line)) {
         hasXkg = true;
-        xkgLines.push(line);
+        take(line);
       }
     } else if (table === "mcp_servers" && new RegExp(`^\\s*${NAME}\\s*[.=]`).test(line)) {
       hasXkg = true;
-      xkgLines.push(line);
+      take(line);
     }
   }
   return { hasXkg, inline, xkgLines };
