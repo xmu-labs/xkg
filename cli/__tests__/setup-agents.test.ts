@@ -283,6 +283,36 @@ describe("Cursor", () => {
   });
 });
 
+describe("MCP server stuck on mnemos-capture", () => {
+  // protects: people whose MCP server still runs the retired mnemos-capture package learn they are stuck on 1.8.0; fails_when: doctor reports such a server as fine
+  it("warns in doctor for a JSON config, with the line to change", () => {
+    put(".gemini/settings.json", JSON.stringify({ mcpServers: { xkg: { command: "npx", args: ["-y", "mnemos-capture@latest", "serve-mcp"] } } }));
+    const mcp = inspectAgent(agent("gemini"), env()).find((c) => c.part === "mcp")!;
+    expect(mcp.status).toBe("warn");
+    expect(mcp.detail).toContain("1.8.0");
+    expect(mcp.fix).toContain("@xmu-labs/xkg@latest");
+  });
+
+  it("warns in doctor for Codex and Claude Code too", () => {
+    put(".codex/config.toml", '[mcp_servers.mnemos]\ncommand = "npx"\nargs = ["-y", "mnemos-capture@latest", "serve-mcp"]\n');
+    put(".claude.json", JSON.stringify({ mcpServers: { xmu: { command: "npx", args: ["mnemos-capture", "serve-mcp"] } } }));
+    expect(inspectAgent(agent("codex"), env()).find((c) => c.part === "mcp")!.status).toBe("warn");
+    expect(inspectAgent(agent("claude"), env()).find((c) => c.part === "mcp")!.status).toBe("warn");
+  });
+
+  it("stays ok when only a project folder is named mnemos-capture", () => {
+    put(".claude.json", JSON.stringify({ mcpServers: { xkg: { command: "npx", args: MCP_ARGS } }, projects: { "/Users/s/mnemos-capture": { mcpServers: {} } } }));
+    put(".codex/config.toml", '[projects."/Users/s/mnemos-capture"]\ntrust_level = "trusted"\n\n[mcp_servers.xkg]\ncommand = "npx"\nargs = ["-y", "@xmu-labs/xkg@latest", "serve-mcp"]\n');
+    expect(inspectAgent(agent("claude"), env()).find((c) => c.part === "mcp")!.status).toBe("ok");
+    expect(inspectAgent(agent("codex"), env()).find((c) => c.part === "mcp")!.status).toBe("ok");
+  });
+
+  it("stays ok for a server on @xmu-labs/xkg", () => {
+    put(".gemini/settings.json", JSON.stringify({ mcpServers: { xkg: { command: "npx", args: MCP_ARGS } } }));
+    expect(inspectAgent(agent("gemini"), env()).find((c) => c.part === "mcp")!.status).toBe("ok");
+  });
+});
+
 describe("rules block", () => {
   it("replaces an older xkg block and keeps the text around it", () => {
     put(".gemini/GEMINI.md", "top\n\n<!-- xkg -->\nold words\n<!-- /xkg -->\n\nbottom\n");

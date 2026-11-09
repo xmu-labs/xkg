@@ -155,6 +155,28 @@ function hasServer(servers: unknown): boolean {
   return !!servers && typeof servers === "object" && SERVER_NAMES.some((n) => n in (servers as Json));
 }
 
+/**
+ * An ok check, unless the server still runs the retired `mnemos-capture`
+ * package: that name stopped at 1.8.0 and updates itself under its own name,
+ * so such a server never gets a newer xkg. `server` is the server's own entry,
+ * not the whole file, which can hold a project folder of that name.
+ */
+function registered(env: AgentEnv, id: AgentId, file: string, server: string, detail: string): Check {
+  if (!/(?:^|[^\w@/-])mnemos-capture(?![\w/-])/.test(server)) return { agent: id, part: "mcp", status: "ok", detail };
+  return {
+    agent: id,
+    part: "mcp",
+    status: "warn",
+    detail: `The server in ${tilde(env, file)} runs mnemos-capture, which stopped at 1.8.0`,
+    fix: `In ${tilde(env, file)}, replace mnemos-capture with @xmu-labs/xkg@latest`,
+  };
+}
+
+/** The xkg entries of an mcpServers object, as text. */
+function serverText(servers: unknown): string {
+  return JSON.stringify(SERVER_NAMES.map((n) => (servers as Json)[n]));
+}
+
 // ── MCP writers ──
 
 /** `mcpServers.xkg` in a JSON file (Gemini, Cursor, Copilot). */
@@ -172,8 +194,9 @@ function jsonServer(rel: string, entry: Json): Writer {
     },
     check(env, id) {
       const file = join(env.home, rel);
-      return hasServer(readJsonLoose(file)?.mcpServers)
-        ? { agent: id, part: "mcp", status: "ok", detail: `Registered in ${tilde(env, file)}` }
+      const servers = readJsonLoose(file)?.mcpServers;
+      return hasServer(servers)
+        ? registered(env, id, file, serverText(servers), `Registered in ${tilde(env, file)}`)
         : { agent: id, part: "mcp", status: "fail", detail: `No xkg MCP server in ${tilde(env, file)}`, fix: fixFor(file, snippet, env) };
     },
   };
@@ -187,26 +210,35 @@ const TABLE_HEADER = /^\s*\[\s*([^\]]+?)\s*\]\s*(?:#.*)?$/;
  * whether an xkg server is already defined in any spelling, and whether
  * `mcp_servers` is an inline table, which a `[mcp_servers.xkg]` table can't extend.
  */
-function codexServers(text: string): { hasXkg: boolean; inline: boolean } {
+function codexServers(text: string): { hasXkg: boolean; inline: boolean; xkgLines: string[] } {
   let table = "";
+  let inXkgTable = false;
   let hasXkg = false;
   let inline = false;
+  const xkgLines: string[] = [];
   for (const line of text.split("\n")) {
     if (/^\s*#/.test(line)) continue;
     const header = line.match(TABLE_HEADER);
     if (header) {
       table = header[1]!.replace(/\s+/g, "");
-      if (new RegExp(`^mcp_servers\\.${NAME}(?:\\.|$)`).test(table)) hasXkg = true;
+      inXkgTable = new RegExp(`^mcp_servers\\.${NAME}(?:\\.|$)`).test(table);
+      if (inXkgTable) hasXkg = true;
       continue;
     }
-    if (table === "") {
+    if (inXkgTable) {
+      xkgLines.push(line);
+    } else if (table === "") {
       if (/^\s*mcp_servers\s*=/.test(line)) inline = true;
-      if (new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${NAME}\\s*[.=]`).test(line)) hasXkg = true;
+      if (new RegExp(`^\\s*mcp_servers\\s*\\.\\s*${NAME}\\s*[.=]`).test(line)) {
+        hasXkg = true;
+        xkgLines.push(line);
+      }
     } else if (table === "mcp_servers" && new RegExp(`^\\s*${NAME}\\s*[.=]`).test(line)) {
       hasXkg = true;
+      xkgLines.push(line);
     }
   }
-  return { hasXkg, inline };
+  return { hasXkg, inline, xkgLines };
 }
 
 /** `[mcp_servers.xkg]` appended to Codex's config.toml as text, so the user's comments stay. */
@@ -225,8 +257,10 @@ const codexServer: Writer = {
   },
   check(env, id) {
     const file = join(env.home, ".codex", "config.toml");
-    return existsSync(file) && codexServers(readFileSync(file, "utf-8")).hasXkg
-      ? { agent: id, part: "mcp", status: "ok", detail: `Registered in ${tilde(env, file)}` }
+    const text = existsSync(file) ? readFileSync(file, "utf-8") : "";
+    const servers = codexServers(text);
+    return servers.hasXkg
+      ? registered(env, id, file, servers.xkgLines.join("\n"), `Registered in ${tilde(env, file)}`)
       : { agent: id, part: "mcp", status: "fail", detail: `No [mcp_servers.xkg] in ${tilde(env, file)}`, fix: INIT };
   },
 };
@@ -245,8 +279,9 @@ const claudeServer: Writer = {
   },
   check(env, id) {
     const file = join(env.home, ".claude.json");
-    return hasServer(readJsonLoose(file)?.mcpServers)
-      ? { agent: id, part: "mcp", status: "ok", detail: "Registered for all projects (user scope)" }
+    const servers = readJsonLoose(file)?.mcpServers;
+    return hasServer(servers)
+      ? registered(env, id, file, serverText(servers), "Registered for all projects (user scope)")
       : { agent: id, part: "mcp", status: "fail", detail: "xkg isn't registered at user scope (it may be in one project only)", fix: INIT };
   },
 };
