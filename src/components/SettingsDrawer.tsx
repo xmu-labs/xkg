@@ -28,6 +28,10 @@ export interface Me {
   defaultModel?: string;
   /** "model/effort" the faster-model hint was kept for. */
   modelNudgeDismissedFor?: string | null;
+  /** Whether this server can ask TypeSafe's Jev where a capture applies; absent on older servers. */
+  jevAvailable?: boolean;
+  /** Whether Jev decides where a capture applies (false: the user's model only). */
+  jevMatching?: boolean;
   /** `owner/name` of the GitHub repo that holds the captures; null before onboarding. */
   knowledgeRepo?: string | null;
   version: string;
@@ -41,6 +45,11 @@ function isCustomModel(me: Me | null | undefined): boolean {
   if (!saved || !me?.llmProvider) return false;
   return !(PROVIDERS[me.llmProvider].models as readonly string[]).includes(saved);
 }
+
+const MATCHER_OPTIONS: ReadonlyArray<{ value: boolean; label: string }> = [
+  { value: true, label: "Jev (TypeSafe)" },
+  { value: false, label: "Your model" },
+];
 
 const EFFORT_OPTIONS: ReadonlyArray<{ value: Effort | null; label: string }> = [
   { value: null, label: "Auto" },
@@ -205,6 +214,7 @@ export default function SettingsDrawer({
   const [llmKey, setLlmKey] = useState("");
   const [llmModel, setLlmModel] = useState("");
   const [llmEffort, setLlmEffort] = useState<Effort | null>(null);
+  const [jevMatching, setJevMatching] = useState(true);
   const [llmStatus, setLlmStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [llmError, setLlmError] = useState("");
   // True when the saved model isn't in the list, or the user picked "Other model…".
@@ -277,6 +287,7 @@ export default function SettingsDrawer({
     setLlmModel(from?.llmModel ?? "");
     setCustomModel(isCustomModel(from));
     setLlmEffort(from?.llmEffort ?? null);
+    setJevMatching(from?.jevMatching ?? true);
   }, []);
 
   // Opened before /api/me answered: fill the form once the profile arrives,
@@ -404,7 +415,8 @@ export default function SettingsDrawer({
     providerChanged ||
     llmKey.trim() !== "" ||
     llmModel.trim() !== (me?.llmModel ?? "") ||
-    llmEffort !== (me?.llmEffort ?? null);
+    llmEffort !== (me?.llmEffort ?? null) ||
+    (Boolean(me?.jevAvailable) && jevMatching !== (me?.jevMatching ?? true));
   // Keys don't carry across providers, so a switch can't be saved without one.
   const llmReady = llmDirty && (!providerChanged || llmKey.trim() !== "");
   // Each provider's default is first in its list; the server's is authoritative for the saved one.
@@ -434,6 +446,7 @@ export default function SettingsDrawer({
           ...(llmKey.trim() ? { llmApiKey: llmKey.trim() } : {}),
           llmModel: llmModel.trim() || null,
           llmEffort,
+          ...(me?.jevAvailable ? { jevMatching } : {}),
         }),
       });
       if (!res.ok) {
@@ -1142,6 +1155,38 @@ export default function SettingsDrawer({
                         : `${PROVIDERS[llmProvider].label} models set their own reasoning.`}
                     </p>
                   </div>
+
+                  {me.jevAvailable && (
+                  <div>
+                    <p className="card-title mb-2" style={{ color: "var(--fg)" }}>Where it applies</p>
+                    <div className="grid grid-cols-2 gap-1.5" role="group" aria-label="Where it applies">
+                      {MATCHER_OPTIONS.map(({ value, label }) => {
+                        const active = jevMatching === value;
+                        return (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setJevMatching(value)}
+                            aria-pressed={active}
+                            className="rounded-xl px-1 py-2 text-[13px] font-medium"
+                            style={{
+                              background: active ? "var(--gold)" : "transparent",
+                              color: active ? "var(--btn-fg)" : "var(--fg)",
+                              border: `1px solid ${active ? "var(--gold)" : "var(--gold-mid)"}`,
+                            }}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="text-xs leading-relaxed mt-1.5" style={{ color: "var(--fg-muted)" }}>
+                      {jevMatching
+                        ? "TypeSafe's Jev picks the files, on xkg's key, at no cost to you. It gets the capture's title, idea and takeaways and your code map (file names, signatures, first comment lines), never code."
+                        : "Your model picks the files, with your key. Nothing goes to TypeSafe."}
+                    </p>
+                  </div>
+                  )}
 
                   <AiSpend inputClass={INPUT_CLASS} />
 
