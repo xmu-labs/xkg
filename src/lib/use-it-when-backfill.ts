@@ -92,7 +92,17 @@ async function askLine(user: User, text: string): Promise<string | null> {
   return readUseItWhen(answer);
 }
 
-/** Every inbox and applied capture path, sorted, so pages are stable. */
+/**
+ * Pages are ordered by file name, then folder. Applying a capture moves it
+ * from inbox/ to applied/ under the same name, so a move during a paused run
+ * keeps its place relative to the saved `after`.
+ */
+function byName(a: string, b: string): number {
+  const na = a.slice(a.indexOf("/") + 1), nb = b.slice(b.indexOf("/") + 1);
+  return na < nb ? -1 : na > nb ? 1 : a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** Every inbox and applied capture path, in page order. */
 async function capturePaths(user: User): Promise<string[]> {
   if (!user.github_repo) return [];
   const paths: string[] = [];
@@ -102,7 +112,7 @@ async function capturePaths(user: User): Promise<string[]> {
     if (!res.ok || !res.data) throw new GitHubReadError(folder, res.status);
     for (const f of res.data) if (f.name.endsWith(".md")) paths.push(`${folder}/${f.name}`);
   }
-  return paths.sort();
+  return paths.sort(byName);
 }
 
 export type BackfillEstimate = {
@@ -139,13 +149,14 @@ export type BackfillPage = {
 /** One page of the backfill: up to `limit` captures after `after`, one model call each at most. */
 export async function backfillPage(user: User, args: { after?: string; limit: number }): Promise<BackfillPage> {
   const all = await capturePaths(user);
-  const rest = args.after ? all.filter((p) => p > args.after!) : all;
+  const rest = args.after ? all.filter((p) => byName(p, args.after!) > 0) : all;
   const page = rest.slice(0, args.limit);
   const out: BackfillPage = { written: 0, skipped: 0, none: 0, failed: 0, next: null, total: all.length };
 
   await Promise.all(page.map(async (path) => {
     const file = await readFileStrict(user.github_token, user.github_repo!, path);
-    if (!file) return; // moved since the listing; its new folder is read on a later run
+    // Moved since the listing: counted so the pass isn't marked done; a full pass finds its new folder.
+    if (!file) { out.failed++; return; }
     // Files saved on Windows keep their CRLF endings: worked on as LF, written back as CRLF.
     const crlf = file.content.includes("\r\n");
     const text = crlf ? file.content.replace(/\r\n/g, "\n") : file.content;

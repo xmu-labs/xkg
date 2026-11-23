@@ -14,13 +14,15 @@ const puts: Array<{ path: string; content: string; sha?: string }> = [];
 let modelAnswer: unknown = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 let modelCalls = 0;
 let lastPrompt = "";
+/** Paths that vanish between the listing and the read, as when a capture moves. */
+const vanish = new Set<string>();
 
 vi.mock("../github", () => ({
   githubGet: async (_t: string, _r: string, dir: string) => {
     const names = [...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => ({ name: p.slice(dir.length + 1) }));
     return names.length ? { ok: true, status: 200, data: names } : { ok: false, status: 404, data: null };
   },
-  readFileStrict: async (_t: string, _r: string, path: string) => (files.has(path) ? { content: files.get(path)!, sha: `sha-${path}` } : null),
+  readFileStrict: async (_t: string, _r: string, path: string) => (files.has(path) && !vanish.has(path) ? { content: files.get(path)!, sha: `sha-${path}` } : null),
   githubPut: async (_t: string, _r: string, path: string, content: string, _m: string, sha?: string) => {
     puts.push({ path, content, sha });
     files.set(path, content);
@@ -44,6 +46,7 @@ function capture(title: string, extra = ""): string {
 
 beforeEach(() => {
   files.clear();
+  vanish.clear();
   puts.length = 0;
   modelCalls = 0;
   modelAnswer = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
@@ -123,6 +126,26 @@ describe("backfillPage", () => {
     const second = await backfillPage(user, { limit: 2, after: first.next! });
     expect(second).toMatchObject({ written: 1, next: null });
     expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md", "inbox/2026-10-02-b.md", "inbox/2026-10-03-c.md"]);
+  });
+
+  it("pages by file name, so a capture moved to applied/ after a pause is still reached", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    files.set("inbox/2026-10-02-b.md", capture("B"));
+    files.set("inbox/2026-10-03-c.md", capture("C"));
+    const first = await backfillPage(user, { limit: 1 });
+    expect(first.next).toBe("inbox/2026-10-01-a.md");
+    // Applied while the run is paused: it moves to applied/, which sorts before inbox/.
+    files.set("applied/2026-10-02-b.md", files.get("inbox/2026-10-02-b.md")!);
+    files.delete("inbox/2026-10-02-b.md");
+    const second = await backfillPage(user, { limit: 5, after: first.next! });
+    expect(second).toMatchObject({ written: 2, next: null });
+    expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md", "applied/2026-10-02-b.md", "inbox/2026-10-03-c.md"]);
+  });
+
+  it("counts a capture that moved between the listing and the read as one to try again", async () => {
+    files.set("inbox/2026-10-02-b.md", capture("B"));
+    vanish.add("inbox/2026-10-02-b.md");
+    expect(await backfillPage(user, { limit: 10 })).toMatchObject({ written: 0, failed: 1, next: null });
   });
 
   it("handles a file saved with CRLF line endings, and keeps them", async () => {
