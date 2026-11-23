@@ -11,7 +11,7 @@
 
 import type { User } from "@/lib/db";
 import { GitHubReadError, githubGet, githubPut, readFileStrict } from "@/lib/github";
-import { callLlm, llmSettings, readUseItWhen, resolveLlm } from "@/lib/llm";
+import { callLlm, effortApplied, llmSettings, readUseItWhen, resolveLlm } from "@/lib/llm";
 import { estimateCostUsd } from "@/lib/llm-prices";
 
 /** Captures that can be recalled; archived ones were set aside by the user. */
@@ -108,16 +108,19 @@ async function capturePaths(user: User): Promise<string[]> {
 export type BackfillEstimate = {
   /** Inbox and applied captures; some may already have a line, so this is an upper bound. */
   captures: number;
-  /** At most this, in USD, on the user's model; null when the model has no price on file. */
+  /** About this, in USD, on the user's model; null when the model has no price on file. */
   usd: number | null;
+  /** The model reasons before answering, so the real cost can run well above `usd`. */
+  reasoning: boolean;
 };
 
 /** What a full backfill could cost, before any model call. */
 export async function backfillEstimate(user: User): Promise<BackfillEstimate> {
   const captures = (await capturePaths(user)).length;
-  const { provider, model } = resolveLlm(llmSettings(user));
+  const llm = llmSettings(user);
+  const { provider, model } = resolveLlm(llm);
   const one = estimateCostUsd(provider, model, EST_TOKENS_IN, EST_TOKENS_OUT);
-  return { captures, usd: one === null ? null : one * captures };
+  return { captures, usd: one === null ? null : one * captures, reasoning: effortApplied(llm) };
 }
 
 export type BackfillPage = {
@@ -143,16 +146,20 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
   await Promise.all(page.map(async (path) => {
     const file = await readFileStrict(user.github_token, user.github_repo!, path);
     if (!file) return; // moved since the listing; its new folder is read on a later run
-    if (hasUseItWhen(file.content)) { out.skipped++; return; }
+    // Files saved on Windows keep their CRLF endings: worked on as LF, written back as CRLF.
+    const crlf = file.content.includes("\r\n");
+    const text = crlf ? file.content.replace(/\r\n/g, "\n") : file.content;
+    if (hasUseItWhen(text)) { out.skipped++; return; }
     let line: string | null;
     try {
-      line = await askLine(user, captureOwnText(file.content));
+      line = await askLine(user, captureOwnText(text));
     } catch {
       line = null;
     }
     if (!line) { out.failed++; return; }
-    const content = addUseItWhen(file.content, line);
-    if (content === file.content) { out.failed++; return; }
+    const added = addUseItWhen(text, line);
+    if (added === text) { out.failed++; return; }
+    const content = crlf ? added.replace(/\n/g, "\r\n") : added;
     try {
       await githubPut(user.github_token, user.github_repo!, path, content, `capture: add "Use it when" line to ${path.split("/").pop()}`, file.sha);
     } catch {

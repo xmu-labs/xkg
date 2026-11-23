@@ -23,7 +23,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     const body = await jsonBody(req);
     if (!body) return fail(400, "Body must be JSON.");
 
-    if (body.estimate === true) return NextResponse.json(await backfillEstimate(user));
+    // `scope` keys the page's saved progress to this account and repo.
+    if (body.estimate === true) return NextResponse.json({ ...(await backfillEstimate(user)), scope: `${user.id}:${user.github_repo}` });
 
     const quota = await consumeQuota(`use-it-when:user:${user.id}`, PAGES_PER_HOUR);
     if (!quota.allowed) {

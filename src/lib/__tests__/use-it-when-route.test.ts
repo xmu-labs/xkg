@@ -11,7 +11,7 @@ const user = { id: 7, github_token: "t", github_repo: "o/r", llm_api_key: "k", l
 let session: Record<string, unknown> | null = user;
 let allowed = true;
 const backfillPage = vi.fn(async () => ({ written: 2, skipped: 0, none: 0, failed: 0, next: "inbox/x.md", total: 9 }));
-const backfillEstimate = vi.fn(async () => ({ captures: 9, usd: 0.004 }));
+const backfillEstimate = vi.fn(async () => ({ captures: 9, usd: 0.004, reasoning: false }));
 
 vi.mock("@/lib/session", () => ({ getSession: async () => session }));
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed, limit: 60, resetIn: 30 }) }));
@@ -36,7 +36,8 @@ describe("POST /api/captures/use-it-when", () => {
   it("answers the estimate without running a page", async () => {
     const res = await post({ estimate: true });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ captures: 9, usd: 0.004 });
+    // `scope` names the account and repo, so one browser keeps each repo's progress apart.
+    expect(await res.json()).toEqual({ captures: 9, usd: 0.004, reasoning: false, scope: "7:o/r" });
     expect(backfillPage).not.toHaveBeenCalled();
   });
 

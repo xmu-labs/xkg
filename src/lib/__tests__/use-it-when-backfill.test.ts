@@ -125,6 +125,19 @@ describe("backfillPage", () => {
     expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md", "inbox/2026-10-02-b.md", "inbox/2026-10-03-c.md"]);
   });
 
+  it("handles a file saved with CRLF line endings, and keeps them", async () => {
+    files.set("inbox/2026-10-02-b.md", capture("B").replace(/\n/g, "\r\n"));
+    expect(await backfillPage(user, { limit: 10 })).toMatchObject({ written: 1, failed: 0 });
+    const saved = files.get("inbox/2026-10-02-b.md")!;
+    expect(saved).toContain("lowConfidence: false\r\nuse_it_when: Use it when shared work");
+    expect(saved.replace(/\r\n/g, "")).not.toContain("\n");
+    expect(lastPrompt).not.toContain("source_sha256");
+    // A rerun sees the line and makes no model call.
+    modelCalls = 0;
+    expect(await backfillPage(user, { limit: 10 })).toMatchObject({ skipped: 1 });
+    expect(modelCalls).toBe(0);
+  });
+
   it("leaves archived captures alone", async () => {
     files.set("archived/2026-10-01-a.md", capture("A"));
     expect(await backfillPage(user, { limit: 10 })).toMatchObject({ written: 0, next: null });
@@ -141,12 +154,19 @@ describe("backfillEstimate", () => {
     expect(est.usd).not.toBeNull();
     expect(est.usd!).toBeGreaterThan(0);
     expect(est.usd!).toBeLessThan(0.1);
+    expect(est.reasoning).toBe(false);
     expect(modelCalls).toBe(0);
   });
 
   it("gives no price for a model with none on file", async () => {
     files.set("inbox/2026-10-02-b.md", capture("B"));
     const est = await backfillEstimate({ ...user, llm_model: "some-unknown-model" } as unknown as User);
-    expect(est).toEqual({ captures: 1, usd: null });
+    expect(est).toEqual({ captures: 1, usd: null, reasoning: false });
+  });
+
+  it("says when the model reasons first, so the card can say the cost may run higher", async () => {
+    files.set("inbox/2026-10-02-b.md", capture("B"));
+    const est = await backfillEstimate({ ...user, llm_provider: "anthropic", llm_effort: "high" } as unknown as User);
+    expect(est.reasoning).toBe(true);
   });
 });

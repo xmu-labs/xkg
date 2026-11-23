@@ -413,7 +413,7 @@ test("older captures get their 'Use it when' line page by page, with the cost sh
   const bodies: unknown[] = [];
   await page.route("**/api/captures/use-it-when", async (r) => {
     const body = r.request().postDataJSON() as { estimate?: boolean; after?: string };
-    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012 } });
+    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012, reasoning: false, scope: "7:o/r" } });
     bodies.push(body);
     if (!body.after) return r.fulfill({ json: { written: 4, skipped: 1, none: 0, failed: 0, next: "inbox/2026-10-24-x.md", total: 7 } });
     return r.fulfill({ json: { written: 1, skipped: 0, none: 1, failed: 0, next: null, total: 7 } });
@@ -421,7 +421,7 @@ test("older captures get their 'Use it when' line page by page, with the cost sh
   await page.goto("/knowledge");
   const card = page.getByRole("region", { name: "Use it when lines" });
   await expect(card.getByText("Up to 7 captures.", { exact: false })).toBeVisible();
-  await expect(card.getByText("$0.01", { exact: false })).toBeVisible();
+  await expect(card.getByText("About $0.01 on your AI key.", { exact: false })).toBeVisible();
   expect(bodies).toEqual([]);
   await card.getByRole("button", { name: "Add lines" }).tap();
   await expect(card.getByRole("status")).toHaveText("Done. 5 lines added, 1 with nothing reusable.");
@@ -437,4 +437,83 @@ test("with no estimate (signed out, no key, an error), there is no card and no r
   await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
   await expect(page).toHaveURL(/\/knowledge$/);
   await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
+
+async function backfillRoutes(page: Page, opts: { scope?: string; pages: Array<Record<string, unknown> | "quota"> }) {
+  const bodies: Array<{ after?: string }> = [];
+  let estimates = 0;
+  await page.route("**/api/captures/use-it-when", async (r) => {
+    const body = r.request().postDataJSON() as { estimate?: boolean; after?: string };
+    if (body.estimate) { estimates++; return r.fulfill({ json: { captures: 7, usd: 0.012, reasoning: true, scope: opts.scope ?? "7:o/r" } }); }
+    bodies.push(body);
+    const next = opts.pages.shift();
+    if (!next || next === "quota") return r.fulfill({ status: 429, json: { error: "Rate limit reached." } });
+    return r.fulfill({ json: next });
+  });
+  return { bodies, estimates: () => estimates };
+}
+
+test("a run resumed after the hourly limit doesn't mark the backfill done, so earlier failures get retried", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const pages: Array<Record<string, unknown> | "quota"> = [
+    { written: 3, skipped: 0, none: 0, failed: 2, next: "inbox/b.md", total: 7 },
+    "quota",
+    { written: 2, skipped: 0, none: 0, failed: 0, next: null, total: 7 },
+    { written: 0, skipped: 5, none: 0, failed: 0, next: "inbox/b.md", total: 7 },
+    { written: 2, skipped: 0, none: 0, failed: 0, next: null, total: 7 },
+  ];
+  const { bodies } = await backfillRoutes(page, { pages });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await expect(card.getByText("may cost more", { exact: false })).toBeVisible();
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByText("Paused at the hourly limit", { exact: false })).toBeVisible();
+  await card.getByRole("button", { name: "Continue" }).tap();
+  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
+  expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
+  // The 2 failures from the first page sit behind the cursor: the card comes back for a full pass.
+  await page.goto("/knowledge");
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
+  expect(bodies.slice(3)).toEqual([{}, { after: "inbox/b.md" }]);
+  await page.goto("/knowledge");
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
+
+test("one repo's finished backfill doesn't hide the card for another account in the same browser", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await page.goto("/knowledge");
+  await page.evaluate(() => localStorage.setItem("xkg-use-it-when-done:7:o/r", "1"));
+  await backfillRoutes(page, { scope: "8:other/repo", pages: [] });
+  await page.goto("/knowledge");
+  await expect(page.getByRole("region", { name: "Use it when lines" })).toBeVisible();
+});
+
+test("leaving the page stops the backfill: no more pages are asked for", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const bodies: unknown[] = [];
+  let release: () => void = () => {};
+  await page.route("**/api/captures/use-it-when", async (r) => {
+    const body = r.request().postDataJSON() as { estimate?: boolean };
+    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012, reasoning: false, scope: "7:o/r" } });
+    bodies.push(body);
+    await new Promise<void>((done) => { release = done; });
+    return r.fulfill({ json: { written: 5, skipped: 0, none: 0, failed: 0, next: "inbox/b.md", total: 7 } }).catch(() => {});
+  });
+  await page.goto("/knowledge");
+  await page.getByRole("region", { name: "Use it when lines" }).getByRole("button", { name: "Add lines" }).tap();
+  await expect.poll(() => bodies.length).toBe(1);
+  await openMenu(page);
+  await page.getByRole("dialog").getByRole("link", { name: "Capture", exact: true }).tap();
+  await expect(page).toHaveURL(/\/$/);
+  release();
+  await page.waitForTimeout(300);
+  expect(bodies).toHaveLength(1);
 });

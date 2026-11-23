@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import Link from "next/link";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
@@ -192,9 +192,9 @@ export default function KnowledgePage() {
   );
 }
 
-/** Kept per browser once a backfill finished with nothing left to retry, so the card stays away. */
+/** Kept per browser and per account and repo (`scope`) once a full pass ended with nothing to retry. */
 const BACKFILL_DONE_KEY = "xkg-use-it-when-done";
-/** Where a paused backfill stopped, so the next run carries on. */
+/** Where a paused backfill stopped, per account and repo, so the next run carries on. */
 const BACKFILL_AFTER_KEY = "xkg-use-it-when-after";
 function store(key: string, value: string | null): void {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
@@ -205,35 +205,46 @@ function stored(key: string): string | null {
 
 /**
  * Offers to give older captures their "Use it when" line, on the user's own
- * model, with the most it could cost shown before anything runs. It runs
- * page by page while the page is open, and picks up where it stopped.
+ * model, with what it should cost shown before anything runs. It runs page
+ * by page only while this page is open, and picks up where it stopped. Only
+ * a pass that started from the top and had nothing to retry hides the card:
+ * a capture that failed before a pause sits behind the saved place, so the
+ * card comes back for a full pass, which skips finished captures for free.
  */
 function UseItWhenBackfill() {
-  const [estimate, setEstimate] = useState<BackfillEstimate | null>(null);
+  const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "paused" | "error">("idle");
   const [counts, setCounts] = useState({ seen: 0, written: 0, none: 0, failed: 0, skipped: 0 });
   const [error, setError] = useState("");
+  const aborter = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (stored(BACKFILL_DONE_KEY)) return;
+    const ac = new AbortController();
+    aborter.current = ac;
     // Quiet like the source check: any failure (even a 401) means no card, never a redirect.
-    void fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ estimate: true }) })
+    void fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ estimate: true }), signal: ac.signal })
       .then(async (res) => {
         if (!res.ok) return;
-        const e = (await res.json()) as BackfillEstimate;
-        if (e.captures > 0) setEstimate(e);
+        const e = (await res.json()) as BackfillEstimate & { scope: string };
+        if (e.captures > 0 && !stored(`${BACKFILL_DONE_KEY}:${e.scope}`)) setEstimate(e);
       })
       .catch(() => { /* no card this time */ });
+    // Leaving the page stops the run: no page is asked for after this.
+    return () => ac.abort();
   }, []);
 
-  async function run() {
+  async function run(scope: string) {
+    const signal = aborter.current?.signal;
+    const afterKey = `${BACKFILL_AFTER_KEY}:${scope}`;
     setState("running");
     setError("");
     const total = { seen: 0, written: 0, none: 0, failed: 0, skipped: 0 };
+    const resumed = stored(afterKey);
     try {
-      for (let after = stored(BACKFILL_AFTER_KEY); ; ) {
-        const res = await fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}) });
-        if (res.status === 429) { store(BACKFILL_AFTER_KEY, after); return setState("paused"); }
+      for (let after = resumed; ; ) {
+        if (signal?.aborted) return;
+        const res = await fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal });
+        if (res.status === 429) { store(afterKey, after); return setState("paused"); }
         const page = (await res.json().catch(() => ({}))) as BackfillPage & { error?: string };
         if (!res.ok) throw new Error(page.error ?? TRY_AGAIN);
         total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
@@ -242,19 +253,23 @@ function UseItWhenBackfill() {
         window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
         if (!page.next) break;
         after = page.next;
-        store(BACKFILL_AFTER_KEY, after);
+        store(afterKey, after);
       }
-      store(BACKFILL_AFTER_KEY, null);
-      if (total.failed === 0) store(BACKFILL_DONE_KEY, "1");
+      store(afterKey, null);
+      if (!resumed && total.failed === 0) store(`${BACKFILL_DONE_KEY}:${scope}`, "1");
       setState("done");
     } catch (err) {
+      if (signal?.aborted) return;
       setError(err instanceof Error ? err.message : TRY_AGAIN);
       setState("error");
     }
   }
 
   if (!estimate) return null;
-  const cost = estimate.usd === null ? "Your model has no price on file, so there's no estimate." : estimate.usd < 0.01 ? "Under $0.01 on your AI key." : `At most about $${estimate.usd.toFixed(2)} on your AI key.`;
+  const price = estimate.usd === null ? null : estimate.usd < 0.01 ? "Under $0.01" : `About $${estimate.usd.toFixed(2)}`;
+  const cost = price === null
+    ? "Your model has no price on file, so there's no estimate."
+    : `${price} on your AI key.${estimate.reasoning ? " Your model thinks before it answers, so it may cost more." : ""}`;
   return (
     <section aria-label="Use it when lines" className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
       {state === "done" ? (
@@ -274,7 +289,7 @@ function UseItWhenBackfill() {
           {state === "running" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Adding lines: {counts.seen} of {estimate.captures}…</p>}
           {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Paused at the hourly limit. Start again later and it picks up where it stopped.</p>}
           {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
-          <button onClick={() => void run()} disabled={state === "running"} aria-busy={state === "running"}
+          <button onClick={() => void run(estimate.scope)} disabled={state === "running"} aria-busy={state === "running"}
             className="btn-primary py-2 rounded-xl font-medium text-sm">
             {state === "running" ? "Adding lines…" : state === "idle" ? "Add lines" : "Continue"}
           </button>
