@@ -29,7 +29,7 @@ vi.mock("../github", () => ({
 vi.mock("../llm-spend", () => ({ recordSpend: async () => {} }));
 
 vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
-  if (!String(url).includes("api.openai.com")) throw new Error(`unexpected fetch ${url}`);
+  if (new URL(String(url)).hostname !== "api.openai.com") throw new Error(`unexpected fetch ${url}`);
   modelCalls++;
   lastPrompt = JSON.stringify(JSON.parse(init.body).messages);
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
