@@ -405,3 +405,36 @@ test("an archived capture page offers no handoff", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Hand off to your coding agent" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Not a fit" })).toHaveCount(0);
 });
+
+test("older captures get their 'Use it when' line page by page, with the cost shown first", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const bodies: unknown[] = [];
+  await page.route("**/api/captures/use-it-when", async (r) => {
+    const body = r.request().postDataJSON() as { estimate?: boolean; after?: string };
+    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012 } });
+    bodies.push(body);
+    if (!body.after) return r.fulfill({ json: { written: 4, skipped: 1, none: 0, failed: 0, next: "inbox/2026-10-24-x.md", total: 7 } });
+    return r.fulfill({ json: { written: 1, skipped: 0, none: 1, failed: 0, next: null, total: 7 } });
+  });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await expect(card.getByText("Up to 7 captures.", { exact: false })).toBeVisible();
+  await expect(card.getByText("$0.01", { exact: false })).toBeVisible();
+  expect(bodies).toEqual([]);
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText("Done. 5 lines added, 1 with nothing reusable.");
+  expect(bodies).toEqual([{}, { after: "inbox/2026-10-24-x.md" }]);
+  // Finished with nothing to retry: the card stays away next time.
+  await page.goto("/knowledge");
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
+
+test("with no estimate (signed out, no key, an error), there is no card and no redirect", async ({ page }) => {
+  await open(page);
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
+  await expect(page).toHaveURL(/\/knowledge$/);
+  await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
