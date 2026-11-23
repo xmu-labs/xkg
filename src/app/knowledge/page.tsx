@@ -196,6 +196,8 @@ export default function KnowledgePage() {
 const BACKFILL_DONE_KEY = "xkg-use-it-when-done";
 /** Where a paused backfill stopped, per account and repo, so the next run carries on. */
 const BACKFILL_AFTER_KEY = "xkg-use-it-when-after";
+/** Failures earlier in a paused pass: they sit behind the saved place, so a pass with any isn't done. */
+const BACKFILL_FAILED_KEY = "xkg-use-it-when-failed";
 function store(key: string, value: string | null): void {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
 }
@@ -206,10 +208,10 @@ function stored(key: string): string | null {
 /**
  * Offers to give older captures their "Use it when" line, on the user's own
  * model, with what it should cost shown before anything runs. It runs page
- * by page only while this page is open, and picks up where it stopped. Only
- * a pass that started from the top and had nothing to retry hides the card:
- * a capture that failed before a pause sits behind the saved place, so the
- * card comes back for a full pass, which skips finished captures for free.
+ * by page only while this page is open, and picks up where it stopped. A
+ * pass, even one split by the hourly limit, hides the card only when no page
+ * of it had a failure: a capture that failed sits behind the saved place, so
+ * the card comes back for a full pass, which skips finished captures for free.
  */
 function UseItWhenBackfill() {
   const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
@@ -236,15 +238,21 @@ function UseItWhenBackfill() {
   async function run(scope: string) {
     const signal = aborter.current?.signal;
     const afterKey = `${BACKFILL_AFTER_KEY}:${scope}`;
+    const failedKey = `${BACKFILL_FAILED_KEY}:${scope}`;
     setState("running");
     setError("");
     const total = { seen: 0, written: 0, none: 0, failed: 0, skipped: 0 };
     const resumed = stored(afterKey);
+    const failedBefore = resumed ? Number(stored(failedKey)) || 0 : 0;
+    const keepPlace = (after: string | null) => {
+      store(afterKey, after);
+      store(failedKey, String(failedBefore + total.failed));
+    };
     try {
       for (let after = resumed; ; ) {
         if (signal?.aborted) return;
         const res = await fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal });
-        if (res.status === 429) { store(afterKey, after); return setState("paused"); }
+        if (res.status === 429) { keepPlace(after); return setState("paused"); }
         const page = (await res.json().catch(() => ({}))) as BackfillPage & { error?: string };
         if (!res.ok) throw new Error(page.error ?? TRY_AGAIN);
         total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
@@ -253,10 +261,11 @@ function UseItWhenBackfill() {
         window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
         if (!page.next) break;
         after = page.next;
-        store(afterKey, after);
+        keepPlace(after);
       }
       store(afterKey, null);
-      if (!resumed && total.failed === 0) store(`${BACKFILL_DONE_KEY}:${scope}`, "1");
+      store(failedKey, null);
+      if (failedBefore + total.failed === 0) store(`${BACKFILL_DONE_KEY}:${scope}`, "1");
       setState("done");
     } catch (err) {
       if (signal?.aborted) return;

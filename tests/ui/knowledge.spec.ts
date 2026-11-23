@@ -517,3 +517,26 @@ test("leaving the page stops the backfill: no more pages are asked for", async (
   await page.waitForTimeout(300);
   expect(bodies).toHaveLength(1);
 });
+
+test("a clean run split by the hourly limit still finishes: the card stays away after it", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const { bodies } = await backfillRoutes(page, { pages: [
+    { written: 5, skipped: 0, none: 0, failed: 0, next: "inbox/b.md", total: 7 },
+    "quota",
+    { written: 2, skipped: 0, none: 0, failed: 0, next: null, total: 7 },
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByText("Paused at the hourly limit", { exact: false })).toBeVisible();
+  // A new visit after the reset carries on from the saved place.
+  await page.goto("/knowledge");
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
+  expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
+  await page.goto("/knowledge");
+  await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
