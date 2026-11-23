@@ -400,6 +400,7 @@ using these fields:
   "quotes": [],
   "tags": [],
   "appliedTo": null,
+  "use_it_when": null,
   "lowConfidence": true,
   "claims": []
 }
@@ -514,6 +515,19 @@ appliedTo
 - Do not add unsupported numeric targets or expected outcomes.
 - Use null when an application would be forced or speculative.
 
+use_it_when
+- One generated sentence naming the kind of situation where this
+  knowledge would help, so it can be recalled later from a different
+  field: a problem, an idea being explored, a conversation, or a
+  practice to follow.
+- Start with "Use it when". At most 25 words, plain language.
+- Do not name the source's topic, product, company, field or
+  technology. Describe the structure of the situation, for example
+  "too many items compete for little attention" or "trust must build
+  over repeated contact".
+- It is a generated suggestion, not a source assertion: no claim record.
+- Use null when coreIdea is null or nothing in the source is reusable.
+
 lowConfidence
 - A boolean describing uncertainty about the fidelity of the central
   extraction, not the truth of the source.
@@ -551,7 +565,7 @@ corresponding record in claims with this structure:
 - If support is incomplete, narrow the wording or omit the claim and
   its corresponding output value.
 - Do not invent evidence, identifiers, hashes, timestamps, or offsets.
-- Do not generate a claim record for appliedTo.
+- Do not generate a claim record for appliedTo or use_it_when.
 - Do not label claims as verified or true. Evidence validation is
   performed separately by the application.
 
@@ -645,6 +659,28 @@ function str(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
 }
 
+const USE_IT_WHEN_MAX_WORDS = 25;
+
+/**
+ * The "Use it when" line as the model wrote it, kept only when it follows
+ * the rules: one line, starts with "Use it when" and says something after
+ * it, at most 25 words. Anything else is null, so no capture gets a line
+ * that would match the wrong situations.
+ */
+export function readUseItWhen(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const line = v.replace(/\s+/g, " ").trim();
+  const m = /^use it when\s+(\S.*)$/i.exec(line);
+  if (!m) return null;
+  const text = `Use it when ${m[1]}`;
+  return text.split(" ").length <= USE_IT_WHEN_MAX_WORDS ? text : null;
+}
+
+/** The frontmatter line for a capture's "Use it when" line; none when it has none. */
+export function frontmatterUseItWhen(capture: ExtractedCapture): string[] {
+  return capture.useItWhen ? [`use_it_when: ${capture.useItWhen}`] : [];
+}
+
 function strArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.trim() !== "") : [];
 }
@@ -694,6 +730,9 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
       })
     : [];
 
+  // An empty extraction has nothing to recall it by.
+  const useItWhen = coreIdea === null ? null : readUseItWhen(raw.use_it_when);
+
   return {
     slug: slug ?? "untitled",
     inferredTitle: inferredTitle ?? "Untitled capture",
@@ -706,6 +745,7 @@ export function normalizeCapture(parsed: unknown, source?: SourceSnapshot): Extr
     quotes: strArray(raw.quotes).map((q) => q.trim().replace(/^["“]([\s\S]*)["”]$/, "$1")),
     tags: strArray(raw.tags),
     appliedTo: str(raw.appliedTo),
+    ...(useItWhen ? { useItWhen } : {}),
     lowConfidence: coreIdea === null || raw.lowConfidence === true,
     claims,
     ...(source
@@ -761,7 +801,7 @@ source_type: ${sourceType ?? "paste"}
 tags: ${capture.tags.join(", ")}
 status: inbox
 lowConfidence: ${capture.lowConfidence}
-${sourceFrontmatter(capture).map((l) => `${l}\n`).join("")}---
+${[...frontmatterUseItWhen(capture), ...sourceFrontmatter(capture)].map((l) => `${l}\n`).join("")}---
 
 # ${capture.inferredTitle}
 ${confidenceNote}

@@ -56,3 +56,18 @@ describe("MCP capture has its own Links to memory section before the source text
     expect(links).toBeLessThan(markdown.indexOf("<summary>Source text"));
   });
 });
+
+describe("MCP capture writes the 'Use it when' line", () => {
+  it("puts the line in the frontmatter when the extraction has one", async () => {
+    githubPut.mockClear();
+    const line = "Use it when shared work keeps getting dropped because nobody is responsible for it.";
+    Object.assign(capture, { useItWhen: line });
+    try {
+      await handleCapture(user, { content: "x" });
+    } finally {
+      delete (capture as { useItWhen?: string }).useItWhen;
+    }
+    const markdown = githubPut.mock.calls[0]![3] as string;
+    expect(markdown.split("\n---\n")[0]).toContain(`use_it_when: ${line}`);
+  });
+});

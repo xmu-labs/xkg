@@ -38,6 +38,8 @@ export type CaptureFileFields = {
   /** The source, only when it is an http(s) URL. */
   url: string | null;
   lowConfidence: boolean;
+  /** "Use it when ...": the situation the capture helps with. */
+  useItWhen: string | null;
   coreIdea: string | null;
   takeaways: string[];
   quotes: string[];
@@ -215,6 +217,7 @@ export function parseCaptureFile(content: string): CaptureFileFields {
     tags: (fields.get("tags") ?? fields.get("modes") ?? "").split(",").map((t) => t.trim()).filter(Boolean),
     url: url && /^https?:\/\//i.test(url) ? url : null,
     lowConfidence: fields.get("lowConfidence") === "true",
+    useItWhen: value(fields.get("use_it_when")),
     coreIdea: value(s.get("Core idea")),
     takeaways: bullets(s.get("Key takeaways")),
     quotes: quoteBlocks(s.get("Quotes")),

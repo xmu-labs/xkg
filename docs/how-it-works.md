@@ -21,6 +21,8 @@ capture "The Mom Test: don't ask if your idea is good. Ask about the person's re
 
 xkg pulls out the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. Each claim is backed by an exact quote from the source, and xkg checks that the quote is really there.
 
+It also writes one **Use it when** line: the kind of situation where the capture helps, in at most 25 words, without naming its topic (for example "Use it when shared work keeps getting dropped because nobody is responsible for it."). The line lets a capture come back later from a different field. It comes from the same model call, so it costs nothing extra. A line that doesn't start with "Use it when" or runs past 25 words is dropped, and an empty capture gets none.
+
 Then it commits a Markdown file to your GitHub repo, with the source text attached. See the [example capture](#example-capture).
 
 #### Where it applies
@@ -215,6 +217,7 @@ type: notes
 source_type: note
 tags: incident-management, alerting, responsibility
 status: inbox
+use_it_when: Use it when shared work keeps getting dropped because nobody in particular is responsible for it.
 source_sha256: 21275782a8bf…
 ---
 
