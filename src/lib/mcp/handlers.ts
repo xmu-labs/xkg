@@ -22,7 +22,7 @@ import { recordApplyEvent } from "@/lib/apply-events";
 import { recordSurfaceEvents, recordWhereEvent } from "@/lib/surface-events";
 import { consumeQuota, refundQuota } from "@/lib/rate-limit";
 import { renderEvidenceSection, renderSourceSection, sourceFrontmatter } from "@/lib/evidence";
-import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings, type LlmUsage } from "@/lib/llm";
+import { extractCapture, formatDate, buildIndexRow, rankByRelevance, generateApplicationSuggestions, generatePlan, detectSourceType, filterByDateRange, paginate, pageFooter, matchIndexRows, llmSettings, frontmatterUseItWhen, type LlmUsage } from "@/lib/llm";
 import { failureLine, stepTimer, timingLine } from "@/lib/capture-timing";
 import { llmErrorLink, llmErrorMessage } from "@/lib/friendly-error";
 import { linkCapture } from "@/lib/linking";
@@ -97,6 +97,7 @@ export async function handleCapture(user: User, args: { content: string; title?:
     `tags: ${capture.tags.join(", ")}`,
     `status: inbox`,
     `lowConfidence: ${capture.lowConfidence}`,
+    ...frontmatterUseItWhen(capture),
     ...sourceFrontmatter(capture),
     `---`,
     ``,

@@ -128,6 +128,12 @@ function CaptureView({ capture: c, onCapture }: { capture: CaptureDetail; onCapt
         </Card>
       )}
 
+      {c.useItWhen && (
+        <Card label="When it helps">
+          <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>{c.useItWhen}</p>
+        </Card>
+      )}
+
       <ApplyIt
         where={applyWhere(c.where)}
         advice={c.advice}
