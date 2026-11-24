@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import BrandMark from "@/components/BrandMark";
 import Link from "next/link";
 import SettingsDrawer, { type Me } from "@/components/SettingsDrawer";
@@ -8,6 +8,8 @@ import Backdrop from "@/components/Backdrop";
 import type { CaptureRow, CaptureStatus, LinkCheck } from "@/lib/captures";
 import type { WeekStats } from "@/lib/ledger";
 import { CARD_STYLE, TRY_AGAIN, captureHref, post, shortDate } from "./ui";
+import { SPEND_CHANGED_EVENT } from "@/lib/spend-format";
+import type { BackfillEstimate, BackfillPage } from "@/lib/use-it-when-backfill";
 
 /**
  * Your knowledge: the decisions about saved knowledge that are the user's to
@@ -149,6 +151,8 @@ export default function KnowledgePage() {
         )}
       </div>
 
+      <UseItWhenBackfill />
+
       {/* Folders */}
       <div role="tablist" aria-label="Folder" className="flex gap-1.5">
         {TABS.map((t) => (
@@ -185,6 +189,122 @@ export default function KnowledgePage() {
       {tags.length > 0 && <Rules tags={tags} />}
     </main>
     </>
+  );
+}
+
+/** Kept per browser and per account and repo (`scope`) once a full pass ended with nothing to retry. */
+const BACKFILL_DONE_KEY = "xkg-use-it-when-done";
+/** Where a paused backfill stopped, per account and repo, so the next run carries on. */
+const BACKFILL_AFTER_KEY = "xkg-use-it-when-after";
+/** Failures earlier in a paused pass: they sit behind the saved place, so a pass with any isn't done. */
+const BACKFILL_FAILED_KEY = "xkg-use-it-when-failed";
+function store(key: string, value: string | null): void {
+  try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
+}
+function stored(key: string): string | null {
+  try { return localStorage.getItem(key); } catch { return null; }
+}
+
+/**
+ * Offers to give older captures their "Use it when" line, on the user's own
+ * model, with what it should cost shown before anything runs. It runs page
+ * by page only while this page is open, and picks up where it stopped. A
+ * pass, even one split by the hourly limit, hides the card only when no page
+ * of it had a failure: a capture that failed sits behind the saved place, so
+ * the card comes back for a full pass, which skips finished captures for free.
+ */
+function UseItWhenBackfill() {
+  const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
+  const [state, setState] = useState<"idle" | "running" | "done" | "paused" | "error">("idle");
+  const [counts, setCounts] = useState({ seen: 0, written: 0, none: 0, failed: 0, skipped: 0 });
+  const [error, setError] = useState("");
+  const aborter = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    aborter.current = ac;
+    // Quiet like the source check: any failure (even a 401) means no card, never a redirect.
+    void fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ estimate: true }), signal: ac.signal })
+      .then(async (res) => {
+        if (!res.ok) return;
+        const e = (await res.json()) as BackfillEstimate & { scope: string };
+        if (e.captures > 0 && !stored(`${BACKFILL_DONE_KEY}:${e.scope}`)) setEstimate(e);
+      })
+      .catch(() => { /* no card this time */ });
+    // Leaving the page stops the run: no page is asked for after this.
+    return () => ac.abort();
+  }, []);
+
+  async function run(scope: string) {
+    const signal = aborter.current?.signal;
+    const afterKey = `${BACKFILL_AFTER_KEY}:${scope}`;
+    const failedKey = `${BACKFILL_FAILED_KEY}:${scope}`;
+    setState("running");
+    setError("");
+    const total = { seen: 0, written: 0, none: 0, failed: 0, skipped: 0 };
+    const resumed = stored(afterKey);
+    const failedBefore = resumed ? Number(stored(failedKey)) || 0 : 0;
+    const keepPlace = (after: string | null) => {
+      store(afterKey, after);
+      store(failedKey, String(failedBefore + total.failed));
+    };
+    try {
+      for (let after = resumed; ; ) {
+        if (signal?.aborted) return;
+        const res = await fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal });
+        if (res.status === 429) { keepPlace(after); return setState("paused"); }
+        const page = (await res.json().catch(() => ({}))) as BackfillPage & { error?: string };
+        if (!res.ok) throw new Error(page.error ?? TRY_AGAIN);
+        total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
+        total.seen += page.written + page.none + page.failed + page.skipped;
+        setCounts({ ...total });
+        window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
+        if (!page.next) break;
+        after = page.next;
+        keepPlace(after);
+      }
+      store(afterKey, null);
+      store(failedKey, null);
+      if (failedBefore + total.failed === 0) store(`${BACKFILL_DONE_KEY}:${scope}`, "1");
+      setState("done");
+    } catch (err) {
+      if (signal?.aborted) return;
+      setError(err instanceof Error ? err.message : TRY_AGAIN);
+      setState("error");
+    }
+  }
+
+  if (!estimate) return null;
+  const price = estimate.usd === null ? null : estimate.usd < 0.01 ? "Under $0.01" : `About $${estimate.usd.toFixed(2)}`;
+  const cost = price === null
+    ? "Your model has no price on file, so there's no estimate."
+    : `${price} on your AI key.${estimate.reasoning ? " Your model thinks before it answers, so it may cost more." : ""}`;
+  return (
+    <section aria-label="Use it when lines" className="rounded-2xl p-4 stack-2" style={CARD_STYLE}>
+      {state === "done" ? (
+        <p role="status" className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>
+          Done. {counts.written} {counts.written === 1 ? "line" : "lines"} added
+          {counts.none > 0 && <>, {counts.none} with nothing reusable</>}
+          {counts.failed > 0 && <>, {counts.failed} to try again later</>}.
+        </p>
+      ) : (
+        <>
+          <p className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>
+            Give your older captures a &ldquo;Use it when&rdquo; line, so xkg can bring them back when something comes up.
+          </p>
+          <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+            Up to {estimate.captures} captures. {cost} Captures that already have a line are skipped.
+          </p>
+          {state === "running" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Adding lines: {counts.seen} of {estimate.captures}…</p>}
+          {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Paused at the hourly limit. Start again later and it picks up where it stopped.</p>}
+          {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
+          <button onClick={() => void run(estimate.scope)} disabled={state === "running"} aria-busy={state === "running"}
+            className="btn-primary py-2 rounded-xl font-medium text-sm">
+            {state === "running" ? "Adding lines…" : state === "idle" ? "Add lines" : "Continue"}
+          </button>
+        </>
+      )}
+    </section>
   );
 }
 

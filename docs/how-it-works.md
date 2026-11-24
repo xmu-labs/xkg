@@ -21,6 +21,10 @@ capture "The Mom Test: don't ask if your idea is good. Ask about the person's re
 
 xkg pulls out the **core idea**, **key takeaways**, **where to apply it**, and the **capture type**. Each claim is backed by an exact quote from the source, and xkg checks that the quote is really there.
 
+It also writes one **Use it when** line: the kind of situation where the capture helps, in at most 25 words, without naming its topic (for example "Use it when shared work keeps getting dropped because nobody is responsible for it."). The line lets a capture come back later from a different field. It comes from the same model call, so it costs nothing extra. A line that doesn't start with "Use it when" or runs past 25 words is dropped, and an empty capture gets none.
+
+Captures saved before the line existed get one from **Your knowledge**: the card shows how many captures it covers and about what it costs on your AI key before anything runs (a model that thinks before it answers can cost more). Tap **Add lines**, and your own model reads each inbox and applied capture (its title, core idea, takeaways, quotes and advice, never the raw capture or source text) and writes the line into the file. Captures that already have a line are skipped without a model call. A capture with nothing reusable gets `use_it_when: none`, so it is skipped next time too. It runs 5 captures at a time only while the page is open, at most 60 pages an hour, and picks up where it stopped. Files with Windows line endings keep them. Archived captures are left alone.
+
 Then it commits a Markdown file to your GitHub repo, with the source text attached. See the [example capture](#example-capture).
 
 #### Where it applies
@@ -215,6 +219,7 @@ type: notes
 source_type: note
 tags: incident-management, alerting, responsibility
 status: inbox
+use_it_when: Use it when shared work keeps getting dropped because nobody in particular is responsible for it.
 source_sha256: 21275782a8bf…
 ---
 

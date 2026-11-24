@@ -43,6 +43,8 @@ export interface ExtractedCapture {
   quotes: string[];
   tags: string[];
   appliedTo: string | null;
+  /** "Use it when ..." line naming the situation the capture helps with; absent when there is none. */
+  useItWhen?: string;
   lowConfidence: boolean;
   source_type?: SourceType;
   /** Claims whose evidence the app checked against `source` (see lib/evidence). */
