@@ -104,7 +104,11 @@ export async function githubPut(
     // A create (no sha) on a path that already exists comes back as 422
     // "sha wasn't supplied". Flagged so a caller can pick another name.
     const fileExists = res.status === 422 && !sha && /"?sha"? wasn't supplied/.test(errText.replace(/\\"/g, '"'));
-    throw Object.assign(new Error(`GitHub PUT ${filePath}: HTTP ${res.status} — ${errText}`), { status: res.status, fileExists });
+    // GitHub's rate limits say when to try again: retry-after in seconds, or a reset time.
+    const after = Number(res.headers.get("retry-after"));
+    const reset = Number(res.headers.get("x-ratelimit-reset"));
+    const retryAfter = after > 0 ? after : reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : undefined;
+    throw Object.assign(new Error(`GitHub PUT ${filePath}: HTTP ${res.status} — ${errText}`), { status: res.status, fileExists, retryAfter });
   }
 }
 

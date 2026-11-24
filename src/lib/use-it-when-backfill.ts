@@ -24,6 +24,31 @@ const MAX_CAPTURE_CHARS = 6000;
 const EST_TOKENS_IN = 2000;
 const EST_TOKENS_OUT = 80;
 
+/**
+ * GitHub asks for at least a second between content writes from one user and
+ * answers faster ones with its secondary rate limit (403 or 429).
+ */
+export const pacing = {
+  gapMs: 1000,
+  pause: (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+/** GitHub is limiting writes: stop, and try again after `retryAfter` seconds. */
+export class GitHubWriteLimitError extends Error {
+  constructor(readonly retryAfter: number) {
+    super(`GitHub is limiting writes to the knowledge repo; try again in ${retryAfter} s`);
+    this.name = "GitHubWriteLimitError";
+  }
+}
+
+/** A write GitHub refused for going too fast, as opposed to a conflict or a bad request. */
+function writeLimit(err: unknown): GitHubWriteLimitError | null {
+  const { status, retryAfter } = (err ?? {}) as { status?: unknown; retryAfter?: unknown };
+  const message = err instanceof Error ? err.message : "";
+  if (status !== 429 && !(status === 403 && /rate limit/i.test(message))) return null;
+  return new GitHubWriteLimitError(typeof retryAfter === "number" && retryAfter > 0 ? retryAfter : 60);
+}
+
 /** Room for the short answer, plus reasoning on models that think first. */
 const MAX_TOKENS = 1024;
 
@@ -195,13 +220,22 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
   // with the provider's reason instead of a pass of "try again later".
   if (stop) throw stop;
 
-  // One write at a time: each is a commit on the same branch, and GitHub
-  // rejects writes to one branch that overlap.
+  // One write at a time, a second apart: each is a commit on the same branch,
+  // GitHub rejects writes to one branch that overlap, and limits fast ones.
+  let wrote = false;
   for (const w of ready) {
     if (!w) continue;
+    if (wrote) await pacing.pause(pacing.gapMs);
+    wrote = true;
     try {
       await githubPut(user.github_token, user.github_repo!, w.path, w.content, `capture: add "Use it when" line to ${w.path.split("/").pop()}`, w.sha);
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[use-it-when] write failed:", message.slice(0, 300));
+      // Too fast for GitHub: stop here. The card pauses and redoes this page,
+      // skipping the captures that already got their line.
+      const limited = writeLimit(err);
+      if (limited) throw limited;
       out.failed++; // changed since the read, or GitHub said no; a rerun tries again
       continue;
     }
