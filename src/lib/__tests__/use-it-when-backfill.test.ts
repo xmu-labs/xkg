@@ -13,9 +13,16 @@ const files = new Map<string, string>();
 const puts: Array<{ path: string; content: string; sha?: string }> = [];
 let modelAnswer: unknown = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 let modelCalls = 0;
+/** When set, the provider answers with this HTTP error instead of a line. */
+let modelError: { status: number; body: string } | null = null;
 let lastPrompt = "";
+/** Writes running at once, and the most seen: GitHub rejects overlapping writes to one branch. */
+let inFlight = 0;
+let maxInFlight = 0;
 /** Paths that vanish between the listing and the read, as when a capture moves. */
 const vanish = new Set<string>();
+/** Answers GitHub gives the next writes, in order; empty means the write lands. */
+const putErrors: Array<{ status: number; message: string; retryAfter?: number } | null> = [];
 
 vi.mock("../github", () => ({
   githubGet: async (_t: string, _r: string, dir: string) => {
@@ -24,6 +31,13 @@ vi.mock("../github", () => ({
   },
   readFileStrict: async (_t: string, _r: string, path: string) => (files.has(path) && !vanish.has(path) ? { content: files.get(path)!, sha: `sha-${path}` } : null),
   githubPut: async (_t: string, _r: string, path: string, content: string, _m: string, sha?: string) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    // GitHub answers a write some time later; overlapping writes on one branch conflict.
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
+    const refused = putErrors.shift();
+    if (refused) throw Object.assign(new Error(`GitHub PUT ${path}: HTTP ${refused.status} — ${refused.message}`), { status: refused.status, retryAfter: refused.retryAfter });
     puts.push({ path, content, sha });
     files.set(path, content);
   },
@@ -34,10 +48,14 @@ vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
   if (new URL(String(url)).hostname !== "api.openai.com") throw new Error(`unexpected fetch ${url}`);
   modelCalls++;
   lastPrompt = JSON.stringify(JSON.parse(init.body).messages);
+  if (modelError) return new Response(modelError.body, { status: modelError.status });
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
 });
 
-const { addUseItWhen, backfillPage, backfillEstimate } = await import("../use-it-when-backfill");
+const { addUseItWhen, backfillPage, backfillEstimate, pacing, GitHubWriteLimitError } = await import("../use-it-when-backfill");
+/** Gaps the backfill waited between writes; none are really waited in tests. */
+const gaps: number[] = [];
+vi.spyOn(pacing, "pause").mockImplementation(async (ms: number) => { gaps.push(ms); });
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai", llm_model: null, llm_effort: null } as unknown as User;
 
 function capture(title: string, extra = ""): string {
@@ -47,8 +65,13 @@ function capture(title: string, extra = ""): string {
 beforeEach(() => {
   files.clear();
   vanish.clear();
+  putErrors.length = 0;
+  gaps.length = 0;
   puts.length = 0;
+  inFlight = 0;
+  maxInFlight = 0;
   modelCalls = 0;
+  modelError = null;
   modelAnswer = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 });
 
@@ -77,6 +100,89 @@ describe("addUseItWhen", () => {
 });
 
 describe("backfillPage", () => {
+  it("stops with the provider's reason when the key is refused, so the card can say what to fix", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    files.set("inbox/2026-10-02-b.md", capture("B"));
+    modelError = { status: 401, body: '{"error":{"code":"invalid_api_key"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/HTTP 401/);
+    expect(puts).toHaveLength(0);
+  });
+
+  it("stops when the model is unknown to the provider", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 404, body: '{"error":{"code":"model_not_found"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it("stops when the key has no credits, though the provider says 429 or 400", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 429, body: '{"error":{"message":"You have no credits remaining.","type":"insufficient_quota"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/insufficient_quota/);
+    modelError = { status: 400, body: '{"error":{"message":"Your credit balance is too low."}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/credit balance/);
+    expect(puts).toHaveLength(0);
+  });
+
+  it("still counts a plain rate limit as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 429, body: '{"error":{"message":"Rate limit reached for requests","type":"requests"}}' };
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
+  });
+
+  it("still counts a one-off provider error as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 500, body: "{}" };
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
+  });
+
+  it("writes the files of a page one after another, never two at once", async () => {
+    for (const n of ["a", "b", "c", "d", "e"]) files.set(`inbox/2026-10-0${"abcde".indexOf(n) + 1}-${n}.md`, capture(n));
+    const out = await backfillPage(user, { limit: 5 });
+    expect(out.written).toBe(5);
+    expect(maxInFlight).toBe(1);
+  });
+
+  it("waits a second between writes, as GitHub asks for content writes", async () => {
+    for (const n of ["a", "b", "c"]) files.set(`inbox/2026-10-0${"abc".indexOf(n) + 1}-${n}.md`, capture(n));
+    await backfillPage(user, { limit: 5 });
+    expect(gaps).toEqual([1000, 1000]);
+  });
+
+  it("stops the page when GitHub limits writes, so the card pauses instead of failing the rest", async () => {
+    for (const n of ["a", "b", "c"]) files.set(`inbox/2026-10-0${"abc".indexOf(n) + 1}-${n}.md`, capture(n));
+    // The first write lands; the second hits GitHub's secondary rate limit.
+    putErrors.push(null, { status: 403, message: '{"message":"You have exceeded a secondary rate limit."}', retryAfter: 90 });
+    const err = await backfillPage(user, { limit: 5 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GitHubWriteLimitError);
+    expect((err as InstanceType<typeof GitHubWriteLimitError>).retryAfter).toBe(90);
+    expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md"]);
+  });
+
+  it("logs why a write failed without the capture's name", async () => {
+    files.set("inbox/2026-10-01-private-topic.md", capture("a"));
+    putErrors.push({ status: 409, message: '{"message":"inbox/2026-10-01-private-topic.md does not match abc"}' });
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { logged.push(a.map(String).join(" ")); });
+    await backfillPage(user, { limit: 5 });
+    spy.mockRestore();
+    expect(logged.join("\n")).toContain("409");
+    expect(logged.join("\n")).not.toContain("private-topic");
+  });
+
+  it("treats a 429 from GitHub as the same limit, with a minute's wait when it gives none", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    putErrors.push({ status: 429, message: "{}" });
+    const err = await backfillPage(user, { limit: 5 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GitHubWriteLimitError);
+    expect((err as InstanceType<typeof GitHubWriteLimitError>).retryAfter).toBe(60);
+  });
+
+  it("still counts a write GitHub turns down for another reason as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    putErrors.push({ status: 409, message: '{"message":"is at abc but expected def"}' });
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
+  });
+
   it("writes a line into captures without one, from inbox and applied, oldest first", async () => {
     files.set("inbox/2026-10-02-b.md", capture("B"));
     files.set("applied/2026-10-01-a.md", capture("A"));

@@ -16,7 +16,11 @@ const backfillEstimate = vi.fn(async () => ({ captures: 9, usd: 0.004, reasoning
 vi.mock("@/lib/session", () => ({ getSession: async () => session }));
 vi.mock("@/lib/rate-limit", () => ({ consumeQuota: async () => ({ allowed, limit: 60, resetIn: 30 }) }));
 vi.mock("@/lib/llm-spend", () => ({ withSpendMeter: (_id: number, fn: () => unknown) => fn() }));
+class GitHubWriteLimitError extends Error {
+  constructor(readonly retryAfter: number) { super("limited"); }
+}
 vi.mock("@/lib/use-it-when-backfill", () => ({
+  GitHubWriteLimitError,
   backfillPage: (...a: unknown[]) => backfillPage(...(a as [])),
   backfillEstimate: (...a: unknown[]) => backfillEstimate(...(a as [])),
 }));
@@ -64,5 +68,13 @@ describe("POST /api/captures/use-it-when", () => {
     expect(capped.status).toBe(429);
     expect(capped.headers.get("Retry-After")).toBe("30");
     expect(backfillPage).not.toHaveBeenCalled();
+  });
+
+  it("pauses the card when GitHub limits writes, with GitHub's wait", async () => {
+    backfillPage.mockRejectedValueOnce(new GitHubWriteLimitError(90));
+    const res = await post({ after: "inbox/x.md" });
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("90");
+    expect(((await res.json()) as { error: string }).error).toMatch(/^GitHub is limiting .* 2 minutes/);
   });
 });
