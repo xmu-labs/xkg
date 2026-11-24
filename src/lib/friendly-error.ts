@@ -22,7 +22,7 @@ function isProviderError(err: unknown, message: string): boolean {
 }
 
 /** True when a provider error says the key has run out of credits or quota. */
-function isNoCredits(err: unknown, message: string): boolean {
+export function isNoCredits(err: unknown, message: string): boolean {
   if (!isProviderError(err, message)) return false;
   return statusOf(err, message) === 402 || NO_CREDITS.test(message);
 }

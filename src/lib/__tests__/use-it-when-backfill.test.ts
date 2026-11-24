@@ -105,6 +105,21 @@ describe("backfillPage", () => {
     await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/HTTP 404/);
   });
 
+  it("stops when the key has no credits, though the provider says 429 or 400", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 429, body: '{"error":{"message":"You have no credits remaining.","type":"insufficient_quota"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/insufficient_quota/);
+    modelError = { status: 400, body: '{"error":{"message":"Your credit balance is too low."}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/credit balance/);
+    expect(puts).toHaveLength(0);
+  });
+
+  it("still counts a plain rate limit as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 429, body: '{"error":{"message":"Rate limit reached for requests","type":"requests"}}' };
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
+  });
+
   it("still counts a one-off provider error as one to try again", async () => {
     files.set("inbox/2026-10-01-a.md", capture("A"));
     modelError = { status: 500, body: "{}" };

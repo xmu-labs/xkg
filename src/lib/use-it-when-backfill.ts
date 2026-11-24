@@ -10,6 +10,7 @@
  */
 
 import type { User } from "@/lib/db";
+import { isNoCredits } from "@/lib/friendly-error";
 import { GitHubReadError, githubGet, githubPut, readFileStrict } from "@/lib/github";
 import { callLlm, effortApplied, llmSettings, readUseItWhen, resolveLlm } from "@/lib/llm";
 import { estimateCostUsd } from "@/lib/llm-prices";
@@ -94,13 +95,14 @@ async function askLine(user: User, text: string): Promise<string | null> {
 
 /**
  * True for a provider error a retry won't fix: the key is refused (401, 403),
- * has no credits (402) or the model is unknown (404). Rate limits and outages
- * stay per-capture failures that a rerun tries again.
+ * has no credits (402, or a 429/400 that says so) or the model is unknown (404).
+ * Plain rate limits and outages stay per-capture failures that a rerun tries again.
  */
 function refusedByProvider(err: unknown): boolean {
   // Our provider calls say "[llm:…] HTTP 401"; the Anthropic SDK's errors carry a status.
   const own = (err as { status?: unknown } | null)?.status;
   const message = err instanceof Error ? err.message : String(err);
+  if (isNoCredits(err, message)) return true;
   const status = typeof own === "number" ? own : message.startsWith("[llm") ? Number(/HTTP (\d{3})\b/.exec(message)?.[1]) : NaN;
   return [401, 402, 403, 404].includes(status);
 }
