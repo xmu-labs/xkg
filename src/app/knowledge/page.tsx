@@ -293,7 +293,7 @@ function UseItWhenBackfill() {
             Give your older captures a &ldquo;Use it when&rdquo; line, so xkg can bring them back when something comes up.
           </p>
           <p className="text-xs leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-            Up to {estimate.captures} captures. {cost} Captures that already have a line are skipped.
+            Checks your {estimate.captures} captures and skips any that already have a line. {cost}
           </p>
           {state === "running" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Adding lines: {counts.seen} of {estimate.captures}…</p>}
           {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Paused at the hourly limit. Start again later and it picks up where it stopped.</p>}

@@ -13,7 +13,12 @@ const files = new Map<string, string>();
 const puts: Array<{ path: string; content: string; sha?: string }> = [];
 let modelAnswer: unknown = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 let modelCalls = 0;
+/** When set, the provider answers with this HTTP error instead of a line. */
+let modelError: { status: number; body: string } | null = null;
 let lastPrompt = "";
+/** Writes running at once, and the most seen: GitHub rejects overlapping writes to one branch. */
+let inFlight = 0;
+let maxInFlight = 0;
 /** Paths that vanish between the listing and the read, as when a capture moves. */
 const vanish = new Set<string>();
 
@@ -24,6 +29,11 @@ vi.mock("../github", () => ({
   },
   readFileStrict: async (_t: string, _r: string, path: string) => (files.has(path) && !vanish.has(path) ? { content: files.get(path)!, sha: `sha-${path}` } : null),
   githubPut: async (_t: string, _r: string, path: string, content: string, _m: string, sha?: string) => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    // GitHub answers a write some time later; overlapping writes on one branch conflict.
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight--;
     puts.push({ path, content, sha });
     files.set(path, content);
   },
@@ -34,6 +44,7 @@ vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
   if (new URL(String(url)).hostname !== "api.openai.com") throw new Error(`unexpected fetch ${url}`);
   modelCalls++;
   lastPrompt = JSON.stringify(JSON.parse(init.body).messages);
+  if (modelError) return new Response(modelError.body, { status: modelError.status });
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
 });
 
@@ -48,7 +59,10 @@ beforeEach(() => {
   files.clear();
   vanish.clear();
   puts.length = 0;
+  inFlight = 0;
+  maxInFlight = 0;
   modelCalls = 0;
+  modelError = null;
   modelAnswer = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 });
 
@@ -77,6 +91,33 @@ describe("addUseItWhen", () => {
 });
 
 describe("backfillPage", () => {
+  it("stops with the provider's reason when the key is refused, so the card can say what to fix", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    files.set("inbox/2026-10-02-b.md", capture("B"));
+    modelError = { status: 401, body: '{"error":{"code":"invalid_api_key"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/HTTP 401/);
+    expect(puts).toHaveLength(0);
+  });
+
+  it("stops when the model is unknown to the provider", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 404, body: '{"error":{"code":"model_not_found"}}' };
+    await expect(backfillPage(user, { limit: 5 })).rejects.toThrow(/HTTP 404/);
+  });
+
+  it("still counts a one-off provider error as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("A"));
+    modelError = { status: 500, body: "{}" };
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
+  });
+
+  it("writes the files of a page one after another, never two at once", async () => {
+    for (const n of ["a", "b", "c", "d", "e"]) files.set(`inbox/2026-10-0${"abcde".indexOf(n) + 1}-${n}.md`, capture(n));
+    const out = await backfillPage(user, { limit: 5 });
+    expect(out.written).toBe(5);
+    expect(maxInFlight).toBe(1);
+  });
+
   it("writes a line into captures without one, from inbox and applied, oldest first", async () => {
     files.set("inbox/2026-10-02-b.md", capture("B"));
     files.set("applied/2026-10-01-a.md", capture("A"));

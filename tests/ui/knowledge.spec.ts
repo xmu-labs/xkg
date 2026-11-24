@@ -420,7 +420,8 @@ test("older captures get their 'Use it when' line page by page, with the cost sh
   });
   await page.goto("/knowledge");
   const card = page.getByRole("region", { name: "Use it when lines" });
-  await expect(card.getByText("Up to 7 captures.", { exact: false })).toBeVisible();
+  // The count is every capture checked, not the ones still missing a line.
+  await expect(card.getByText("Checks your 7 captures and skips any that already have a line.", { exact: false })).toBeVisible();
   await expect(card.getByText("About $0.01 on your AI key.", { exact: false })).toBeVisible();
   expect(bodies).toEqual([]);
   await card.getByRole("button", { name: "Add lines" }).tap();
@@ -430,6 +431,23 @@ test("older captures get their 'Use it when' line page by page, with the cost sh
   await page.goto("/knowledge");
   await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
+});
+
+test("a refused AI key stops the run and the card says what to fix", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await page.route("**/api/captures/use-it-when", async (r) => {
+    const body = r.request().postDataJSON() as { estimate?: boolean };
+    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012, reasoning: false, scope: "7:o/r" } });
+    return r.fulfill({ status: 502, json: { error: "OpenAI didn't accept your API key. Paste a new one in Settings → AI model." } });
+  });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("alert")).toHaveText("OpenAI didn't accept your API key. Paste a new one in Settings → AI model.");
+  // Nothing was written: the user fixes the key and goes on from the same place.
+  await expect(card.getByRole("button", { name: "Continue" })).toBeEnabled();
 });
 
 test("with no estimate (signed out, no key, an error), there is no card and no redirect", async ({ page }) => {

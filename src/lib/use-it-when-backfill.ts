@@ -93,6 +93,19 @@ async function askLine(user: User, text: string): Promise<string | null> {
 }
 
 /**
+ * True for a provider error a retry won't fix: the key is refused (401, 403),
+ * has no credits (402) or the model is unknown (404). Rate limits and outages
+ * stay per-capture failures that a rerun tries again.
+ */
+function refusedByProvider(err: unknown): boolean {
+  // Our provider calls say "[llm:…] HTTP 401"; the Anthropic SDK's errors carry a status.
+  const own = (err as { status?: unknown } | null)?.status;
+  const message = err instanceof Error ? err.message : String(err);
+  const status = typeof own === "number" ? own : message.startsWith("[llm") ? Number(/HTTP (\d{3})\b/.exec(message)?.[1]) : NaN;
+  return [401, 402, 403, 404].includes(status);
+}
+
+/**
  * Pages are ordered by file name, then folder. Applying a capture moves it
  * from inbox/ to applied/ under the same name, so a move during a paused run
  * keeps its place relative to the saved `after`.
@@ -153,33 +166,46 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
   const page = rest.slice(0, args.limit);
   const out: BackfillPage = { written: 0, skipped: 0, none: 0, failed: 0, next: null, total: all.length };
 
-  await Promise.all(page.map(async (path) => {
+  let stop: unknown = null;
+  // Reads and model calls run side by side; the writes don't (below).
+  const ready = await Promise.all(page.map(async (path) => {
     const file = await readFileStrict(user.github_token, user.github_repo!, path);
     // Moved since the listing: counted so the pass isn't marked done; a full pass finds its new folder.
-    if (!file) { out.failed++; return; }
+    if (!file) { out.failed++; return null; }
     // Files saved on Windows keep their CRLF endings: worked on as LF, written back as CRLF.
     const crlf = file.content.includes("\r\n");
     const text = crlf ? file.content.replace(/\r\n/g, "\n") : file.content;
-    if (hasUseItWhen(text)) { out.skipped++; return; }
+    if (hasUseItWhen(text)) { out.skipped++; return null; }
     let line: string | null;
     try {
       line = await askLine(user, captureOwnText(text));
-    } catch {
+    } catch (err) {
+      if (refusedByProvider(err)) stop ??= err;
       line = null;
     }
-    if (!line) { out.failed++; return; }
+    if (!line) { out.failed++; return null; }
     const added = addUseItWhen(text, line);
-    if (added === text) { out.failed++; return; }
-    const content = crlf ? added.replace(/\n/g, "\r\n") : added;
+    if (added === text) { out.failed++; return null; }
+    return { path, sha: file.sha, line, content: crlf ? added.replace(/\n/g, "\r\n") : added };
+  }));
+
+  // A refused key or an unknown model fails every capture the same way: stop
+  // with the provider's reason instead of a pass of "try again later".
+  if (stop) throw stop;
+
+  // One write at a time: each is a commit on the same branch, and GitHub
+  // rejects writes to one branch that overlap.
+  for (const w of ready) {
+    if (!w) continue;
     try {
-      await githubPut(user.github_token, user.github_repo!, path, content, `capture: add "Use it when" line to ${path.split("/").pop()}`, file.sha);
+      await githubPut(user.github_token, user.github_repo!, w.path, w.content, `capture: add "Use it when" line to ${w.path.split("/").pop()}`, w.sha);
     } catch {
       out.failed++; // changed since the read, or GitHub said no; a rerun tries again
-      return;
+      continue;
     }
-    if (line === "none") out.none++;
+    if (w.line === "none") out.none++;
     else out.written++;
-  }));
+  }
 
   out.next = rest.length > page.length ? page[page.length - 1]! : null;
   return out;
