@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { consumeQuota } from "@/lib/rate-limit";
 import { withSpendMeter } from "@/lib/llm-spend";
-import { backfillEstimate, backfillPage } from "@/lib/use-it-when-backfill";
+import { GitHubWriteLimitError, backfillEstimate, backfillPage } from "@/lib/use-it-when-backfill";
 import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
 import { llmErrorMessage } from "@/lib/friendly-error";
 
@@ -38,6 +38,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     const github = githubFailure(err);
     if (github) return github;
+    // GitHub is limiting writes: the card pauses and picks up from this page.
+    if (err instanceof GitHubWriteLimitError) {
+      const minutes = Math.max(1, Math.ceil(err.retryAfter / 60));
+      return fail(429, `GitHub is limiting how fast xkg can save to your repo. Start again in ${minutes === 1 ? "a minute" : `${minutes} minutes`} and it picks up where it stopped.`, { "Retry-After": String(err.retryAfter) });
+    }
     // A refused key or unknown model stops the run (see backfillPage): say what to fix.
     const said = llmErrorMessage(err, provider);
     const message = err instanceof Error ? err.message : String(err);

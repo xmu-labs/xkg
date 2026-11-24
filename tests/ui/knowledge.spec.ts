@@ -558,3 +558,28 @@ test("a clean run split by the hourly limit still finishes: the card stays away 
   await expect(page.getByRole("heading", { name: "Your knowledge" })).toBeVisible();
   await expect(page.getByRole("region", { name: "Use it when lines" })).toHaveCount(0);
 });
+
+test("when GitHub limits writes, the card pauses with GitHub's reason and carries on from that page", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  const bodies: Array<{ after?: string }> = [];
+  const answers: Array<{ status?: number; json: Record<string, unknown> }> = [
+    { json: { written: 5, skipped: 0, none: 0, failed: 0, next: "inbox/b.md", total: 7 } },
+    { status: 429, json: { error: "GitHub is limiting how fast xkg can save to your repo. Start again in a minute and it picks up where it stopped." } },
+    { json: { written: 2, skipped: 0, none: 0, failed: 0, next: null, total: 7 } },
+  ];
+  await page.route("**/api/captures/use-it-when", async (r) => {
+    const body = r.request().postDataJSON() as { estimate?: boolean; after?: string };
+    if (body.estimate) return r.fulfill({ json: { captures: 7, usd: 0.012, reasoning: false, scope: "7:o/r" } });
+    bodies.push(body);
+    return r.fulfill(answers.shift()!);
+  });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByText("GitHub is limiting how fast xkg can save", { exact: false })).toBeVisible();
+  await card.getByRole("button", { name: "Continue" }).tap();
+  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
+  expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
+});

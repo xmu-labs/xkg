@@ -21,6 +21,8 @@ let inFlight = 0;
 let maxInFlight = 0;
 /** Paths that vanish between the listing and the read, as when a capture moves. */
 const vanish = new Set<string>();
+/** Answers GitHub gives the next writes, in order; empty means the write lands. */
+const putErrors: Array<{ status: number; message: string; retryAfter?: number } | null> = [];
 
 vi.mock("../github", () => ({
   githubGet: async (_t: string, _r: string, dir: string) => {
@@ -34,6 +36,8 @@ vi.mock("../github", () => ({
     // GitHub answers a write some time later; overlapping writes on one branch conflict.
     await new Promise((r) => setTimeout(r, 5));
     inFlight--;
+    const refused = putErrors.shift();
+    if (refused) throw Object.assign(new Error(`GitHub PUT ${path}: HTTP ${refused.status} — ${refused.message}`), { status: refused.status, retryAfter: refused.retryAfter });
     puts.push({ path, content, sha });
     files.set(path, content);
   },
@@ -48,7 +52,10 @@ vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
   return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
 });
 
-const { addUseItWhen, backfillPage, backfillEstimate } = await import("../use-it-when-backfill");
+const { addUseItWhen, backfillPage, backfillEstimate, pacing, GitHubWriteLimitError } = await import("../use-it-when-backfill");
+/** Gaps the backfill waited between writes; none are really waited in tests. */
+const gaps: number[] = [];
+vi.spyOn(pacing, "pause").mockImplementation(async (ms: number) => { gaps.push(ms); });
 const user = { id: 7, llm_api_key: "k", github_token: "t", github_repo: "o/r", llm_provider: "openai", llm_model: null, llm_effort: null } as unknown as User;
 
 function capture(title: string, extra = ""): string {
@@ -58,6 +65,8 @@ function capture(title: string, extra = ""): string {
 beforeEach(() => {
   files.clear();
   vanish.clear();
+  putErrors.length = 0;
+  gaps.length = 0;
   puts.length = 0;
   inFlight = 0;
   maxInFlight = 0;
@@ -131,6 +140,47 @@ describe("backfillPage", () => {
     const out = await backfillPage(user, { limit: 5 });
     expect(out.written).toBe(5);
     expect(maxInFlight).toBe(1);
+  });
+
+  it("waits a second between writes, as GitHub asks for content writes", async () => {
+    for (const n of ["a", "b", "c"]) files.set(`inbox/2026-10-0${"abc".indexOf(n) + 1}-${n}.md`, capture(n));
+    await backfillPage(user, { limit: 5 });
+    expect(gaps).toEqual([1000, 1000]);
+  });
+
+  it("stops the page when GitHub limits writes, so the card pauses instead of failing the rest", async () => {
+    for (const n of ["a", "b", "c"]) files.set(`inbox/2026-10-0${"abc".indexOf(n) + 1}-${n}.md`, capture(n));
+    // The first write lands; the second hits GitHub's secondary rate limit.
+    putErrors.push(null, { status: 403, message: '{"message":"You have exceeded a secondary rate limit."}', retryAfter: 90 });
+    const err = await backfillPage(user, { limit: 5 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GitHubWriteLimitError);
+    expect((err as InstanceType<typeof GitHubWriteLimitError>).retryAfter).toBe(90);
+    expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md"]);
+  });
+
+  it("logs why a write failed without the capture's name", async () => {
+    files.set("inbox/2026-10-01-private-topic.md", capture("a"));
+    putErrors.push({ status: 409, message: '{"message":"inbox/2026-10-01-private-topic.md does not match abc"}' });
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { logged.push(a.map(String).join(" ")); });
+    await backfillPage(user, { limit: 5 });
+    spy.mockRestore();
+    expect(logged.join("\n")).toContain("409");
+    expect(logged.join("\n")).not.toContain("private-topic");
+  });
+
+  it("treats a 429 from GitHub as the same limit, with a minute's wait when it gives none", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    putErrors.push({ status: 429, message: "{}" });
+    const err = await backfillPage(user, { limit: 5 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(GitHubWriteLimitError);
+    expect((err as InstanceType<typeof GitHubWriteLimitError>).retryAfter).toBe(60);
+  });
+
+  it("still counts a write GitHub turns down for another reason as one to try again", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    putErrors.push({ status: 409, message: '{"message":"is at abc but expected def"}' });
+    expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
   });
 
   it("writes a line into captures without one, from inbox and applied, oldest first", async () => {

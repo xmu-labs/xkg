@@ -217,6 +217,7 @@ function UseItWhenBackfill() {
   const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "paused" | "error">("idle");
   const [counts, setCounts] = useState({ seen: 0, written: 0, none: 0, failed: 0, skipped: 0 });
+  const [pausedBecause, setPausedBecause] = useState<string | null>(null);
   const [error, setError] = useState("");
   const aborter = useRef<AbortController | null>(null);
 
@@ -252,7 +253,13 @@ function UseItWhenBackfill() {
       for (let after = resumed; ; ) {
         if (signal?.aborted) return;
         const res = await fetch("/api/captures/use-it-when", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(after ? { after } : {}), signal });
-        if (res.status === 429) { keepPlace(after); return setState("paused"); }
+        if (res.status === 429) {
+          // The hourly page limit, or GitHub limiting writes; only the second needs its own words.
+          const said = ((await res.json().catch(() => ({}))) as { error?: string }).error;
+          keepPlace(after);
+          setPausedBecause(said?.startsWith("GitHub") ? said : null);
+          return setState("paused");
+        }
         const page = (await res.json().catch(() => ({}))) as BackfillPage & { error?: string };
         if (!res.ok) throw new Error(page.error ?? TRY_AGAIN);
         total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
@@ -296,7 +303,7 @@ function UseItWhenBackfill() {
             Checks your {estimate.captures} captures and skips any that already have a line. {cost}
           </p>
           {state === "running" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Adding lines: {counts.seen} of {estimate.captures}…</p>}
-          {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Paused at the hourly limit. Start again later and it picks up where it stopped.</p>}
+          {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>{pausedBecause ?? "Paused at the hourly limit. Start again later and it picks up where it stopped."}</p>}
           {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           <button onClick={() => void run(estimate.scope)} disabled={state === "running"} aria-busy={state === "running"}
             className="btn-primary py-2 rounded-xl font-medium text-sm">
