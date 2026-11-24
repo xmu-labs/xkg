@@ -3,6 +3,7 @@ import { consumeQuota } from "@/lib/rate-limit";
 import { withSpendMeter } from "@/lib/llm-spend";
 import { backfillEstimate, backfillPage } from "@/lib/use-it-when-backfill";
 import { fail, githubFailure, jsonBody, repoUser } from "@/lib/captures-route";
+import { llmErrorMessage } from "@/lib/friendly-error";
 
 const PAGES_PER_HOUR = 60;
 const PAGE = 5;
@@ -16,9 +17,11 @@ const CAPTURE_PATH = /^(inbox|applied)\/[^/]+\.md$/;
  * the answer's `next` is the `after` for the next page, null when done.
  */
 export async function POST(req: NextRequest): Promise<NextResponse> {
+  let provider = "";
   try {
     const user = await repoUser();
     if (user instanceof NextResponse) return user;
+    provider = user.llm_provider ?? "";
     if (!user.llm_api_key) return fail(400, "Add your AI key in Settings first. The lines are written by your own model.");
     const body = await jsonBody(req);
     if (!body) return fail(400, "Body must be JSON.");
@@ -35,6 +38,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch (err) {
     const github = githubFailure(err);
     if (github) return github;
+    // A refused key or unknown model stops the run (see backfillPage): say what to fix.
+    const said = llmErrorMessage(err, provider);
+    const message = err instanceof Error ? err.message : String(err);
+    if (said !== message) {
+      console.error("[use-it-when] provider refused:", message.slice(0, 300));
+      return fail(502, said);
+    }
     return fail(500, `[use-it-when] ${err instanceof Error ? err.message : "Failed to add lines"}`);
   }
 }
