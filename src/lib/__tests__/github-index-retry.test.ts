@@ -72,3 +72,28 @@ describe("githubPut tells a taken name apart (XKG-139)", () => {
     expect(err).toMatchObject({ status: 422, fileExists: false });
   });
 });
+
+describe("githubPut says when GitHub lets writes through again (XKG-232)", () => {
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => { fetchSpy = vi.spyOn(globalThis, "fetch"); });
+  afterEach(() => { fetchSpy.mockRestore(); });
+  const limited = (headers: Record<string, string>) => new Response(`{"message":"You have exceeded a secondary rate limit."}`, { status: 403, headers });
+
+  // protects: GitHub's own wait is used; fails_when: retry-after is ignored; no_claim: none
+  it("uses retry-after when GitHub gives one", async () => {
+    const { githubPut } = await import("../github");
+    fetchSpy.mockResolvedValueOnce(limited({ "retry-after": "45" }));
+    expect(await githubPut("t", "o/r", "inbox/a.md", "x", "m").catch((e: unknown) => e)).toMatchObject({ status: 403, retryAfter: 45 });
+  });
+
+  // protects: the primary reset time applies only when that quota is spent; fails_when: a secondary limit waits for the hourly reset; no_claim: none
+  it("uses the reset time only when the hourly quota is spent", async () => {
+    const { githubPut } = await import("../github");
+    const reset = String(Math.floor(Date.now() / 1000) + 1800);
+    fetchSpy.mockResolvedValueOnce(limited({ "x-ratelimit-remaining": "4000", "x-ratelimit-reset": reset }));
+    expect(await githubPut("t", "o/r", "inbox/a.md", "x", "m").catch((e: unknown) => e)).toMatchObject({ retryAfter: undefined });
+    fetchSpy.mockResolvedValueOnce(limited({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": reset }));
+    const spent = (await githubPut("t", "o/r", "inbox/a.md", "x", "m").catch((e: unknown) => e)) as { retryAfter: number };
+    expect(spent.retryAfter).toBeGreaterThan(1790);
+  });
+});

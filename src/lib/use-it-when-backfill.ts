@@ -230,8 +230,10 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
     try {
       await githubPut(user.github_token, user.github_repo!, w.path, w.content, `capture: add "Use it when" line to ${w.path.split("/").pop()}`, w.sha);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error("[use-it-when] write failed:", message.slice(0, 300));
+      // Status and GitHub's reason only: a capture's file name tells its topic, so it never reaches the log.
+      const status = (err as { status?: unknown } | null)?.status ?? "?";
+      const reason = (err instanceof Error ? err.message : String(err)).replace(/^GitHub PUT \S+: /, "").split(w.path).join("<capture>").split(w.path.split("/").pop()!).join("<capture>");
+      console.error(`[use-it-when] write failed: HTTP ${status}`, reason.slice(0, 200));
       // Too fast for GitHub: stop here. The card pauses and redoes this page,
       // skipping the captures that already got their line.
       const limited = writeLimit(err);

@@ -107,7 +107,9 @@ export async function githubPut(
     // GitHub's rate limits say when to try again: retry-after in seconds, or a reset time.
     const after = Number(res.headers.get("retry-after"));
     const reset = Number(res.headers.get("x-ratelimit-reset"));
-    const retryAfter = after > 0 ? after : reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : undefined;
+    // The reset time is the hourly quota's: it says when to retry only once that quota is spent.
+    const spent = res.headers.get("x-ratelimit-remaining") === "0";
+    const retryAfter = after > 0 ? after : spent && reset > 0 ? Math.max(1, Math.ceil(reset - Date.now() / 1000)) : undefined;
     throw Object.assign(new Error(`GitHub PUT ${filePath}: HTTP ${res.status} — ${errText}`), { status: res.status, fileExists, retryAfter });
   }
 }

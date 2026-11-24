@@ -158,6 +158,17 @@ describe("backfillPage", () => {
     expect(puts.map((p) => p.path)).toEqual(["inbox/2026-10-01-a.md"]);
   });
 
+  it("logs why a write failed without the capture's name", async () => {
+    files.set("inbox/2026-10-01-private-topic.md", capture("a"));
+    putErrors.push({ status: 409, message: '{"message":"inbox/2026-10-01-private-topic.md does not match abc"}' });
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...a: unknown[]) => { logged.push(a.map(String).join(" ")); });
+    await backfillPage(user, { limit: 5 });
+    spy.mockRestore();
+    expect(logged.join("\n")).toContain("409");
+    expect(logged.join("\n")).not.toContain("private-topic");
+  });
+
   it("treats a 429 from GitHub as the same limit, with a minute's wait when it gives none", async () => {
     files.set("inbox/2026-10-01-a.md", capture("a"));
     putErrors.push({ status: 429, message: "{}" });
