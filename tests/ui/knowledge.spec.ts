@@ -642,3 +642,18 @@ test("Continue that pauses again at once doesn't count earlier failures twice", 
   await expect(card.getByRole("button", { name: "Continue" })).toBeEnabled();
   await expect(card.getByRole("status")).toHaveText(paused);
 });
+
+test("a run whose model breaks the line rules says which rule", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 0, skipped: 0, none: 0, failed: 5, next: null, total: 7, reasons: { "model-too-long": 3, "model-not-json": 1, "model-wrong-start": 1 } },
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(
+    "Done. 0 lines added, 5 to try again later. Why: 3 the model's line was over 25 words, 1 the model didn't answer in the asked format, 1 the model's line didn't start with \u201cUse it when\u201d.",
+  );
+});

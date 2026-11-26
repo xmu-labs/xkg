@@ -668,12 +668,26 @@ const USE_IT_WHEN_MAX_WORDS = 25;
  * that would match the wrong situations.
  */
 export function readUseItWhen(v: unknown): string | null {
-  if (typeof v !== "string") return null;
-  const line = v.replace(/\s+/g, " ").trim();
-  const m = /^use it when\s+(\S.*)$/i.exec(line);
-  if (!m) return null;
-  const text = `Use it when ${m[1]}`;
-  return text.split(" ").length <= USE_IT_WHEN_MAX_WORDS ? text : null;
+  return checkUseItWhen(v).line;
+}
+
+/** Quotes, bold and backticks a model may wrap the line in; never part of it. */
+const WRAP = /^["'“”‘’*_`\s]+|["'“”‘’*_`\s]+$/g;
+
+/**
+ * The line when it keeps the rules, else which rule it broke: "no-line" (not
+ * a string, or nothing after the opening words), "wrong-start" or "too-long".
+ * A colon, dash or bold after "Use it when" is the model's formatting, not a
+ * broken rule, so it is dropped.
+ */
+export function checkUseItWhen(v: unknown): { line: string; broke: null } | { line: null; broke: "no-line" | "wrong-start" | "too-long" } {
+  if (typeof v !== "string") return { line: null, broke: "no-line" };
+  const line = v.replace(/\s+/g, " ").trim().replace(WRAP, "");
+  if (!/^use it when\b/i.test(line)) return { line: null, broke: line ? "wrong-start" : "no-line" };
+  const rest = /^use it when\b[\s:,*_\u2013\u2014-]*(\S.*)?$/i.exec(line)?.[1];
+  if (!rest) return { line: null, broke: "no-line" };
+  const text = `Use it when ${rest}`;
+  return text.split(" ").length <= USE_IT_WHEN_MAX_WORDS ? { line: text, broke: null } : { line: null, broke: "too-long" };
 }
 
 /** The frontmatter line for a capture's "Use it when" line; none when it has none. */

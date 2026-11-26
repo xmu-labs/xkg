@@ -12,7 +12,7 @@
 import type { User } from "@/lib/db";
 import { isNoCredits } from "@/lib/friendly-error";
 import { GitHubReadError, githubGet, githubPut, readFileStrict } from "@/lib/github";
-import { callLlm, effortApplied, llmSettings, readUseItWhen, resolveLlm } from "@/lib/llm";
+import { callLlm, effortApplied, llmSettings, resolveLlm, checkUseItWhen } from "@/lib/llm";
 import { estimateCostUsd } from "@/lib/llm-prices";
 
 /** Captures that can be recalled; archived ones were set aside by the user. */
@@ -99,8 +99,41 @@ export function captureOwnText(content: string): string {
   return own.trim().slice(0, MAX_CAPTURE_CHARS);
 }
 
-/** The model's line for one capture: a valid line, "none", or null when it broke the rules. */
-async function askLine(user: User, text: string): Promise<string | null> {
+/** Why a model's answer gave no line; the card says it in plain words. */
+export type AnswerProblem = "model-empty" | "model-not-json" | "model-no-line" | "model-wrong-start" | "model-too-long";
+
+const NONE = /^["'`*\s]*none[.!]?["'`*\s]*$/i;
+
+/**
+ * The line out of a model's raw answer, or which rule it broke. Models wrap
+ * JSON in fences or a sentence before or after it, so the first {...} in the
+ * answer counts; a bare line or "none" with no JSON counts too.
+ */
+export function readLineAnswer(raw: string): { line: string } | { problem: AnswerProblem } {
+  const text = raw.trim();
+  if (!text) return { problem: "model-empty" };
+  let field: unknown;
+  let json = false;
+  for (const part of [text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, ""), text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)]) {
+    if (!part.startsWith("{")) continue;
+    try {
+      const parsed: unknown = JSON.parse(part);
+      if (parsed && typeof parsed === "object") { field = (parsed as { use_it_when?: unknown }).use_it_when; json = true; break; }
+    } catch { /* try the next part */ }
+  }
+  if (!json) {
+    // No JSON: a bare line or "none" still answers the question.
+    if (NONE.test(text)) return { line: "none" };
+    const bare = checkUseItWhen(text);
+    return bare.line ? { line: bare.line } : { problem: "model-not-json" };
+  }
+  if (typeof field === "string" && NONE.test(field)) return { line: "none" };
+  const checked = checkUseItWhen(field);
+  return checked.broke === null ? { line: checked.line } : { problem: `model-${checked.broke}` };
+}
+
+/** The model's line for one capture: a valid line, "none", or the rule its answer broke. */
+async function askLine(user: User, text: string): Promise<{ line: string } | { problem: AnswerProblem }> {
   const raw = await callLlm({
     llm: llmSettings(user),
     apiKey: user.llm_api_key ?? "",
@@ -108,14 +141,7 @@ async function askLine(user: User, text: string): Promise<string | null> {
     user: `Capture:\n${text}`,
     maxTokens: MAX_TOKENS,
   });
-  let answer: unknown;
-  try {
-    answer = (JSON.parse(raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim()) as { use_it_when?: unknown }).use_it_when;
-  } catch {
-    return null;
-  }
-  if (typeof answer === "string" && answer.trim().toLowerCase() === "none") return "none";
-  return readUseItWhen(answer);
+  return readLineAnswer(raw);
 }
 
 /**
@@ -186,7 +212,7 @@ export type BackfillPage = {
   total: number;
   /**
    * Failures by step, so the card can say why: "moved", "model-error",
-   * "model-rules", "no-frontmatter" or "github-<HTTP status>". Never a capture's name.
+   * "model-empty", "model-not-json", "model-no-line", "model-wrong-start", "model-too-long", "no-frontmatter" or "github-<HTTP status>". Never a capture's name.
    */
   reasons: Record<string, number>;
 };
@@ -209,15 +235,16 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
     const crlf = file.content.includes("\r\n");
     const text = crlf ? file.content.replace(/\r\n/g, "\n") : file.content;
     if (hasUseItWhen(text)) { out.skipped++; return null; }
-    let line: string | null;
+    let line: string;
     try {
-      line = await askLine(user, captureOwnText(text));
+      const answer = await askLine(user, captureOwnText(text));
+      if ("problem" in answer) { fail(answer.problem); return null; }
+      line = answer.line;
     } catch (err) {
       if (refusedByProvider(err)) stop ??= err;
       fail("model-error");
       return null;
     }
-    if (!line) { fail("model-rules"); return null; }
     const added = addUseItWhen(text, line);
     if (added === text) { fail("no-frontmatter"); return null; }
     return { path, sha: file.sha, line, content: crlf ? added.replace(/\n/g, "\r\n") : added };

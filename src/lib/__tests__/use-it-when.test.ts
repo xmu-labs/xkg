@@ -42,6 +42,14 @@ describe("readUseItWhen", () => {
     expect(readUseItWhen(long)).toBeNull();
   });
 
+  it("takes the line out of the quotes, bold or colon a model wraps it in", () => {
+    expect(readUseItWhen('"Use it when work gets dropped."')).toBe("Use it when work gets dropped.");
+    expect(readUseItWhen("“Use it when work gets dropped.”")).toBe("Use it when work gets dropped.");
+    expect(readUseItWhen("**Use it when** work gets dropped.")).toBe("Use it when work gets dropped.");
+    expect(readUseItWhen("Use it when: work gets dropped.")).toBe("Use it when work gets dropped.");
+    expect(readUseItWhen("Use it when — work gets dropped.")).toBe("Use it when work gets dropped.");
+  });
+
   it("drops 'none', blanks and non-strings", () => {
     expect(readUseItWhen("none")).toBeNull();
     expect(readUseItWhen("Use it when")).toBeNull();
