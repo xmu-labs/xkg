@@ -623,3 +623,22 @@ test("failure reasons from before a pause survive Continue and a page reload", a
     "Done. 2 lines added, 4 to try again later. Why: 3 GitHub refused the save (HTTP 409), 1 moved or deleted during the run.",
   );
 });
+
+test("Continue that pauses again at once doesn't count earlier failures twice", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 1, skipped: 0, none: 0, failed: 3, next: "inbox/b.md", total: 7, reasons: { "github-409": 3 } },
+    "quota",
+    "quota",
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  const paused = "Paused at the hourly limit. Start again later and it picks up where it stopped. Why 3 failed so far: 3 GitHub refused the save (HTTP 409).";
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(paused);
+  await card.getByRole("button", { name: "Continue" }).tap();
+  await expect(card.getByRole("button", { name: "Continue" })).toBeEnabled();
+  await expect(card.getByRole("status")).toHaveText(paused);
+});

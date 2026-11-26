@@ -272,6 +272,8 @@ function UseItWhenBackfill() {
     const resumed = stored(afterKey);
     const failedBefore = resumed ? Number(stored(failedKey)) || 0 : 0;
     const why: Record<string, number> = resumed ? storedReasons(reasonsKey) : {};
+    // Counts are this run's; what failed before the pause comes back as failedEarlier.
+    setCounts({ ...total });
     setFailedEarlier(failedBefore);
     setReasons({ ...why });
     const keepPlace = (after: string | null) => {
