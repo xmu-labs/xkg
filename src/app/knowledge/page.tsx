@@ -195,6 +195,19 @@ export default function KnowledgePage() {
 /** Kept per browser and per account and repo (`scope`) once a full pass ended with nothing to retry. */
 const BACKFILL_DONE_KEY = "xkg-use-it-when-done";
 /** Where a paused backfill stopped, per account and repo, so the next run carries on. */
+/** Why captures failed, most first, in plain words: "120 GitHub refused the save (HTTP 409), 3 moved". */
+function failureReasons(reasons: Record<string, number>): string {
+  const say = (key: string): string => {
+    if (key === "moved") return "moved or deleted during the run";
+    if (key === "model-error") return "your AI model didn't answer";
+    if (key === "model-rules") return "the model's line broke the rules";
+    if (key === "no-frontmatter") return "the file has no header for the line";
+    const http = /^github-(\w+)$/.exec(key)?.[1];
+    return http ? `GitHub refused the save (HTTP ${http})` : key;
+  };
+  return Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} ${say(k)}`).join(", ");
+}
+
 const BACKFILL_AFTER_KEY = "xkg-use-it-when-after";
 /** Failures earlier in a paused pass: they sit behind the saved place, so a pass with any isn't done. */
 const BACKFILL_FAILED_KEY = "xkg-use-it-when-failed";
@@ -217,6 +230,7 @@ function UseItWhenBackfill() {
   const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "paused" | "error">("idle");
   const [counts, setCounts] = useState({ seen: 0, written: 0, none: 0, failed: 0, skipped: 0 });
+  const [reasons, setReasons] = useState<Record<string, number>>({});
   const [pausedBecause, setPausedBecause] = useState<string | null>(null);
   const [error, setError] = useState("");
   const aborter = useRef<AbortController | null>(null);
@@ -243,6 +257,7 @@ function UseItWhenBackfill() {
     setState("running");
     setError("");
     const total = { seen: 0, written: 0, none: 0, failed: 0, skipped: 0 };
+    const why: Record<string, number> = {};
     const resumed = stored(afterKey);
     const failedBefore = resumed ? Number(stored(failedKey)) || 0 : 0;
     const keepPlace = (after: string | null) => {
@@ -265,6 +280,8 @@ function UseItWhenBackfill() {
         total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
         total.seen += page.written + page.none + page.failed + page.skipped;
         setCounts({ ...total });
+        for (const [k, n] of Object.entries(page.reasons ?? {})) why[k] = (why[k] ?? 0) + n;
+        setReasons({ ...why });
         window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
         if (!page.next) break;
         after = page.next;
@@ -293,6 +310,7 @@ function UseItWhenBackfill() {
           Done. {counts.written} {counts.written === 1 ? "line" : "lines"} added
           {counts.none > 0 && <>, {counts.none} with nothing reusable</>}
           {counts.failed > 0 && <>, {counts.failed} to try again later</>}.
+          {counts.failed > 0 && Object.keys(reasons).length > 0 && <> Why: {failureReasons(reasons)}.</>}
         </p>
       ) : (
         <>

@@ -183,6 +183,27 @@ describe("backfillPage", () => {
     expect(await backfillPage(user, { limit: 5 })).toMatchObject({ written: 0, failed: 1 });
   });
 
+  it("says why each capture failed, by step, with no capture name in it", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    files.set("inbox/2026-10-02-b.md", capture("b"));
+    files.set("inbox/2026-10-03-c.md", "# no frontmatter\n");
+    files.set("inbox/2026-10-04-d.md", capture("d"));
+    vanish.add("inbox/2026-10-02-b.md");
+    putErrors.push({ status: 409, message: '{"message":"does not match"}' }, { status: 409, message: "{}" });
+    const out = await backfillPage(user, { limit: 5 });
+    expect(out.failed).toBe(4);
+    expect(out.reasons).toEqual({ moved: 1, "no-frontmatter": 1, "github-409": 2 });
+  });
+
+  it("says when the model broke the rules or its call failed", async () => {
+    files.set("inbox/2026-10-01-a.md", capture("a"));
+    modelAnswer = { use_it_when: "Alerts and on-call rotations." };
+    expect((await backfillPage(user, { limit: 5 })).reasons).toEqual({ "model-rules": 1 });
+    modelAnswer = { use_it_when: "Use it when x." };
+    modelError = { status: 500, body: "{}" };
+    expect((await backfillPage(user, { limit: 5 })).reasons).toEqual({ "model-error": 1 });
+  });
+
   it("writes a line into captures without one, from inbox and applied, oldest first", async () => {
     files.set("inbox/2026-10-02-b.md", capture("B"));
     files.set("applied/2026-10-01-a.md", capture("A"));

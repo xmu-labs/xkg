@@ -583,3 +583,19 @@ test("when GitHub limits writes, the card pauses with GitHub's reason and carrie
   await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
   expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
 });
+
+test("a run with failures says why, so the cause shows without the server log", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 1, skipped: 0, none: 0, failed: 4, next: "inbox/b.md", total: 7, reasons: { "github-409": 3, moved: 1 } },
+    { written: 1, skipped: 0, none: 0, failed: 1, next: null, total: 7, reasons: { "github-409": 1 } },
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(
+    "Done. 2 lines added, 5 to try again later. Why: 4 GitHub refused the save (HTTP 409), 1 moved or deleted during the run.",
+  );
+});
