@@ -11,8 +11,11 @@ import type { User } from "../db";
 
 const files = new Map<string, string>();
 const puts: Array<{ path: string; content: string; sha?: string }> = [];
+/** An object is sent as JSON; a string is the model's raw text, as it came. */
 let modelAnswer: unknown = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 let modelCalls = 0;
+/** Raw answers for the next calls, in order; used before modelAnswer. */
+const rawAnswers: string[] = [];
 /** When set, the provider answers with this HTTP error instead of a line. */
 let modelError: { status: number; body: string } | null = null;
 let lastPrompt = "";
@@ -49,7 +52,7 @@ vi.stubGlobal("fetch", async (url: string, init: { body: string }) => {
   modelCalls++;
   lastPrompt = JSON.stringify(JSON.parse(init.body).messages);
   if (modelError) return new Response(modelError.body, { status: modelError.status });
-  return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
+  return new Response(JSON.stringify({ choices: [{ message: { content: rawAnswers.length ? rawAnswers.shift() : typeof modelAnswer === "string" ? modelAnswer : JSON.stringify(modelAnswer) } }], usage: { prompt_tokens: 900, completion_tokens: 30 } }), { status: 200 });
 });
 
 const { addUseItWhen, backfillPage, backfillEstimate, pacing, GitHubWriteLimitError } = await import("../use-it-when-backfill");
@@ -72,6 +75,7 @@ beforeEach(() => {
   maxInFlight = 0;
   modelCalls = 0;
   modelError = null;
+  rawAnswers.length = 0;
   modelAnswer = { use_it_when: "Use it when shared work keeps getting dropped because nobody is responsible for it." };
 });
 
@@ -195,13 +199,43 @@ describe("backfillPage", () => {
     expect(out.reasons).toEqual({ moved: 1, "no-frontmatter": 1, "github-409": 2 });
   });
 
-  it("says when the model broke the rules or its call failed", async () => {
+  it("says which rule the model's answer broke, or that its call failed", async () => {
     files.set("inbox/2026-10-01-a.md", capture("a"));
-    modelAnswer = { use_it_when: "Alerts and on-call rotations." };
-    expect((await backfillPage(user, { limit: 5 })).reasons).toEqual({ "model-rules": 1 });
+    const said = async (answer: unknown) => { modelAnswer = answer; return (await backfillPage(user, { limit: 5 })).reasons; };
+    expect(await said({ use_it_when: "Alerts and on-call rotations." })).toEqual({ "model-wrong-start": 1 });
+    expect(await said({ use_it_when: `Use it when ${"word ".repeat(30).trim()}.` })).toEqual({ "model-too-long": 1 });
+    expect(await said({ line: "Use it when x." })).toEqual({ "model-no-line": 1 });
+    expect(await said("I can't help with that.")).toEqual({ "model-not-json": 1 });
+    expect(await said("")).toEqual({ "model-empty": 1 });
     modelAnswer = { use_it_when: "Use it when x." };
     modelError = { status: 500, body: "{}" };
     expect((await backfillPage(user, { limit: 5 })).reasons).toEqual({ "model-error": 1 });
+  });
+
+  it("takes a valid line in the shapes models wrap it in", async () => {
+    const shapes = [
+      'Here is the line:\n\n```json\n{"use_it_when": "Use it when shared work keeps getting dropped."}\n```',
+      '{"use_it_when": "Use it when shared work keeps getting dropped."}\n\nThis names the structure, not the topic.',
+      '{"use_it_when": "Use it when: shared work keeps getting dropped."}',
+      '{"use_it_when": "\\"Use it when shared work keeps getting dropped.\\""}',
+      '{"use_it_when": "**Use it when** shared work keeps getting dropped."}',
+      "Use it when shared work keeps getting dropped.",
+    ];
+    shapes.forEach((_, i) => files.set(`inbox/2026-10-0${i + 1}-a.md`, capture("a")));
+    rawAnswers.push(...shapes);
+    const out = await backfillPage(user, { limit: 10 });
+    expect(out.reasons).toEqual({});
+    expect(out).toMatchObject({ written: 6, failed: 0 });
+    for (const p of puts) expect(files.get(p.path)).toContain("use_it_when: Use it when shared work keeps getting dropped.\n");
+  });
+
+  it("records 'none' however the model writes it", async () => {
+    for (const [i, raw] of ['{"use_it_when": "None."}', '{"use_it_when": "NONE"}', "none"].entries()) {
+      files.clear();
+      files.set(`inbox/2026-10-0${i + 1}-a.md`, capture("a"));
+      modelAnswer = raw;
+      expect(await backfillPage(user, { limit: 5 })).toMatchObject({ none: 1, failed: 0 });
+    }
   });
 
   it("writes a line into captures without one, from inbox and applied, oldest first", async () => {

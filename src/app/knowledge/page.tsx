@@ -201,6 +201,11 @@ function failureReasons(reasons: Record<string, number>): string {
     if (key === "moved") return "moved or deleted during the run";
     if (key === "model-error") return "your AI model didn't answer";
     if (key === "model-rules") return "the model's line broke the rules";
+    if (key === "model-empty") return "the model gave an empty answer";
+    if (key === "model-not-json") return "the model didn't answer in the asked format";
+    if (key === "model-no-line") return "the model's answer had no line in it";
+    if (key === "model-wrong-start") return "the model's line didn't start with \u201cUse it when\u201d";
+    if (key === "model-too-long") return "the model's line was over 25 words";
     if (key === "no-frontmatter") return "the file has no header for the line";
     const http = /^github-(\w+)$/.exec(key)?.[1];
     return http ? `GitHub refused the save (HTTP ${http})` : key;
