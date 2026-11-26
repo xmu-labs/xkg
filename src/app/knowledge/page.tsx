@@ -195,9 +195,31 @@ export default function KnowledgePage() {
 /** Kept per browser and per account and repo (`scope`) once a full pass ended with nothing to retry. */
 const BACKFILL_DONE_KEY = "xkg-use-it-when-done";
 /** Where a paused backfill stopped, per account and repo, so the next run carries on. */
+/** Why captures failed, most first, in plain words: "120 GitHub refused the save (HTTP 409), 3 moved". */
+function failureReasons(reasons: Record<string, number>): string {
+  const say = (key: string): string => {
+    if (key === "moved") return "moved or deleted during the run";
+    if (key === "model-error") return "your AI model didn't answer";
+    if (key === "model-rules") return "the model's line broke the rules";
+    if (key === "no-frontmatter") return "the file has no header for the line";
+    const http = /^github-(\w+)$/.exec(key)?.[1];
+    return http ? `GitHub refused the save (HTTP ${http})` : key;
+  };
+  return Object.entries(reasons).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${n} ${say(k)}`).join(", ");
+}
+
 const BACKFILL_AFTER_KEY = "xkg-use-it-when-after";
 /** Failures earlier in a paused pass: they sit behind the saved place, so a pass with any isn't done. */
 const BACKFILL_FAILED_KEY = "xkg-use-it-when-failed";
+/** Why the captures behind the saved place failed, so a pause or a reload doesn't lose it. */
+const BACKFILL_REASONS_KEY = "xkg-use-it-when-reasons";
+function storedReasons(key: string): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(stored(key) ?? "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, n]) => typeof n === "number" && n > 0)) as Record<string, number>;
+  } catch { return {}; }
+}
 function store(key: string, value: string | null): void {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value); } catch { /* private mode */ }
 }
@@ -217,6 +239,9 @@ function UseItWhenBackfill() {
   const [estimate, setEstimate] = useState<(BackfillEstimate & { scope: string }) | null>(null);
   const [state, setState] = useState<"idle" | "running" | "done" | "paused" | "error">("idle");
   const [counts, setCounts] = useState({ seen: 0, written: 0, none: 0, failed: 0, skipped: 0 });
+  const [reasons, setReasons] = useState<Record<string, number>>({});
+  /** Failures from earlier in a pass that paused: they still need a retry. */
+  const [failedEarlier, setFailedEarlier] = useState(0);
   const [pausedBecause, setPausedBecause] = useState<string | null>(null);
   const [error, setError] = useState("");
   const aborter = useRef<AbortController | null>(null);
@@ -240,14 +265,21 @@ function UseItWhenBackfill() {
     const signal = aborter.current?.signal;
     const afterKey = `${BACKFILL_AFTER_KEY}:${scope}`;
     const failedKey = `${BACKFILL_FAILED_KEY}:${scope}`;
+    const reasonsKey = `${BACKFILL_REASONS_KEY}:${scope}`;
     setState("running");
     setError("");
     const total = { seen: 0, written: 0, none: 0, failed: 0, skipped: 0 };
     const resumed = stored(afterKey);
     const failedBefore = resumed ? Number(stored(failedKey)) || 0 : 0;
+    const why: Record<string, number> = resumed ? storedReasons(reasonsKey) : {};
+    // Counts are this run's; what failed before the pause comes back as failedEarlier.
+    setCounts({ ...total });
+    setFailedEarlier(failedBefore);
+    setReasons({ ...why });
     const keepPlace = (after: string | null) => {
       store(afterKey, after);
       store(failedKey, String(failedBefore + total.failed));
+      store(reasonsKey, JSON.stringify(why));
     };
     try {
       for (let after = resumed; ; ) {
@@ -265,6 +297,8 @@ function UseItWhenBackfill() {
         total.written += page.written; total.none += page.none; total.failed += page.failed; total.skipped += page.skipped;
         total.seen += page.written + page.none + page.failed + page.skipped;
         setCounts({ ...total });
+        for (const [k, n] of Object.entries(page.reasons ?? {})) why[k] = (why[k] ?? 0) + n;
+        setReasons({ ...why });
         window.dispatchEvent(new Event(SPEND_CHANGED_EVENT));
         if (!page.next) break;
         after = page.next;
@@ -272,6 +306,7 @@ function UseItWhenBackfill() {
       }
       store(afterKey, null);
       store(failedKey, null);
+      store(reasonsKey, null);
       if (failedBefore + total.failed === 0) store(`${BACKFILL_DONE_KEY}:${scope}`, "1");
       setState("done");
     } catch (err) {
@@ -282,6 +317,8 @@ function UseItWhenBackfill() {
   }
 
   if (!estimate) return null;
+  const failed = failedEarlier + counts.failed;
+  const why = Object.keys(reasons).length > 0 ? failureReasons(reasons) : null;
   const price = estimate.usd === null ? null : estimate.usd < 0.01 ? "Under $0.01" : `About $${estimate.usd.toFixed(2)}`;
   const cost = price === null
     ? "Your model has no price on file, so there's no estimate."
@@ -292,7 +329,8 @@ function UseItWhenBackfill() {
         <p role="status" className="text-sm leading-relaxed" style={{ color: "var(--fg)" }}>
           Done. {counts.written} {counts.written === 1 ? "line" : "lines"} added
           {counts.none > 0 && <>, {counts.none} with nothing reusable</>}
-          {counts.failed > 0 && <>, {counts.failed} to try again later</>}.
+          {failed > 0 && <>, {failed} to try again later</>}.
+          {failed > 0 && why && <> Why: {why}.</>}
         </p>
       ) : (
         <>
@@ -303,7 +341,7 @@ function UseItWhenBackfill() {
             Checks your {estimate.captures} captures and skips any that already have a line. {cost}
           </p>
           {state === "running" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>Adding lines: {counts.seen} of {estimate.captures}…</p>}
-          {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>{pausedBecause ?? "Paused at the hourly limit. Start again later and it picks up where it stopped."}</p>}
+          {state === "paused" && <p role="status" className="text-xs" style={{ color: "var(--fg-muted)" }}>{pausedBecause ?? "Paused at the hourly limit. Start again later and it picks up where it stopped."}{failed > 0 && why && <> Why {failed} failed so far: {why}.</>}</p>}
           {error && <p role="alert" className="text-xs" style={{ color: "var(--danger)" }}>{error}</p>}
           <button onClick={() => void run(estimate.scope)} disabled={state === "running"} aria-busy={state === "running"}
             className="btn-primary py-2 rounded-xl font-medium text-sm">

@@ -489,7 +489,8 @@ test("a run resumed after the hourly limit doesn't mark the backfill done, so ea
   await card.getByRole("button", { name: "Add lines" }).tap();
   await expect(card.getByText("Paused at the hourly limit", { exact: false })).toBeVisible();
   await card.getByRole("button", { name: "Continue" }).tap();
-  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
+  // The 2 failures from before the pause still count: they are the ones to try again.
+  await expect(card.getByRole("status")).toHaveText("Done. 2 lines added, 2 to try again later.");
   expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
   // The 2 failures from the first page sit behind the cursor: the card comes back for a full pass.
   await page.goto("/knowledge");
@@ -582,4 +583,62 @@ test("when GitHub limits writes, the card pauses with GitHub's reason and carrie
   await card.getByRole("button", { name: "Continue" }).tap();
   await expect(card.getByRole("status")).toHaveText("Done. 2 lines added.");
   expect(bodies).toEqual([{}, { after: "inbox/b.md" }, { after: "inbox/b.md" }]);
+});
+
+test("a run with failures says why, so the cause shows without the server log", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 1, skipped: 0, none: 0, failed: 4, next: "inbox/b.md", total: 7, reasons: { "github-409": 3, moved: 1 } },
+    { written: 1, skipped: 0, none: 0, failed: 1, next: null, total: 7, reasons: { "github-409": 1 } },
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(
+    "Done. 2 lines added, 5 to try again later. Why: 4 GitHub refused the save (HTTP 409), 1 moved or deleted during the run.",
+  );
+});
+
+test("failure reasons from before a pause survive Continue and a page reload", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 1, skipped: 0, none: 0, failed: 3, next: "inbox/b.md", total: 7, reasons: { "github-409": 2, moved: 1 } },
+    "quota",
+    { written: 2, skipped: 0, none: 0, failed: 1, next: null, total: 7, reasons: { "github-409": 1 } },
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  // Paused: the reasons so far are already on the card.
+  await expect(card.getByRole("status")).toHaveText(
+    "Paused at the hourly limit. Start again later and it picks up where it stopped. Why 3 failed so far: 2 GitHub refused the save (HTTP 409), 1 moved or deleted during the run.",
+  );
+  await page.goto("/knowledge");
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(
+    "Done. 2 lines added, 4 to try again later. Why: 3 GitHub refused the save (HTTP 409), 1 moved or deleted during the run.",
+  );
+});
+
+test("Continue that pauses again at once doesn't count earlier failures twice", async ({ page }) => {
+  await signIn(page);
+  await page.route("**/api/captures", (r) => r.fulfill({ json: { captures: CAPTURES } }));
+  await page.route("**/api/apply-stats", (r) => r.fulfill({ json: { weeks: WEEKS } }));
+  await backfillRoutes(page, { pages: [
+    { written: 1, skipped: 0, none: 0, failed: 3, next: "inbox/b.md", total: 7, reasons: { "github-409": 3 } },
+    "quota",
+    "quota",
+  ] });
+  await page.goto("/knowledge");
+  const card = page.getByRole("region", { name: "Use it when lines" });
+  const paused = "Paused at the hourly limit. Start again later and it picks up where it stopped. Why 3 failed so far: 3 GitHub refused the save (HTTP 409).";
+  await card.getByRole("button", { name: "Add lines" }).tap();
+  await expect(card.getByRole("status")).toHaveText(paused);
+  await card.getByRole("button", { name: "Continue" }).tap();
+  await expect(card.getByRole("button", { name: "Continue" })).toBeEnabled();
+  await expect(card.getByRole("status")).toHaveText(paused);
 });

@@ -184,6 +184,11 @@ export type BackfillPage = {
   /** The path to pass as `after` for the next page; null when done. */
   next: string | null;
   total: number;
+  /**
+   * Failures by step, so the card can say why: "moved", "model-error",
+   * "model-rules", "no-frontmatter" or "github-<HTTP status>". Never a capture's name.
+   */
+  reasons: Record<string, number>;
 };
 
 /** One page of the backfill: up to `limit` captures after `after`, one model call each at most. */
@@ -191,14 +196,15 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
   const all = await capturePaths(user);
   const rest = args.after ? all.filter((p) => byName(p, args.after!) > 0) : all;
   const page = rest.slice(0, args.limit);
-  const out: BackfillPage = { written: 0, skipped: 0, none: 0, failed: 0, next: null, total: all.length };
+  const out: BackfillPage = { written: 0, skipped: 0, none: 0, failed: 0, next: null, total: all.length, reasons: {} };
+  const fail = (reason: string) => { out.failed++; out.reasons[reason] = (out.reasons[reason] ?? 0) + 1; };
 
   let stop: unknown = null;
   // Reads and model calls run side by side; the writes don't (below).
   const ready = await Promise.all(page.map(async (path) => {
     const file = await readFileStrict(user.github_token, user.github_repo!, path);
     // Moved since the listing: counted so the pass isn't marked done; a full pass finds its new folder.
-    if (!file) { out.failed++; return null; }
+    if (!file) { fail("moved"); return null; }
     // Files saved on Windows keep their CRLF endings: worked on as LF, written back as CRLF.
     const crlf = file.content.includes("\r\n");
     const text = crlf ? file.content.replace(/\r\n/g, "\n") : file.content;
@@ -208,11 +214,12 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
       line = await askLine(user, captureOwnText(text));
     } catch (err) {
       if (refusedByProvider(err)) stop ??= err;
-      line = null;
+      fail("model-error");
+      return null;
     }
-    if (!line) { out.failed++; return null; }
+    if (!line) { fail("model-rules"); return null; }
     const added = addUseItWhen(text, line);
-    if (added === text) { out.failed++; return null; }
+    if (added === text) { fail("no-frontmatter"); return null; }
     return { path, sha: file.sha, line, content: crlf ? added.replace(/\n/g, "\r\n") : added };
   }));
 
@@ -238,7 +245,7 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
       // skipping the captures that already got their line.
       const limited = writeLimit(err);
       if (limited) throw limited;
-      out.failed++; // changed since the read, or GitHub said no; a rerun tries again
+      fail(`github-${typeof status === "number" ? status : "error"}`); // changed since the read, or GitHub said no; a rerun tries again
       continue;
     }
     if (w.line === "none") out.none++;
@@ -246,5 +253,7 @@ export async function backfillPage(user: User, args: { after?: string; limit: nu
   }
 
   out.next = rest.length > page.length ? page[page.length - 1]! : null;
+  // Counts only: the log never holds a capture's name.
+  if (out.failed > 0) console.warn("[use-it-when] page failures:", JSON.stringify(out.reasons));
   return out;
 }
